@@ -389,11 +389,6 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 	unsigned int cpu, shift = (gic_irq(d) % 4) * 8;
 	u32 val, mask, bit;
 
-	if (!force)
-		cpu = cpumask_any_and(mask_val, cpu_online_mask);
-	else
-		cpu = cpumask_first(mask_val);
-
 	if (cpu >= NR_GIC_CPU_IF || cpu >= nr_cpu_ids)
 		return -EINVAL;
 
@@ -551,9 +546,7 @@ static void __init gic_dist_init(struct gic_chip_data *gic)
 	/*
 	 * Set all global interrupts to this CPU only.
 	 */
-	cpumask = gic_get_cpumask(gic);
-	cpumask |= cpumask << 8;
-	cpumask |= cpumask << 16;
+	cpumask = readl_relaxed(base + GIC_DIST_TARGET + 0);
 	for (i = 32; i < gic_irqs; i += 4)
 		writel_relaxed(cpumask, base + GIC_DIST_TARGET + i * 4 / 4);
 
@@ -597,7 +590,7 @@ static void __cpuinit gic_cpu_init(struct gic_chip_data *gic)
 	 * Get what the GIC says our CPU mask is.
 	 */
 	BUG_ON(cpu >= NR_GIC_CPU_IF);
-	cpu_mask = gic_get_cpumask(gic);
+	cpu_mask = readl_relaxed(dist_base + GIC_DIST_TARGET + 0);
 	gic_cpu_map[cpu] = cpu_mask;
 
 	/*
