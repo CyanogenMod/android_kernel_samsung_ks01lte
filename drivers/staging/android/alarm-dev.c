@@ -41,8 +41,7 @@ do {									\
 
 #define ANDROID_ALARM_WAKEUP_MASK ( \
 	ANDROID_ALARM_RTC_WAKEUP_MASK | \
-	ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP_MASK | \
-	ANDROID_ALARM_RTC_POWEROFF_WAKEUP_MASK)
+	ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP_MASK)
 
 static int alarm_opened;
 static DEFINE_SPINLOCK(alarm_slock);
@@ -248,11 +247,24 @@ static long alarm_do_ioctl(struct file *file, unsigned int cmd,
 		alarm_enabled &= ~alarm_type_mask;
 		spin_unlock_irqrestore(&alarm_slock, flags);
 		break;
-	case ANDROID_ALARM_SET(0):
-		alarm_set(alarm_type, ts);
-		break;
 	case ANDROID_ALARM_SET_AND_WAIT(0):
-		alarm_set(alarm_type, ts);
+	case ANDROID_ALARM_SET(0):
+		if (copy_from_user(&new_alarm_time, (void __user *)arg,
+		    sizeof(new_alarm_time))) {
+			rv = -EFAULT;
+			goto err1;
+		}
+		spin_lock_irqsave(&alarm_slock, flags);
+		pr_alarm(IO, "alarm %d set %ld.%09ld\n", alarm_type,
+			new_alarm_time.tv_sec, new_alarm_time.tv_nsec);
+		alarm_enabled |= alarm_type_mask;
+		devalarm_start(&alarms[alarm_type],
+			timespec_to_ktime(new_alarm_time));
+		spin_unlock_irqrestore(&alarm_slock, flags);
+		if (ANDROID_ALARM_BASE_CMD(cmd) !=
+						ANDROID_ALARM_SET_AND_WAIT(0)
+			break;
+>>>>>>> 3f5099a... staging: alarm-dev: Drop pre Android 1.0 _OLD ioctls
 		/* fall though */
 	case ANDROID_ALARM_WAIT:
 		spin_lock_irqsave(&alarm_slock, flags);
