@@ -252,6 +252,7 @@ static int cpu_hotplug_handler(struct notifier_block *nb,
 	case CPU_ONLINE:
 		if (!this_cpu->cur_freq)
 			this_cpu->cur_freq = cpufreq_quick_get(cpu);
+		update_related_cpus();
 	case CPU_ONLINE_FROZEN:
 		this_cpu->avg_load_maxfreq = 0;
 	}
