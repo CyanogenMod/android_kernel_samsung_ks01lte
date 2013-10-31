@@ -119,7 +119,6 @@ static void __init msm8226_reserve(void)
  */
 void __init msm8226_add_drivers(void)
 {
-	msm_smem_init();
 	msm_init_modem_notifier_list();
 	msm_smd_init();
 	msm_rpm_driver_init();
@@ -180,6 +179,16 @@ void __init msm8226_init(void)
 #ifdef CONFIG_PROC_AVC
 	sec_avc_log_init();
 #endif
+	/*
+	 * populate devices from DT first so smem probe will get called as part
+	 * of msm_smem_init.  socinfo_init needs smem support so call
+	 * msm_smem_init before it.  msm8226_init_gpiomux needs socinfo so
+	 * call socinfo_init before it.
+	 */
+	board_dt_populate(adata);
+
+	msm_smem_init();
+>>>>>>> 3462df8... msm: reorder init calls in board's init_machine handler
 
 	if (socinfo_init() < 0)
 		pr_err("%s: socinfo_init() failed\n", __func__);
