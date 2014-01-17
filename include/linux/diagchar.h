@@ -119,10 +119,10 @@ the appropriate macros. */
 /* This needs to be modified manually now, when we add
  a new RANGE of SSIDs to the msg_mask_tbl */
 #define MSG_MASK_TBL_CNT		24
-#define EVENT_LAST_ID			0x09D8
+#define EVENT_LAST_ID			0x09F6
 
 #define MSG_SSID_0			0
-#define MSG_SSID_0_LAST			100
+#define MSG_SSID_0_LAST			101
 #define MSG_SSID_1			500
 #define MSG_SSID_1_LAST			506
 #define MSG_SSID_2			1000
@@ -296,6 +296,7 @@ static const uint32_t msg_bld_masks_0[] = {
 	MSG_LVL_HIGH,
 	MSG_LVL_LOW,
 	MSG_LVL_HIGH,
+	MSG_LVL_HIGH
 };
 
 static const uint32_t msg_bld_masks_1[] = {
