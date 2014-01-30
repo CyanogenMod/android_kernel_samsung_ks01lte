@@ -68,7 +68,7 @@ extern int poweroff_charging;
 #define STRIPE_BASE_FW_1_4_0	140
 #define STRIPE_BASE_FW_1_6_0	464
 
-struct msm_cpp_timer_data_t {
+typedef struct _msm_cpp_timer_data_t {
 	struct cpp_device *cpp_dev;
 	struct msm_cpp_frame_info_t *processed_frame;
 } msm_cpp_timer_data_t;
