@@ -40,6 +40,7 @@
 #include <linux/percpu.h>
 #include <linux/slab.h>
 #include <linux/syscore_ops.h>
+#include <linux/wakeup_reason.h>
 
 #include <asm/irq.h>
 #include <asm/exception.h>
@@ -282,6 +283,18 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 
 		pr_warning("%s: %d triggered %s\n", __func__,
 					i + gic->irq_offset, name);
+
+#ifdef CONFIG_SEC_PM_DEBUG
+		desc = irq_to_desc(i + gic->irq_offset);
+		if (desc && desc->action && desc->action->name)
+			pr_warning("%s: %d(%s)\n", __func__,
+				i + gic->irq_offset, desc->action->name);
+		else
+#endif
+		pr_warning("%s: %d triggered %s\n", __func__,
+					i + gic->irq_offset, name);
+
+		log_base_wakeup_reason(i + gic->irq_offset);
 	}
 }
 
