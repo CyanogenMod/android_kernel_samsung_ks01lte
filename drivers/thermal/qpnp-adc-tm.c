@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1888,6 +1888,28 @@ static int __devinit qpnp_adc_tm_probe(struct spmi_device *spmi)
 			pr_err("Invalid btm channel number\n");
 			goto fail;
 		}
+		rc = of_property_read_u32(child,
+				"qcom,meas-interval-timer-idx", &timer_select);
+		if (rc) {
+			pr_debug("Default to timer2 with interval of 1 sec\n");
+			chip->sensor[sen_idx].timer_select =
+							ADC_MEAS_TIMER_SELECT2;
+			chip->sensor[sen_idx].meas_interval =
+							ADC_MEAS2_INTERVAL_1S;
+		} else {
+			if (timer_select >= ADC_MEAS_TIMER_NUM) {
+				pr_err("Invalid timer selection number\n");
+				goto fail;
+			}
+			chip->sensor[sen_idx].timer_select = timer_select;
+			if (timer_select == ADC_MEAS_TIMER_SELECT1)
+				chip->sensor[sen_idx].meas_interval =
+						ADC_MEAS1_INTERVAL_3P9MS;
+			if (timer_select == ADC_MEAS_TIMER_SELECT3)
+				chip->sensor[sen_idx].meas_interval =
+						ADC_MEAS3_INTERVAL_4S;
+		}
+
 		chip->sensor[sen_idx].btm_channel_num = btm_channel_num;
 		chip->sensor[sen_idx].vadc_channel_num =
 				chip->adc->adc_channels[sen_idx].channel_num;
