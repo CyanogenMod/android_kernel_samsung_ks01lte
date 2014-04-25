@@ -172,8 +172,8 @@ enum sdc_mpm_pin_state {
 #define CORE_SDCC_DEBUG_REG	0x124
 #define CORE_DEBUG_REG_AHB_HTRANS       (3 << 12)
 
-/* 8KB descriptors */
-#define SDHCI_MSM_MAX_SEGMENTS  (1 << 13)
+/* 512 descriptors */
+#define SDHCI_MSM_MAX_SEGMENTS  (1 << 9)
 #define SDHCI_MSM_MMC_CLK_GATE_DELAY	200 /* msecs */
 
 #define CORE_FREQ_100MHZ	(100 * 1000 * 1000)
@@ -182,6 +182,9 @@ enum sdc_mpm_pin_state {
 
 #define sdhci_is_valid_mpm_wakeup_int(_h) ((_h)->pdata->mpm_sdiowakeup_int >= 0)
 #define sdhci_is_valid_gpio_wakeup_int(_h) ((_h)->pdata->sdiowakeup_irq >= 0)
+
+/* Timeout value to avoid infinite waiting for pwr_irq */
+#define MSM_PWR_IRQ_TIMEOUT_MS 5000
 
 static const u32 tuning_block_64[] = {
 	0x00FF0FFF, 0xCCC3CCFF, 0xFFCC3CC3, 0xEFFEFFFE,
@@ -2440,8 +2443,10 @@ static void sdhci_msm_check_power_status(struct sdhci_host *host, u32 req_type)
 	 */
 	if (done)
 		init_completion(&msm_host->pwr_irq_completion);
-	else
-		wait_for_completion(&msm_host->pwr_irq_completion);
+	else if (!wait_for_completion_timeout(&msm_host->pwr_irq_completion,
+				msecs_to_jiffies(MSM_PWR_IRQ_TIMEOUT_MS)))
+		__WARN_printf("%s: request(%d) timed out waiting for pwr_irq\n",
+					mmc_hostname(host->mmc), req_type);
 
 	pr_debug("%s: %s: request %d done\n", mmc_hostname(host->mmc),
 			__func__, req_type);
@@ -3622,7 +3627,7 @@ static int sdhci_msm_runtime_suspend(struct device *dev)
 	if (!ret)
 		goto skip_disable_host_irq;
 
-	disable_irq(host->irq);
+	sdhci_cfg_irq(host, false, true);
 
 skip_disable_host_irq:
 	disable_irq(msm_host->pwr_irq);
@@ -3654,7 +3659,7 @@ static int sdhci_msm_runtime_resume(struct device *dev)
 	if (!ret)
 		goto skip_enable_host_irq;
 
-	enable_irq(host->irq);
+	sdhci_cfg_irq(host, true, true);
 
 	if (msm_host->id == 3)
 		pr_info("%s: %s", mmc_hostname(host->mmc), __func__);
