@@ -974,7 +974,7 @@ static __ref int do_hotplug(void *data)
 
 	while (!kthread_should_stop()) {
 		while (wait_for_completion_interruptible(
-					&hotplug_notify_complete) != 0)
+			&hotplug_notify_complete) != 0)
 			;
 		INIT_COMPLETION(hotplug_notify_complete);
 		mask = 0;
@@ -1421,7 +1421,7 @@ static __ref int do_freq_mitigation(void *data)
 
 	while (!kthread_should_stop()) {
 		while (wait_for_completion_interruptible(
-					&freq_mitigation_complete) != 0)
+			&freq_mitigation_complete) != 0)
 			;
 		INIT_COMPLETION(freq_mitigation_complete);
 
@@ -1659,7 +1659,9 @@ static __ref int do_thermal_monitor(void *data)
 	struct therm_threshold *sensor_list;
 
 	while (!kthread_should_stop()) {
-		wait_for_completion(&thermal_monitor_complete);
+		while (wait_for_completion_interruptible(
+			&thermal_monitor_complete) != 0)
+			;
 		INIT_COMPLETION(thermal_monitor_complete);
 
 		for (i = 0; i < MSM_LIST_MAX_NR; i++) {
