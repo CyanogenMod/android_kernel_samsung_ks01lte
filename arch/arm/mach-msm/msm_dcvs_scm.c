@@ -16,7 +16,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
-#include <linux/memory_alloc.h>
+#include <linux/dma-mapping.h>
 #include <asm/cacheflush.h>
 #include <mach/memory.h>
 #include <mach/scm.h>
@@ -63,14 +63,24 @@ int msm_dcvs_scm_init(size_t size)
 {
 	int ret = 0;
 	struct scm_init init;
-	uint32_t p = 0;
+	struct device dev = { 0 };
+	dma_addr_t handle;
+	void *cpu_addr;
+	int psize[2] = {0, 0};
+	DEFINE_DMA_ATTRS(attrs);
 
-	/* Allocate word aligned non-cacheable memory */
-	p = allocate_contiguous_ebi_nomap(size, 4);
-	if (!p)
-		return -ENOMEM;
 
-	init.phy = p;
+        dma_set_attr(DMA_ATTR_NO_KERNEL_MAPPING, &attrs);
+        dev.coherent_dma_mask = DMA_BIT_MASK(sizeof(dma_addr_t) * 8);
+        cpu_addr = dma_alloc_attrs(&dev, size, &handle, GFP_KERNEL, &attrs);
+        if (!cpu_addr) {
+                pr_err("%s: Failed to allocate %d bytes for PTBL\n",
+                        __func__, psize[0]);
+                ret = -ENOMEM;
+                return ret;
+        }
+
+	init.phy = (unsigned int)handle;
 	init.size = size;
 
 	ret = scm_call(SCM_SVC_DCVS, DCVS_CMD_INIT,
@@ -78,7 +88,8 @@ int msm_dcvs_scm_init(size_t size)
 
 	/* Not freed if the initialization succeeds */
 	if (ret)
-		free_contiguous_memory_by_paddr(p);
+		dma_free_coherent(&dev,size,cpu_addr,handle);
+//		free_contiguous_memory_by_paddr(p);
 
 	return ret;
 }
