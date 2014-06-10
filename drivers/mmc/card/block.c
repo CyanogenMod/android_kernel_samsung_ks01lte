@@ -2896,7 +2896,8 @@ out:
 	 */
 	if ((!req && !(test_bit(MMC_QUEUE_NEW_REQUEST, &mq->flags))) ||
 			((test_bit(MMC_QUEUE_URGENT_REQUEST, &mq->flags)) &&
-				!(mq->mqrq_cur->req->cmd_flags & REQ_URGENT))) {
+			 !(mq->mqrq_cur->req->cmd_flags &
+				MMC_REQ_NOREINSERT_MASK))) {
 		if (mmc_card_need_bkops(card))
 			mmc_start_bkops(card, false);
 		/* release host only when there are no more requests */

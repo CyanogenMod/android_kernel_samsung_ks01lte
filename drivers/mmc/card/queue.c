@@ -78,9 +78,10 @@ static int mmc_queue_thread(void *d)
 			mq->issue_fn(mq, req);
 			if (test_bit(MMC_QUEUE_NEW_REQUEST, &mq->flags)) {
 				continue; /* fetch again */
-			} else if (test_bit(MMC_QUEUE_URGENT_REQUEST, &mq->flags) &&
-				   (mq->mqrq_cur->req &&
-				!(mq->mqrq_cur->req->cmd_flags & REQ_URGENT))) {
+			} else if (test_bit(MMC_QUEUE_URGENT_REQUEST,
+					&mq->flags) && (mq->mqrq_cur->req &&
+					!(mq->mqrq_cur->req->cmd_flags &
+						MMC_REQ_NOREINSERT_MASK))) {
 				/*
 				 * clean current request when urgent request
 				 * processing in progress and current request is
