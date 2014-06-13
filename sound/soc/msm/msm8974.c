@@ -122,7 +122,6 @@ static struct wcd9xxx_mbhc_config mbhc_cfg = {
 	.read_fw_bin = true,
 	.calibration = NULL,
 	.micbias = MBHC_MICBIAS2,
-	.anc_micbias = MBHC_MICBIAS2,
 	.mclk_cb_fn = msm_snd_enable_codec_ext_clk,
 	.mclk_rate = TAIKO_EXT_CLK_RATE,
 	.gpio = 0,
@@ -132,13 +131,9 @@ static struct wcd9xxx_mbhc_config mbhc_cfg = {
 	.micbias_enable_flags = 1 << MBHC_MICBIAS_ENABLE_THRESHOLD_HEADSET,
 	.insert_detect = true,
 	.swap_gnd_mic = NULL,
-	.cs_enable_flags = (1 << MBHC_CS_ENABLE_POLLING |
-			    1 << MBHC_CS_ENABLE_INSERTION |
-			    1 << MBHC_CS_ENABLE_REMOVAL |
-			    1 << MBHC_CS_ENABLE_DET_ANC),
-	.do_recalibration = true,
+	.cs_enable_flags = 0,
+	.do_recalibration = false,
 	.use_vddio_meas = true,
-	.enable_anc_mic_detect = false,
 	.hw_jack_type = SIX_POLE_JACK,
 };
 
@@ -3081,24 +3076,19 @@ static __devinit int msm8974_asoc_machine_probe(struct platform_device *pdev)
 			"qcom,mbhc-audio-jack-type",
 			pdev->dev.of_node->full_name);
 		mbhc_cfg.hw_jack_type = FOUR_POLE_JACK;
-		mbhc_cfg.enable_anc_mic_detect = false;
 		dev_dbg(&pdev->dev, "Jack type properties set to default");
 	} else {
 		if (!strncmp(mbhc_audio_jack_type, "4-pole-jack", n)) {
 			mbhc_cfg.hw_jack_type = FOUR_POLE_JACK;
-			mbhc_cfg.enable_anc_mic_detect = false;
 			dev_dbg(&pdev->dev, "This hardware has 4 pole jack");
 		} else if (!strncmp(mbhc_audio_jack_type, "5-pole-jack", n)) {
 			mbhc_cfg.hw_jack_type = FIVE_POLE_JACK;
-			mbhc_cfg.enable_anc_mic_detect = true;
 			dev_dbg(&pdev->dev, "This hardware has 5 pole jack");
 		} else if (!strncmp(mbhc_audio_jack_type, "6-pole-jack", n)) {
 			mbhc_cfg.hw_jack_type = SIX_POLE_JACK;
-			mbhc_cfg.enable_anc_mic_detect = true;
 			dev_dbg(&pdev->dev, "This hardware has 6 pole jack");
 		} else {
 			mbhc_cfg.hw_jack_type = FOUR_POLE_JACK;
-			mbhc_cfg.enable_anc_mic_detect = false;
 			dev_dbg(&pdev->dev, "Unknown value, hence setting to default");
 		}
 	}
@@ -3280,8 +3270,14 @@ static __devinit int msm8974_asoc_machine_probe(struct platform_device *pdev)
 		}
 	}
 
-	sec_muxsel = platform_get_resource_byname(pdev, IORESOURCE_MEM,
-						"lpaif_sec_mode_muxsel");
+#ifdef CONFIG_PCM_ROUTE_VOICE_STUB
+      sec_muxsel = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+                                               "lpaif_quat_mode_muxsel");
+#else
+      sec_muxsel = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+                                               "lpaif_sec_mode_muxsel");
+#endif /* CONFIG_PCM_ROUTE_VOICE_STUB */
+
 	if (!sec_muxsel) {
 		dev_err(&pdev->dev, "MUX addr invalid for secondary AUXPCM\n");
 		ret = -ENODEV;

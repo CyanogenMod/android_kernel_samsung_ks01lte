@@ -532,8 +532,8 @@
 	//cd-gpios = <&msmgpio 62 0x1>;
 	wp-gpios = <&pm8941_gpios 29 0x1>;
 
-	vdd-supply = <&pm8941_l6>;
-	vdd-io-supply = <&pm8941_l6>;
+	vdd-supply = <&pm8941_s3>;
+	vdd-io-supply = <&pm8941_s3>;
 
 	qcom,vdd-always-on;
 	qcom,vdd-voltage-level = <1800000 1800000>;
@@ -614,7 +614,7 @@
 	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
 
 	vdd-supply = <&pm8941_l21>;
-	vdd-io-supply = <&pm8941_l13>;
+	vdd-io-supply = <&pm8941_l21>;
 	qcom,vdd-voltage-level = <2950000 2950000>;
 	qcom,vdd-current-level = <9000 800000>;
 	qcom,vdd-io-voltage-level = <2950000 2950000>;
@@ -1092,8 +1092,4 @@
 		es325-slim-ifd = "es325-ifd";
 		es325-slim-ifd-elemental-addr = [00 00 02 00 BE 02];
 	};
-};
-
-&pm8941_l22 {
-	regulator-always-on;
 };
