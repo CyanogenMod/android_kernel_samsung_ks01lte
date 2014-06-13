@@ -81,11 +81,6 @@ enum wcd9xxx_mbhc_plug_type {
 	PLUG_TYPE_ANC_HEADPHONE,
 };
 
-enum wcd9xxx_mbhc_micbias_type {
-	MBHC_PRIMARY_MIC_MB,
-	MBHC_ANC_MIC_MB,
-};
-
 enum wcd9xxx_micbias_num {
 	MBHC_MICBIAS_INVALID = -1,
 	MBHC_MICBIAS1,
@@ -230,7 +225,6 @@ struct wcd9xxx_mbhc_config {
 	 */
 	void *calibration;
 	enum wcd9xxx_micbias_num micbias;
-	enum wcd9xxx_micbias_num anc_micbias;
 	int (*mclk_cb_fn) (struct snd_soc_codec*, int, bool);
 	unsigned int mclk_rate;
 	unsigned int gpio;
@@ -246,7 +240,6 @@ struct wcd9xxx_mbhc_config {
 	bool use_int_rbias;
 	bool do_recalibration;
 	bool use_vddio_meas;
-	bool enable_anc_mic_detect;
 	enum hw_jack_type hw_jack_type;
 };
 
@@ -282,7 +275,7 @@ struct wcd9xxx_mbhc_cb {
 			   enum mbhc_impedance_detect_stages stage);
 	void (*compute_impedance) (s16 *, s16 *, uint32_t *, uint32_t *);
 	void (*enable_mbhc_txfe) (struct snd_soc_codec *, bool);
-	int (*enable_mb_source) (struct snd_soc_codec *, bool, bool);
+	int (*enable_mb_source) (struct snd_soc_codec *, bool);
 	void (*setup_int_rbias) (struct snd_soc_codec *, bool);
 	void (*pull_mb_to_vddio) (struct snd_soc_codec *, bool);
 };
@@ -299,7 +292,6 @@ struct wcd9xxx_mbhc {
 	struct mbhc_internal_cal_data mbhc_data;
 
 	struct mbhc_micbias_regs mbhc_bias_regs;
-	struct mbhc_micbias_regs mbhc_anc_bias_regs;
 
 	bool mbhc_micbias_switched;
 
@@ -349,8 +341,7 @@ struct wcd9xxx_mbhc {
 	struct notifier_block nblock;
 
 	bool micbias_enable;
-	int (*micbias_enable_cb) (struct snd_soc_codec*,  bool,
-				  enum wcd9xxx_micbias_num);
+	int (*micbias_enable_cb) (struct snd_soc_codec*,  bool);
 
 	bool impedance_detect;
 	/* impedance of hphl and hphr */
@@ -430,8 +421,7 @@ int wcd9xxx_mbhc_start(struct wcd9xxx_mbhc *mbhc,
 void wcd9xxx_mbhc_stop(struct wcd9xxx_mbhc *mbhc);
 int wcd9xxx_mbhc_init(struct wcd9xxx_mbhc *mbhc, struct wcd9xxx_resmgr *resmgr,
 		      struct snd_soc_codec *codec,
-		      int (*micbias_enable_cb) (struct snd_soc_codec*,  bool,
-						enum wcd9xxx_micbias_num),
+		      int (*micbias_enable_cb) (struct snd_soc_codec*,  bool),
 		      const struct wcd9xxx_mbhc_cb *mbhc_cb,
 		      const struct wcd9xxx_mbhc_intr *mbhc_cdc_intr_ids,
 		      int rco_clk_rate,
