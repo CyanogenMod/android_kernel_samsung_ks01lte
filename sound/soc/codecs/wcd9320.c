@@ -68,6 +68,7 @@
 #define TAIKO_HPH_PA_SETTLE_COMP_OFF 13000
 
 #define DAPM_MICBIAS2_EXTERNAL_STANDALONE "MIC BIAS2 External Standalone"
+#define DAPM_MICBIAS3_EXTERNAL_STANDALONE "MIC BIAS3 External Standalone"
 
 /* RX_HPH_CNP_WG_TIME increases by 0.24ms */
 #define TAIKO_WG_TIME_FACTOR_US	240
@@ -279,6 +280,8 @@ MODULE_PARM_DESC(spkr_drv_wrnd,
 			SNDRV_PCM_FORMAT_S24_LE)
 
 #define TAIKO_FORMATS (SNDRV_PCM_FMTBIT_S16_LE)
+
+#define TAIKO_SLIM_PGD_PORT_INT_TX_EN0 (TAIKO_SLIM_PGD_PORT_INT_EN0 + 2)
 
 enum {
 	AIF1_PB = 0,
@@ -2843,16 +2846,26 @@ static int taiko_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 }
 
 /* called under codec_resource_lock acquisition */
-static int taiko_enable_mbhc_micbias(struct snd_soc_codec *codec, bool enable)
+static int taiko_enable_mbhc_micbias(struct snd_soc_codec *codec, bool enable,
+				     enum wcd9xxx_micbias_num micb_num)
 {
 	int rc;
+	const char *micbias;
+
+	if (micb_num != MBHC_MICBIAS3 &&
+	    micb_num != MBHC_MICBIAS2)
+		return -EINVAL;
+
+	micbias = (micb_num == MBHC_MICBIAS3) ?
+			DAPM_MICBIAS3_EXTERNAL_STANDALONE :
+			DAPM_MICBIAS2_EXTERNAL_STANDALONE;
 
 	if (enable)
 		rc = snd_soc_dapm_force_enable_pin(&codec->dapm,
-					     DAPM_MICBIAS2_EXTERNAL_STANDALONE);
+					     micbias);
 	else
 		rc = snd_soc_dapm_disable_pin(&codec->dapm,
-					     DAPM_MICBIAS2_EXTERNAL_STANDALONE);
+					     micbias);
 	if (!rc)
 		snd_soc_dapm_sync(&codec->dapm);
 	pr_debug("%s: leave ret %d\n", __func__, rc);
@@ -3415,6 +3428,7 @@ static int taiko_codec_enable_anc_hph(struct snd_soc_dapm_widget *w,
 			msleep(30);
 		}
 		ret = taiko_hph_pa_event(w, kcontrol, event);
+		break;
 	case SND_SOC_DAPM_PRE_PMD:
 		if (w->shift == 5) {
 			snd_soc_update_bits(codec,
@@ -4034,6 +4048,7 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"MIC BIAS4 External", NULL, "LDO_H"},
 	{"Main Mic Bias", NULL, "LDO_H"},
 	{DAPM_MICBIAS2_EXTERNAL_STANDALONE, NULL, "LDO_H Standalone"},
+	{DAPM_MICBIAS3_EXTERNAL_STANDALONE, NULL, "LDO_H Standalone"},
 };
 
 static int taiko_readable(struct snd_soc_codec *ssc, unsigned int reg)
@@ -5178,6 +5193,46 @@ static int taiko_codec_enable_slim_chmask(struct wcd9xxx_codec_dai_data *dai,
 	return ret;
 }
 
+static void taiko_codec_enable_int_port(struct wcd9xxx_codec_dai_data *dai,
+					  struct snd_soc_codec *codec)
+{
+	struct wcd9xxx_ch *ch;
+	int port_num = 0;
+	unsigned short reg = 0;
+	u8 val = 0;
+	if (!dai || !codec) {
+		pr_err("%s: Invalid params\n", __func__);
+		return;
+	}
+	list_for_each_entry(ch, &dai->wcd9xxx_ch_list, list) {
+		if (ch->port >= TAIKO_RX_PORT_START_NUMBER) {
+			port_num = ch->port - TAIKO_RX_PORT_START_NUMBER;
+			reg = TAIKO_SLIM_PGD_PORT_INT_EN0 + (port_num / 8);
+			val = wcd9xxx_interface_reg_read(codec->control_data,
+				reg);
+			if (!(val & (1 << (port_num % 8)))) {
+				val |= (1 << (port_num % 8));
+				wcd9xxx_interface_reg_write(
+					codec->control_data, reg, val);
+				val = wcd9xxx_interface_reg_read(
+					codec->control_data, reg);
+			}
+		} else {
+			port_num = ch->port;
+			reg = TAIKO_SLIM_PGD_PORT_INT_TX_EN0 + (port_num / 8);
+			val = wcd9xxx_interface_reg_read(codec->control_data,
+				reg);
+			if (!(val & (1 << (port_num % 8)))) {
+				val |= (1 << (port_num % 8));
+				wcd9xxx_interface_reg_write(codec->control_data,
+					reg, val);
+				val = wcd9xxx_interface_reg_read(
+					codec->control_data, reg);
+			}
+		}
+	}
+}
+
 static int taiko_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 				     struct snd_kcontrol *kcontrol,
 				     int event)
@@ -5204,6 +5259,7 @@ static int taiko_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
+		taiko_codec_enable_int_port(dai, codec);
 		(void) taiko_codec_enable_slim_chmask(dai, true);
 #if defined(CONFIG_SND_SOC_ESXXX)
 		ret = remote_cfg_slim_rx(w->shift);
@@ -5278,6 +5334,7 @@ static int taiko_codec_enable_slimvi_feedback(struct snd_soc_dapm_widget *w,
 		/*Enable spkr VI clocks*/
 		snd_soc_update_bits(codec,
 		TAIKO_A_CDC_CLK_TX_CLK_EN_B2_CTL, 0xC, 0xC);
+		taiko_codec_enable_int_port(dai, codec);
 		(void) taiko_codec_enable_slim_chmask(dai, true);
 		ret = wcd9xxx_cfg_slim_sch_tx(core, &dai->wcd9xxx_ch_list,
 					dai->rate, dai->bit_width,
@@ -5325,6 +5382,7 @@ static int taiko_codec_enable_slimtx(struct snd_soc_dapm_widget *w,
 	dai = &taiko_p->dai[w->shift];
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
+		taiko_codec_enable_int_port(dai, codec);
 		(void) taiko_codec_enable_slim_chmask(dai, true);
 		ret = wcd9xxx_cfg_slim_sch_tx(core, &dai->wcd9xxx_ch_list,
 					      dai->rate, dai->bit_width,
@@ -5806,6 +5864,10 @@ static const struct snd_soc_dapm_widget taiko_dapm_widgets[] = {
 			       taiko_codec_enable_micbias,
 			       SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 			       SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_MICBIAS_E(DAPM_MICBIAS3_EXTERNAL_STANDALONE, SND_SOC_NOPM,
+			       7, 0, taiko_codec_enable_micbias,
+			       SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			       SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS3 External", SND_SOC_NOPM, 7, 0,
 			       taiko_codec_enable_micbias,
 			       SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
@@ -5969,6 +6031,22 @@ static irqreturn_t taiko_slimbus_irq(int irq, void *data)
 			pr_err_ratelimited(
 			   "%s: underflow error on %s port %d, value %x\n",
 			   __func__, (tx ? "TX" : "RX"), port_id, val);
+		if ((val & TAIKO_SLIM_IRQ_OVERFLOW) ||
+			(val & TAIKO_SLIM_IRQ_UNDERFLOW)) {
+			if (!tx)
+				reg = TAIKO_SLIM_PGD_PORT_INT_EN0 +
+					(port_id / 8);
+			else
+				reg = TAIKO_SLIM_PGD_PORT_INT_TX_EN0 +
+					(port_id / 8);
+			int_val = wcd9xxx_interface_reg_read(
+				codec->control_data, reg);
+			if (int_val & (1 << (port_id % 8))) {
+				int_val = int_val ^ (1 << (port_id % 8));
+				wcd9xxx_interface_reg_write(codec->control_data,
+					reg, int_val);
+			}
+		}
 		if (val & TAIKO_SLIM_IRQ_PORT_CLOSED) {
 			/*
 			 * INT SOURCE register starts from RX to TX
@@ -6736,7 +6814,7 @@ static int taiko_setup_zdet(struct wcd9xxx_mbhc *mbhc,
 		__wr(WCD9XXX_A_CDC_MBHC_TIMER_B5_CTL, 0xFF, 0x10);
 		/* Reset MBHC and set it up for STA */
 		__wr(WCD9XXX_A_CDC_MBHC_CLK_CTL, 0xFF, 0x0A);
-		__wr(WCD9XXX_A_CDC_MBHC_EN_CTL, 0xFF, 0x2);
+		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_EN_CTL, 0x2);
 		__wr(WCD9XXX_A_CDC_MBHC_CLK_CTL, 0xFF, 0x02);
 
 		/* Set HPH_MBHC for zdet */
@@ -6870,7 +6948,7 @@ static int taiko_post_reset_cb(struct wcd9xxx *wcd9xxx)
 		ret = wcd9xxx_mbhc_init(&taiko->mbhc, &taiko->resmgr, codec,
 					taiko_enable_mbhc_micbias,
 					&mbhc_cb, &cdc_intr_ids,
-					rco_clk_rate, false);
+					rco_clk_rate, true);
 		if (ret)
 			pr_err("%s: mbhc init failed %d\n", __func__, ret);
 		else
@@ -7062,7 +7140,7 @@ static int taiko_codec_probe(struct snd_soc_codec *codec)
 	ret = wcd9xxx_mbhc_init(&taiko->mbhc, &taiko->resmgr, codec,
 				taiko_enable_mbhc_micbias,
 				&mbhc_cb, &cdc_intr_ids,
-				rco_clk_rate, false);
+				rco_clk_rate, true);
 	if (ret) {
 		pr_err("%s: mbhc init failed %d\n", __func__, ret);
 		goto err_init;
