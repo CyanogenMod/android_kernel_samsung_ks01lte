@@ -24,70 +24,39 @@ void __check_kvm_seq(struct mm_struct *mm);
 
 #ifdef CONFIG_CPU_HAS_ASID
 
-/*
- * On ARMv6, we have the following structure in the Context ID:
- *
- * 31                         7          0
- * +-------------------------+-----------+
- * |      process ID         |   ASID    |
- * +-------------------------+-----------+
- * |              context ID             |
- * +-------------------------------------+
- *
- * The ASID is used to tag entries in the CPU caches and TLBs.
- * The context ID is used by debuggers and trace logic, and
- * should be unique within all running processes.
- */
-#define ASID_BITS		8
-#define ASID_MASK		((~0) << ASID_BITS)
-#define ASID_FIRST_VERSION	(1 << ASID_BITS)
+void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk);
+#define init_new_context(tsk,mm)	({ atomic64_set(&mm->context.id, 0); 0; })
 
-#ifdef CONFIG_TIMA_RKP_DEBUG
-extern unsigned long tima_debug_infra_cnt;
-#endif
-
-extern unsigned int cpu_last_asid;
-#ifdef CONFIG_SMP
-DECLARE_PER_CPU(struct mm_struct *, current_mm);
-#endif
-
-void __init_new_context(struct task_struct *tsk, struct mm_struct *mm);
-void __new_context(struct mm_struct *mm);
-
-static inline void check_context(struct mm_struct *mm)
+#ifdef CONFIG_ARM_ERRATA_798181
+void a15_erratum_get_cpumask(int this_cpu, struct mm_struct *mm,
+			     cpumask_t *mask);
+#else  /* !CONFIG_ARM_ERRATA_798181 */
+static inline void a15_erratum_get_cpumask(int this_cpu, struct mm_struct *mm,
+					   cpumask_t *mask)
 {
-	/*
-	 * This code is executed with interrupts enabled. Therefore,
-	 * mm->context.id cannot be updated to the latest ASID version
-	 * on a different CPU (and condition below not triggered)
-	 * without first getting an IPI to reset the context. The
-	 * alternative is to take a read_lock on mm->context.id_lock
-	 * (after changing its type to rwlock_t).
-	 */
-	if (unlikely((mm->context.id ^ cpu_last_asid) >> ASID_BITS))
-		__new_context(mm);
-
-	if (unlikely(mm->context.kvm_seq != init_mm.context.kvm_seq))
-		__check_kvm_seq(mm);
 }
+#endif /* CONFIG_ARM_ERRATA_798181 */
 
-#define init_new_context(tsk,mm)	(__init_new_context(tsk,mm),0)
+#else	/* !CONFIG_CPU_HAS_ASID */
 
-#else
-
-static inline void check_context(struct mm_struct *mm)
+static inline void check_and_switch_context(struct mm_struct *mm,
+					    struct task_struct *tsk)
 {
 #ifdef CONFIG_MMU
 	if (unlikely(mm->context.kvm_seq != init_mm.context.kvm_seq))
 		__check_kvm_seq(mm);
+	cpu_switch_mm(mm->pgd, mm);
 #endif
 }
 
 #define init_new_context(tsk,mm)	0
 
-#endif
+#define finish_arch_post_lock_switch()	do { } while (0)
+
+#endif	/* CONFIG_CPU_HAS_ASID */
 
 #define destroy_context(mm)		do { } while(0)
+#define activate_mm(prev,next)		switch_mm(prev, next, NULL)
 
 /*
  * This is called when "tsk" is about to enter lazy TLB mode.
@@ -109,24 +78,10 @@ enter_lazy_tlb(struct mm_struct *mm, struct task_struct *tsk)
  * calling the CPU specific function when the mm hasn't
  * actually changed.
  */
-#ifdef	CONFIG_TIMA_RKP
-extern unsigned long tima_switch_count;
-extern spinlock_t tima_switch_count_lock;
-#endif
 static inline void
 switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	  struct task_struct *tsk)
 {
-	
-#ifdef	CONFIG_TIMA_RKP
-	unsigned long flags;
-#endif
-#ifdef CONFIG_TIMA_RKP_DEBUG
-	int i;
-	unsigned long pmd;
-	unsigned long va;
-	int ret;
-#endif 
 #ifdef CONFIG_MMU
 	unsigned int cpu = smp_processor_id();
 
@@ -137,50 +92,7 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 		__flush_icache_all();
 #endif
 	if (!cpumask_test_and_set_cpu(cpu, mm_cpumask(next)) || prev != next) {
-#ifdef CONFIG_SMP
-		struct mm_struct **crt_mm = &per_cpu(current_mm, cpu);
-		*crt_mm = next;
-#endif
-		check_context(next);
-		cpu_switch_mm(next->pgd, next);
-#ifdef	CONFIG_TIMA_RKP
-		spin_lock_irqsave(&tima_switch_count_lock, flags);
-		tima_switch_count++;
-		spin_unlock_irqrestore(&tima_switch_count_lock, flags);
-#endif
-	#ifdef CONFIG_TIMA_RKP_DEBUG
-		/* 
-		 * if debug infrastructure is enabled,
-		 * check is L1 and L2 page tables of a 
-		 * process are protected (readonly) at 
-		 * each context switch
-		 */
-		#ifdef CONFIG_TIMA_RKP_L1_TABLES
-		for (i=0; i<4; i++) {
-			if (tima_debug_page_protection(((unsigned long)next->pgd + i*0x1000), 1, 1) == 0) {
-				tima_debug_signal_failure(0x3f80f221, 1);
-				//tima_send_cmd((unsigned long)next->pgd, 0x3f80e221);
-				//printk(KERN_ERR"TIMA: New L1 PGT not protected\n");
-			}
-		}
-		#endif
-		#ifdef CONFIG_TIMA_RKP_L2_TABLES
-		for (i=0; i<0x1000; i++) {
-			pmd = *(unsigned long *)((unsigned long)next->pgd + i*4);
-			if ((pmd & 0x3) != 0x1)
-				continue;
-			if((0x07e00000 <= pmd) && (pmd <= 0x07f00000)) /* skip sect to pgt region */
-			       continue;	
-			va = (unsigned long)phys_to_virt(pmd & (~0x3ff)) ;
-			if ((ret = tima_debug_page_protection(va, 0x101, 1)) == 0) {
-				tima_debug_signal_failure(0x3f80f221, 101);
-				//printk(KERN_ERR"TIMA: New L2 PGT not RO va=%lx pa=%lx tima_debug_infra_cnt=%lx ret=%d\n", va, pmd, tima_debug_infra_cnt, ret);
-			} else if (ret == 1) {
-				tima_debug_infra_cnt++;
-			}
-		}
-		#endif /* CONFIG_TIMA_RKP_L2_TABLES */
-	#endif /* CONFIG_TIMA_RKP_DEBUG */
+		check_and_switch_context(next, tsk);
 		if (cache_is_vivt())
 			cpumask_clear_cpu(cpu, mm_cpumask(prev));
 	}
@@ -188,6 +100,5 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 }
 
 #define deactivate_mm(tsk,mm)	do { } while (0)
-#define activate_mm(prev,next)	switch_mm(prev, next, NULL)
 
 #endif
