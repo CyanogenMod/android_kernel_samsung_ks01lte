@@ -20,7 +20,8 @@
 #endif
 // Implementation KTD2692 flashIC
 #if defined(CONFIG_MACH_VIENNA_LTE) || defined(CONFIG_MACH_PICASSO)\
-	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE)
+	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE)\
+	|| defined(CONFIG_MACH_LT03_LTE)
 
 #include <linux/gpio.h>
 #include <linux/delay.h>
@@ -51,7 +52,8 @@ extern int led_torch_en;
 #endif
 // Implementation KTD2692 flashIC
 #if defined(CONFIG_MACH_VIENNA_LTE) || defined(CONFIG_MACH_PICASSO) \
-	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE)
+	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE) \
+	|| defined(CONFIG_MACH_LT03_LTE)
 extern unsigned int system_rev;
 extern int led_flash_en;
 extern int led_torch_en;
@@ -133,7 +135,8 @@ static ssize_t ktd2692_flash(struct device *dev,
 #if defined(CONFIG_MACH_LT03EUR) || defined(CONFIG_MACH_LT03SKT)\
 	|| defined(CONFIG_MACH_LT03KTT)	|| defined(CONFIG_MACH_LT03LGT)\
 		|| defined(CONFIG_MACH_PICASSO)|| defined(CONFIG_MACH_MONDRIAN)\
-		|| defined(CONFIG_MACH_VIENNA_LTE) || defined(CONFIG_MACH_V2_LTE)
+		|| defined(CONFIG_MACH_VIENNA_LTE) || defined(CONFIG_MACH_V2_LTE)\
+		|| defined(CONFIG_MACH_LT03_LTE)
 		if (state == 0) {
 			KTD2692_set_flash(MODE_CONTROL | 0x00);
 			gpio_set_value(led_torch_en, 0);
@@ -200,7 +203,8 @@ static int32_t msm_led_trigger_config(struct msm_led_flash_ctrl_t *fctrl,
 	struct msm_camera_led_cfg_t *cfg = (struct msm_camera_led_cfg_t *)data;
 	CDBG("called led_state %d\n", cfg->cfgtype);
 #if defined(CONFIG_MACH_VIENNA_LTE) || defined(CONFIG_MACH_PICASSO)\
-	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE)
+	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE)\
+	|| defined(CONFIG_MACH_LT03_LTE)
 	if (is_torch_enabled == true) {
 		return rc;
 	}
@@ -253,12 +257,13 @@ static int32_t msm_led_trigger_config(struct msm_led_flash_ctrl_t *fctrl,
 	}
 // Implementation KTD2692 flashIC
 #elif defined(CONFIG_MACH_VIENNA_LTE) || defined(CONFIG_MACH_PICASSO)\
-	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE)
+	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE)\
+	|| defined(CONFIG_MACH_LT03_LTE)
 	switch (cfg->cfgtype) {
 #if defined(CONFIG_MACH_LT03EUR) || defined(CONFIG_MACH_LT03SKT)\
 	|| defined(CONFIG_MACH_LT03KTT)	|| defined(CONFIG_MACH_LT03LGT)\
 	    || defined(CONFIG_MACH_PICASSO)|| defined(CONFIG_MACH_MONDRIAN)\
-	    || defined(CONFIG_MACH_V2_LTE)
+	    || defined(CONFIG_MACH_V2_LTE)|| defined(CONFIG_MACH_LT03_LTE)
 	case MSM_CAMERA_LED_OFF:
 		KTD2692_set_flash(MODE_CONTROL | 0x00);
 		break;
@@ -447,7 +452,8 @@ static int32_t msm_led_trigger_probe(struct platform_device *pdev)
 	rc = msm_led_flash_create_v4lsubdev(pdev, &fctrl);
 // Implementation KTD2692 flashIC
 #if defined(CONFIG_MACH_VIENNA_LTE) || defined(CONFIG_MACH_PICASSO)\
-	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE)
+	|| defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_V2_LTE)\
+	|| defined(CONFIG_MACH_LT03_LTE)
 	if (!IS_ERR(camera_class)) {
 		flash_dev = device_create(camera_class, NULL, 0, NULL, "flash");
 		if (flash_dev < 0)

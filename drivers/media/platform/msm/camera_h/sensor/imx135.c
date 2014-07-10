@@ -98,8 +98,12 @@ static ssize_t front_camera_type_show(struct device *dev,
 static ssize_t back_camera_firmware_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
-
+#if defined(CONFIG_MACH_KS01SKT) || defined(CONFIG_MACH_KS01KTT)\
+	|| defined(CONFIG_MACH_KS01LGT)
+	char cam_fw[] = "O13Q0SAGC01 O13Q0SAGC01\n";/*Camsys_module,13mega_pixel,Qualcomm_isp,Sony_sensor*/
+#else
 	char cam_fw[] = "D13QSGF01OA D13QSGF01OA\n";/*Camsys_module,13mega_pixel,Qualcomm_isp,Sony_sensor*/
+#endif
 
 	return snprintf(buf, sizeof(cam_fw), "%s", cam_fw);
 
