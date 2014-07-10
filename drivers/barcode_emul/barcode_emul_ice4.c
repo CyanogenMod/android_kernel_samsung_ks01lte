@@ -843,14 +843,16 @@ static void ir_remocon_work(struct barcode_emul_data *ir_data, int count)
 	emission_time = \
 		(1000 * (data->ir_sum - end_data) / (data->ir_freq)) + 10;
 	sleep_timing = emission_time - 130;
-	if (sleep_timing > 0)
+	if (sleep_timing > 0 && sleep_timing < 500)
 		msleep(sleep_timing);
 /*
 	printk(KERN_INFO "%s: sleep_timing = %d\n", __func__, sleep_timing);
 */
 	emission_time = \
 		(1000 * (data->ir_sum) / (data->ir_freq)) + 50;
+	
 	if (emission_time > 0)
+		if (emission_time > 300) emission_time = 300; // Workaround two byte patterns.
 		msleep(emission_time);
 		pr_barcode("%s: emission_time = %d\n",
 					__func__, emission_time);
@@ -910,7 +912,8 @@ static ssize_t remocon_store(struct device *dev, struct device_attribute *attr,
 								= _data & 0xFF;
 				data->count += 3;
 			} else {
-				data->ir_sum += _data;
+				data->ir_sum += _data >> 8;
+				data->ir_sum += _data & 0xFF;
 				count = data->count;
 				data->i2c_block_transfer.data[count]
 								= _data >> 8;
