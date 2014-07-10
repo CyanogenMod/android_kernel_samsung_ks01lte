@@ -76,6 +76,9 @@
 #define READ_LENGTH	8
 #endif
 
+#define TIME_LIMIT_MSEC 300
+#define tm(time) (u32)ktime_to_us(time)
+
 struct barcode_emul_data {
 	struct i2c_client		*client;
 	struct workqueue_struct		*firmware_dl;
@@ -764,10 +767,12 @@ static void ir_remocon_work(struct barcode_emul_data *ir_data, int count)
 
 	int buf_size = count+2;
 	int ret;
-	int sleep_timing;
-	int end_data;
+//	int sleep_timing;
+//	int end_data;
+	int actual_time;
 	int emission_time;
 	int ack_pin_onoff;
+	ktime_t t1,t2;
 
 	if (count_number >= 100)
 		count_number = 0;
@@ -836,24 +841,36 @@ static void ir_remocon_work(struct barcode_emul_data *ir_data, int count)
 	}
 */
 	data->count = 2;
-
+#if 0
 	end_data = data->i2c_block_transfer.data[count-2] << 8
 		| data->i2c_block_transfer.data[count-1];
 
 	emission_time = \
 		(1000 * (data->ir_sum - end_data) / (data->ir_freq)) + 10;
 	sleep_timing = emission_time - 130;
-	if (sleep_timing > 0 && sleep_timing < 500)
+	if (sleep_timing > 0)
 		msleep(sleep_timing);
+#endif
 /*
 	printk(KERN_INFO "%s: sleep_timing = %d\n", __func__, sleep_timing);
 */
 	emission_time = \
-		(1000 * (data->ir_sum) / (data->ir_freq)) + 50;
-	
+		(1000 * (data->ir_sum) / (data->ir_freq));
+/*	
 	if (emission_time > 0)
-		if (emission_time > 300) emission_time = 300; // Workaround two byte patterns.
-		msleep(emission_time);
+		msleep(emission_time);*/
+	
+	actual_time = 0;
+	t1 = ktime_get();
+	while((gpio_get_value(g_pdata->irda_irq) == 0) && (actual_time <= emission_time)) {
+		int diff;
+		t2 = ktime_get();
+		diff = (tm(t2) - tm(t1))/1000;
+		msleep(10);
+		actual_time += 10;
+		if(diff > TIME_LIMIT_MSEC)
+			break;
+	}
 		pr_barcode("%s: emission_time = %d\n",
 					__func__, emission_time);
 
@@ -912,8 +929,7 @@ static ssize_t remocon_store(struct device *dev, struct device_attribute *attr,
 								= _data & 0xFF;
 				data->count += 3;
 			} else {
-				data->ir_sum += _data >> 8;
-				data->ir_sum += _data & 0xFF;
+				data->ir_sum += _data;
 				count = data->count;
 				data->i2c_block_transfer.data[count]
 								= _data >> 8;
