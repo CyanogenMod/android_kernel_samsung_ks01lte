@@ -1021,9 +1021,7 @@ static inline int start_streaming(struct msm_vidc_inst *inst)
 		goto fail_start;
 	}
 
-	mutex_lock(&inst->core->sync_lock);
 	msm_comm_scale_clocks_and_bus(inst);
-	mutex_unlock(&inst->core->sync_lock);
 
 	rc = msm_comm_try_state(inst, MSM_VIDC_START_DONE);
 	if (rc) {
@@ -1100,9 +1098,7 @@ static int msm_venc_stop_streaming(struct vb2_queue *q)
 		break;
 	}
 
-	mutex_lock(&inst->core->sync_lock);
 	msm_comm_scale_clocks_and_bus(inst);
-	mutex_unlock(&inst->core->sync_lock);
 
 	if (rc)
 		dprintk(VIDC_ERR,
@@ -1238,7 +1234,7 @@ static inline int venc_v4l2_to_hal(int id, int value)
 		default:
 			goto unknown_value;
 		}
-		/* H263 */
+	/* H263 */
 	case V4L2_CID_MPEG_VIDC_VIDEO_H263_PROFILE:
 		switch (value) {
 		case V4L2_MPEG_VIDC_VIDEO_H263_PROFILE_BASELINE:
@@ -1328,6 +1324,17 @@ static inline int venc_v4l2_to_hal(int id, int value)
 			return HAL_ROTATE_180;
 		case V4L2_CID_MPEG_VIDC_VIDEO_ROTATION_270:
 			return HAL_ROTATE_270;
+		default:
+			goto unknown_value;
+		}
+	case V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_MODE:
+		switch (value) {
+		case V4L2_MPEG_VIDEO_H264_LOOP_FILTER_MODE_DISABLED:
+			return HAL_H264_DB_MODE_DISABLE;
+		case V4L2_MPEG_VIDEO_H264_LOOP_FILTER_MODE_ENABLED:
+			return HAL_H264_DB_MODE_ALL_BOUNDARY;
+		case L_MODE:
+			return HAL_H264_DB_MODE_SKIP_SLICE_BOUNDARY;
 		default:
 			goto unknown_value;
 		}
@@ -1939,23 +1946,58 @@ static int try_set_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
 		break;
 	}
 	case V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_MODE:
-		property_id =
-			HAL_PARAM_VENC_H264_DEBLOCK_CONTROL;
-		h264_db_control.mode = ctrl->val;
+	{
+		struct v4l2_ctrl *alpha, *beta;
+
+		alpha = TRY_GET_CTRL(
+				V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_ALPHA);
+		beta = TRY_GET_CTRL(
+				V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_BETA);
+
+		property_id = HAL_PARAM_VENC_H264_DEBLOCK_CONTROL;
+		h264_db_control.slice_alpha_offset = alpha->val;
+		h264_db_control.slice_beta_offset = beta->val;
+		h264_db_control.mode = venc_v4l2_to_hal(
+				V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_MODE,
+				ctrl->val);
 		pdata = &h264_db_control;
 		break;
+	}
 	case V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_ALPHA:
-		property_id =
-			HAL_PARAM_VENC_H264_DEBLOCK_CONTROL;
+	{
+		struct v4l2_ctrl *mode, *beta;
+
+		mode = TRY_GET_CTRL(
+				V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_MODE);
+		beta = TRY_GET_CTRL(
+				V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_BETA);
+
+		property_id = HAL_PARAM_VENC_H264_DEBLOCK_CONTROL;
 		h264_db_control.slice_alpha_offset = ctrl->val;
+		h264_db_control.slice_beta_offset = beta->val;
+		h264_db_control.mode = venc_v4l2_to_hal(
+				V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_MODE,
+				mode->val);
 		pdata = &h264_db_control;
 		break;
+	}
 	case V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_BETA:
-		property_id =
-			HAL_PARAM_VENC_H264_DEBLOCK_CONTROL;
+	{
+		struct v4l2_ctrl *mode, *alpha;
+
+		mode = TRY_GET_CTRL(
+				V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_MODE);
+		alpha = TRY_GET_CTRL(
+				V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_ALPHA);
+		property_id = HAL_PARAM_VENC_H264_DEBLOCK_CONTROL;
+		h264_db_control.slice_alpha_offset = alpha->val;
 		h264_db_control.slice_beta_offset = ctrl->val;
+		h264_db_control.mode = venc_v4l2_to_hal(
+				V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_MODE,
+				mode->val);
 		pdata = &h264_db_control;
 		break;
+	}
 	case V4L2_CID_MPEG_VIDEO_HEADER_MODE:
 		property_id =
 			HAL_PARAM_VENC_SYNC_FRAME_SEQUENCE_HEADER;
@@ -2454,9 +2496,8 @@ int msm_venc_s_parm(struct msm_vidc_inst *inst, struct v4l2_streamparm *a)
 			dprintk(VIDC_WARN,
 				"Failed to set frame rate %d\n", rc);
 		}
-		mutex_lock(&inst->core->sync_lock);
+
 		msm_comm_scale_clocks_and_bus(inst);
-		mutex_unlock(&inst->core->sync_lock);
 	}
 exit:
 	return rc;
@@ -2643,8 +2684,16 @@ int msm_venc_g_fmt(struct msm_vidc_inst *inst, struct v4l2_format *f)
 				buff_req_buffer->buffer_size : 0;
 		}
 		for (i = 0; i < fmt->num_planes; ++i) {
-			inst->bufq[CAPTURE_PORT].vb2_bufq.plane_sizes[i] =
-			f->fmt.pix_mp.plane_fmt[i].sizeimage;
+			if (f->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
+				inst->bufq[OUTPUT_PORT].vb2_bufq.
+				plane_sizes[i] =
+				f->fmt.pix_mp.plane_fmt[i].sizeimage;
+			} else if (f->type ==
+				V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+				inst->bufq[CAPTURE_PORT].vb2_bufq.
+				plane_sizes[i] =
+				f->fmt.pix_mp.plane_fmt[i].sizeimage;
+			}
 		}
 	} else {
 		dprintk(VIDC_ERR,
@@ -2674,7 +2723,7 @@ int msm_venc_reqbufs(struct msm_vidc_inst *inst, struct v4l2_requestbuffers *b)
 	rc = vb2_reqbufs(&q->vb2_bufq, b);
 	mutex_unlock(&q->lock);
 	if (rc)
-		dprintk(VIDC_ERR, "Failed to get reqbufs, %d\n", rc);
+		dprintk(VIDC_DBG, "Failed to get reqbufs, %d\n", rc);
 	return rc;
 }
 
