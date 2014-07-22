@@ -270,6 +270,14 @@ static void bluesleep_sleep_work(struct work_struct *work)
 		}
 
 		if (msm_hs_tx_empty(bsi->uport)) {
+			if (test_bit(BT_TXDATA, &flags)) {
+				BT_DBG("TXDATA remained. Wait until timer expires.");
+
+				mod_timer(&tx_timer, jiffies + TX_TIMER_INTERVAL * HZ);
+				mutex_unlock(&bluesleep_mutex);
+				return;
+			}
+
 			BT_DBG("going to sleep...");
 
 			set_bit(BT_ASLEEP, &flags);
