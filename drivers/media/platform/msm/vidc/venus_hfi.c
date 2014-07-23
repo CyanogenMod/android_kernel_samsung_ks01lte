@@ -967,11 +967,14 @@ static int __alloc_ocmem(void *dev, unsigned long size, int locked)
 	struct ocmem_buf *ocmem_buffer;
 	struct venus_hfi_device *device = dev;
 
+	if (device && !device->res->ocmem_size)
+		return rc;
 	if (!device || !size) {
 		dprintk(VIDC_ERR, "%s Invalid param, core: %p, size: %lu\n",
 			__func__, device, size);
 		return -EINVAL;
 	}
+
 	ocmem_buffer = device->resources.ocmem.buf;
 	if (!ocmem_buffer ||
 		ocmem_buffer->len < size) {
@@ -1018,6 +1021,8 @@ static int venus_hfi_free_ocmem(void *dev)
 			__func__, device);
 		return -EINVAL;
 	}
+	if (!device->res->ocmem_size)
+		return rc;
 
 	if (device->resources.ocmem.buf) {
 		rc = ocmem_free(OCMEM_VIDEO, device->resources.ocmem.buf);
@@ -1201,7 +1206,7 @@ static inline int venus_hfi_power_off(struct venus_hfi_device *device)
 		dprintk(VIDC_ERR, "Failed to disable GDSC, %d", rc);
 		return rc;
 	}
-	if (device->res->has_ocmem)
+	if (device->res->ocmem_size)
 		venus_hfi_unvote_buses(device, DDR_MEM|OCMEM_MEM);
 	else
 		venus_hfi_unvote_buses(device, DDR_MEM);
@@ -1221,7 +1226,7 @@ static inline int venus_hfi_power_on(struct venus_hfi_device *device)
 		return -EINVAL;
 	}
 
-	if (device->res->has_ocmem)
+	if (device->res->ocmem_size)
 		rc = venus_hfi_scale_buses(device, DDR_MEM|OCMEM_MEM);
 	else
 		rc = venus_hfi_scale_buses(device, DDR_MEM);
@@ -1312,7 +1317,7 @@ err_enable_clk:
 err_iommu_attach:
 	regulator_disable(device->gdsc);
 err_enable_gdsc:
-	if (device->res->has_ocmem)
+	if (device->res->ocmem_size)
 		venus_hfi_unvote_buses(device, DDR_MEM|OCMEM_MEM);
 	else
 		venus_hfi_unvote_buses(device, DDR_MEM);
@@ -1725,19 +1730,22 @@ static int venus_hfi_interface_queues_init(struct venus_hfi_device *dev)
 				dev->iface_q_table.align_virtual_addr, i);
 		venus_hfi_set_queue_hdr_defaults(iface_q->q_hdr);
 	}
-
-	rc = venus_hfi_alloc(dev, (void *) mem_addr,
-			QDSS_SIZE, 1, 0,
-			HAL_BUFFER_INTERNAL_CMD_QUEUE);
-	if (rc) {
-		dprintk(VIDC_WARN,
-			"qdss_alloc_fail: QDSS messages logging will not work");
-		dev->qdss.align_device_addr = NULL;
-	} else {
-		dev->qdss.align_device_addr = mem_addr->align_device_addr;
-		dev->qdss.align_virtual_addr = mem_addr->align_virtual_addr;
-		dev->qdss.mem_size = QDSS_SIZE;
-		dev->qdss.mem_data = mem_addr->mem_data;
+	if (msm_fw_debug_mode & HFI_DEBUG_MODE_QDSS) {
+		rc = venus_hfi_alloc(dev, (void *) mem_addr,
+				QDSS_SIZE, 1, 0,
+				HAL_BUFFER_INTERNAL_CMD_QUEUE);
+		if (rc) {
+			dprintk(VIDC_WARN,
+				"qdss_alloc_fail: QDSS messages logging will not work\n");
+			dev->qdss.align_device_addr = NULL;
+		} else {
+			dev->qdss.align_device_addr =
+				mem_addr->align_device_addr;
+			dev->qdss.align_virtual_addr =
+				mem_addr->align_virtual_addr;
+			dev->qdss.mem_size = QDSS_SIZE;
+			dev->qdss.mem_data = mem_addr->mem_data;
+		}
 	}
 	rc = venus_hfi_alloc(dev, (void *) mem_addr,
 			SFR_SIZE, 1, 0,
@@ -1793,26 +1801,29 @@ static int venus_hfi_interface_queues_init(struct venus_hfi_device *dev)
 		VIDC_CPU_CS_SCIACMDARG1, 0x01,
 		dev->iface_q_table.align_virtual_addr);
 
-	qdss = (struct hfi_mem_map_table *) dev->qdss.align_virtual_addr;
-	qdss->mem_map_num_entries = num_entries;
-	qdss->mem_map_table_base_addr =
-		(u32 *)	((u32)dev->qdss.align_device_addr +
-		sizeof(struct hfi_mem_map_table));
-	mem_map = (struct hfi_mem_map *)(qdss + 1);
-	msm_smem_get_domain_partition(dev->hal_client, 0,
-		HAL_BUFFER_INTERNAL_CMD_QUEUE, &domain, &partition);
-	rc = venus_hfi_get_qdss_iommu_virtual_addr(mem_map, domain, partition);
-	if (rc) {
-		dprintk(VIDC_ERR,
-			"IOMMU mapping failed, Freeing qdss memdata");
-		venus_hfi_free(dev, dev->qdss.mem_data);
-		dev->qdss.mem_data = NULL;
+	if (dev->qdss.mem_data) {
+		qdss = (struct hfi_mem_map_table *)
+			dev->qdss.align_virtual_addr;
+		qdss->mem_map_num_entries = num_entries;
+		qdss->mem_map_table_base_addr =
+			(u32 *)	((u32)dev->qdss.align_device_addr +
+			sizeof(struct hfi_mem_map_table));
+		mem_map = (struct hfi_mem_map *)(qdss + 1);
+		msm_smem_get_domain_partition(dev->hal_client, 0,
+			HAL_BUFFER_INTERNAL_CMD_QUEUE, &domain, &partition);
+		rc = venus_hfi_get_qdss_iommu_virtual_addr(mem_map,
+			domain, partition);
+		if (rc) {
+			dprintk(VIDC_ERR,
+				"IOMMU mapping failed, Freeing qdss memdata\n");
+			venus_hfi_free(dev, dev->qdss.mem_data);
+			dev->qdss.mem_data = NULL;
+		}
+		if (!IS_ERR_OR_NULL(dev->qdss.align_device_addr))
+			venus_hfi_write_register(dev,
+				VIDC_MMAP_ADDR,
+				(u32) dev->qdss.align_device_addr, 0);
 	}
-	if (!IS_ERR_OR_NULL(dev->qdss.align_device_addr))
-		venus_hfi_write_register(dev,
-			VIDC_MMAP_ADDR,
-			(u32) dev->qdss.align_device_addr, 0);
-
 	vsfr = (struct hfi_sfr_struct *) dev->sfr.align_virtual_addr;
 	vsfr->bufSize = SFR_SIZE;
 	if (!IS_ERR_OR_NULL(dev->sfr.align_device_addr))
@@ -2752,6 +2763,8 @@ static int venus_hfi_unset_free_ocmem(struct venus_hfi_device *device)
 		dprintk(VIDC_ERR, "Invalid param: %p\n", device);
 		return -EINVAL;
 	}
+	if (!device->res->ocmem_size)
+		return rc;
 
 	init_completion(&release_resources_done);
 	rc = venus_hfi_unset_ocmem(device);
@@ -3059,7 +3072,7 @@ static inline int venus_hfi_init_clocks(struct msm_vidc_platform_resources *res,
 	strlcpy(clock[VCODEC_AXI_CLK].name, "bus_clk",
 		sizeof(clock[VCODEC_AXI_CLK].name));
 
-	if (res->has_ocmem) {
+	if (res->ocmem_size) {
 		strlcpy(clock[VCODEC_OCMEM_CLK].name, "mem_clk",
 			sizeof(clock[VCODEC_OCMEM_CLK].name));
 	}
@@ -3082,7 +3095,7 @@ static inline int venus_hfi_init_clocks(struct msm_vidc_platform_resources *res,
 	}
 
 	for (i = 0; i < VCODEC_MAX_CLKS; i++) {
-		if (i == VCODEC_OCMEM_CLK && !res->has_ocmem)
+		if (i == VCODEC_OCMEM_CLK && !res->ocmem_size)
 			continue;
 		cl = &device->resources.clock[i];
 		if (!cl->clk) {
@@ -3098,7 +3111,7 @@ static inline int venus_hfi_init_clocks(struct msm_vidc_platform_resources *res,
 
 	if (i < VCODEC_MAX_CLKS) {
 		for (--i; i >= 0; i--) {
-			if (i == VCODEC_OCMEM_CLK && !res->has_ocmem)
+			if (i == VCODEC_OCMEM_CLK && !res->ocmem_size)
 				continue;
 			cl = &device->resources.clock[i];
 			clk_put(cl->clk);
@@ -3117,7 +3130,7 @@ static inline void venus_hfi_deinit_clocks(struct venus_hfi_device *device)
 	}
 
 	for (i = 0; i < VCODEC_MAX_CLKS; i++) {
-		if (i == VCODEC_OCMEM_CLK && !device->res->has_ocmem)
+		if (i == VCODEC_OCMEM_CLK && !device->res->ocmem_size)
 			continue;
 		clk_put(device->resources.clock[i].clk);
 	}
@@ -3136,7 +3149,7 @@ static inline void venus_hfi_disable_unprepare_clks(
 	WARN_ON(!mutex_is_locked(&device->clk_pwr_lock));
 	if (device->clk_state == ENABLED_PREPARED) {
 		for (i = VCODEC_CLK; i < VCODEC_MAX_CLKS; i++) {
-			if (i == VCODEC_OCMEM_CLK && !device->res->has_ocmem)
+			if (i == VCODEC_OCMEM_CLK && !device->res->ocmem_size)
 				continue;
 			cl = &device->resources.clock[i];
 			usleep(100);
@@ -3151,7 +3164,7 @@ static inline void venus_hfi_disable_unprepare_clks(
 		}
 	}
 	for (i = VCODEC_CLK; i < VCODEC_MAX_CLKS; i++) {
-		if (i == VCODEC_OCMEM_CLK && !device->res->has_ocmem)
+		if (i == VCODEC_OCMEM_CLK && !device->res->ocmem_size)
 			continue;
 		cl = &device->resources.clock[i];
 		clk_unprepare(cl->clk);
@@ -3176,7 +3189,7 @@ static inline int venus_hfi_prepare_enable_clks(struct venus_hfi_device *device)
 		return 0;
 	}
 	for (i = VCODEC_CLK; i < VCODEC_MAX_CLKS; i++) {
-		if (i == VCODEC_OCMEM_CLK && !device->res->has_ocmem)
+		if (i == VCODEC_OCMEM_CLK && !device->res->ocmem_size)
 			continue;
 		cl = &device->resources.clock[i];
 		rc = clk_prepare_enable(cl->clk);
@@ -3320,7 +3333,7 @@ static int venus_hfi_init_bus(struct venus_hfi_device *device)
 		goto err_init_bus;
 	}
 
-	if (device->res->has_ocmem) {
+	if (device->res->ocmem_size) {
 		bus_info->ocmem_handle[MSM_VIDC_ENCODER] =
 			msm_bus_scale_register_client(
 				&device->res->bus_pdata[BUS_IDX_ENC_OCMEM]);
@@ -3436,7 +3449,7 @@ static int venus_hfi_init_resources(struct venus_hfi_device *device,
 		goto err_register_iommu_domain;
 	}
 
-	if (res->has_ocmem)
+	if (res->ocmem_size)
 		venus_hfi_ocmem_init(device);
 
 	return rc;
@@ -3452,7 +3465,7 @@ err_init_clocks:
 
 static void venus_hfi_deinit_resources(struct venus_hfi_device *device)
 {
-	if (device->res->has_ocmem)
+	if (device->res->ocmem_size)
 		venus_hfi_deinit_ocmem(device);
 	venus_hfi_deregister_iommu_domains(device);
 	venus_hfi_deinit_bus(device);

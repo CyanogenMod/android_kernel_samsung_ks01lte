@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -132,6 +132,10 @@ static int audio_output_latency_dbgfs_open(struct inode *inode,
 static ssize_t audio_output_latency_dbgfs_read(struct file *file,
 				char __user *buf, size_t count, loff_t *ppos)
 {
+	if (out_buffer == NULL) {
+		pr_err("%s: out_buffer is null\n", __func__);
+		return 0;
+	}
 	snprintf(out_buffer, OUT_BUFFER_SIZE, "%ld,%ld,%ld,%ld,%ld,%ld,",\
 		out_cold_tv.tv_sec, out_cold_tv.tv_usec, out_warm_tv.tv_sec,\
 		out_warm_tv.tv_usec, out_cont_tv.tv_sec, out_cont_tv.tv_usec);
@@ -177,6 +181,10 @@ static int audio_input_latency_dbgfs_open(struct inode *inode,
 static ssize_t audio_input_latency_dbgfs_read(struct file *file,
 				char __user *buf, size_t count, loff_t *ppos)
 {
+	if (in_buffer == NULL) {
+		pr_err("%s: in_buffer is null\n", __func__);
+		return 0;
+	}
 	snprintf(in_buffer, IN_BUFFER_SIZE, "%ld,%ld,",\
 				in_cont_tv.tv_sec, in_cont_tv.tv_usec);
 	return  simple_read_from_buffer(buf, IN_BUFFER_SIZE, ppos,
@@ -292,17 +300,38 @@ static void config_debug_fs_write(struct audio_buffer *ab)
 static void config_debug_fs_init(void)
 {
 	out_buffer = kmalloc(OUT_BUFFER_SIZE, GFP_KERNEL);
+	if (out_buffer == NULL) {
+		pr_err("%s: kmalloc() for out_buffer failed\n", __func__);
+		goto outbuf_fail;
+	}
+	in_buffer = kmalloc(IN_BUFFER_SIZE, GFP_KERNEL);
+	if (in_buffer == NULL) {
+		pr_err("%s: kmalloc() for in_buffer failed\n", __func__);
+		goto inbuf_fail;
+	}
 	out_dentry = debugfs_create_file("audio_out_latency_measurement_node",\
 				S_IRUGO | S_IWUSR | S_IWGRP,\
 				NULL, NULL, &audio_output_latency_debug_fops);
-	if (IS_ERR(out_dentry))
-		pr_err("debugfs_create_file failed\n");
-	in_buffer = kmalloc(IN_BUFFER_SIZE, GFP_KERNEL);
+	if (IS_ERR(out_dentry)) {
+		pr_err("%s: debugfs_create_file failed\n", __func__);
+		goto file_fail;
+	}
 	in_dentry = debugfs_create_file("audio_in_latency_measurement_node",\
 				S_IRUGO | S_IWUSR | S_IWGRP,\
 				NULL, NULL, &audio_input_latency_debug_fops);
-	if (IS_ERR(in_dentry))
-		pr_err("debugfs_create_file failed\n");
+	if (IS_ERR(in_dentry)) {
+		pr_err("%s: debugfs_create_file failed\n", __func__);
+		goto file_fail;
+	}
+	return;
+file_fail:
+	kfree(in_buffer);
+inbuf_fail:
+	kfree(out_buffer);
+outbuf_fail:
+	in_buffer = NULL;
+	out_buffer = NULL;
+	return;
 }
 #else
 static void config_debug_fs_write(struct audio_buffer *ab)
@@ -2420,21 +2449,21 @@ static int q6asm_map_channels(u8 *channel_mapping, uint32_t channels)
 		lchannel_mapping[3] = PCM_CHANNEL_LB;
 		lchannel_mapping[4] = PCM_CHANNEL_RB;
 	} else if (channels == 6) {
-		lchannel_mapping[0] = PCM_CHANNEL_FC;
-		lchannel_mapping[1] = PCM_CHANNEL_FL;
-		lchannel_mapping[2] = PCM_CHANNEL_FR;
-		lchannel_mapping[3] = PCM_CHANNEL_LB;
-		lchannel_mapping[4] = PCM_CHANNEL_RB;
-		lchannel_mapping[5] = PCM_CHANNEL_LFE;
+		lchannel_mapping[0] = PCM_CHANNEL_FL;
+		lchannel_mapping[1] = PCM_CHANNEL_FR;
+		lchannel_mapping[2] = PCM_CHANNEL_FC;
+		lchannel_mapping[3] = PCM_CHANNEL_LFE;
+		lchannel_mapping[4] = PCM_CHANNEL_LS;
+		lchannel_mapping[5] = PCM_CHANNEL_RS;
 	} else if (channels == 8) {
 		lchannel_mapping[0] = PCM_CHANNEL_FL;
 		lchannel_mapping[1] = PCM_CHANNEL_FR;
-		lchannel_mapping[2] = PCM_CHANNEL_LFE;
-		lchannel_mapping[3] = PCM_CHANNEL_FC;
+		lchannel_mapping[2] = PCM_CHANNEL_FC;
+		lchannel_mapping[3] = PCM_CHANNEL_LFE;
 		lchannel_mapping[4] = PCM_CHANNEL_LB;
 		lchannel_mapping[5] = PCM_CHANNEL_RB;
-		lchannel_mapping[6] = PCM_CHANNEL_RLC;
-		lchannel_mapping[7] = PCM_CHANNEL_RRC;
+		lchannel_mapping[6] = PCM_CHANNEL_FLC;
+		lchannel_mapping[7] = PCM_CHANNEL_FRC;
 	} else {
 		pr_err("%s: ERROR.unsupported num_ch = %u\n",
 		 __func__, channels);
