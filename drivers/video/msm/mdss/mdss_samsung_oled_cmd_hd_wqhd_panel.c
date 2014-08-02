@@ -54,6 +54,8 @@ static struct dsi_buf dsi_panel_tx_buf;
 static struct dsi_buf dsi_panel_rx_buf;
 
 static struct dsi_cmd display_on_seq;
+static struct dsi_cmd hsync_on_seq;
+
 static struct dsi_cmd display_off_seq;
 static struct dsi_cmd display_on_cmd;
 static struct dsi_cmd display_off_cmd;
@@ -68,9 +70,9 @@ static struct dsi_cmd manufacture_id_cmds;
 static struct dsi_cmd manufacture_date_cmds;
 static struct dsi_cmd ddi_id_cmds;
 
+static struct dsi_cmd mtp_read_sysfs_cmds;
+
 static struct dsi_cmd acl_off_cmd;
-static struct cmd_map aid_map_table;
-static struct cmd_map aid_map_revE_table;
 
 static struct cmd_map acl_map_table;
 static struct candella_lux_map candela_map_table;
@@ -80,18 +82,33 @@ static struct dsi_cmd opr_avg_cal_cmd;
 static struct dsi_cmd aclcont_cmds_list;
 static struct dsi_cmd gamma_cmds_list;
 static struct dsi_cmd elvss_cmds_list;
+static struct dsi_cmd elvss_cmds_revI_list;
+
+static struct cmd_map aid_map_table;
+static struct cmd_map aid_map_revE_table;
+static struct cmd_map aid_map_revF_table;
+static struct cmd_map aid_map_revG_table;
+static struct cmd_map aid_map_revI_table;
+
 static struct dsi_cmd aid_cmds_list;
 static struct dsi_cmd aid_cmds_revE_list;
+static struct dsi_cmd aid_cmds_revF_list;
+static struct dsi_cmd aid_cmds_revG_list;
+static struct dsi_cmd aid_cmds_revI_list;
 
 #if defined(HBM_RE)
 static struct dsi_cmd nv_mtp_hbm_read_cmds;
 static struct dsi_cmd nv_mtp_hbm2_read_cmds;
 static struct dsi_cmd hbm_gamma_cmds_list;
 static struct dsi_cmd hbm_etc_cmds_K_fhd_revE_list;
+static struct dsi_cmd hbm_etc_cmds_K_fhd_revG_list;
 static struct dsi_cmd hbm_etc_cmds_K_wqhd_revB_list;
 static struct dsi_cmd hbm_etc_cmds_K_wqhd_revC_list;
 static struct dsi_cmd hbm_etc_cmds_K_wqhd_revE_list;
+static struct dsi_cmd hbm_etc_cmds_K_wqhd_revF_list;
 #endif
+static struct dsi_cmd nv_mtp_elvss_read_cmds;
+
 #if defined(CONFIG_MDNIE_LITE_TUNING)
 static struct dsi_cmd nv_mdnie_read_cmds;
 #endif
@@ -100,10 +117,14 @@ static struct dsi_cmd ldi_debug_cmds;
 #endif
 #if defined(TEMPERATURE_ELVSS)
 static struct dsi_cmd elvss_lowtemp_cmds_list;
+static struct dsi_cmd elvss_lowtemp2_cmds_list;
 #endif
 #if defined(SMART_ACL)
 static struct dsi_cmd smart_acl_elvss_cmds_list;
 static struct cmd_map smart_acl_elvss_map_table;
+
+static struct dsi_cmd smart_acl_elvss_cmds_revI_list;
+static struct cmd_map smart_acl_elvss_map_revI_table;
 #endif
 #if defined(PARTIAL_UPDATE)
 static struct dsi_cmd partialdisp_on_cmd;
@@ -111,10 +132,22 @@ static struct dsi_cmd partialdisp_off_cmd;
 static int partial_disp_range[2];
 #endif
 #if defined(ALPM_MODE)
+/* ALPM mode on/off command */
 static struct dsi_cmd alpm_on_seq;
 static struct dsi_cmd alpm_off_seq;
+/* Partial area command for ALPM mode */
 static struct dsi_cmd alpm_set_partial_area_cmd;
+/* ALPM gamma command for 10cd, 60cd */
+static struct dsi_cmd alpm_gamma_read_cmd;
+static struct dsi_cmd alpm_set_gamma_cmd;
+static struct dsi_cmd alpm_set_gamma_10cd_cmd;
+static struct dsi_cmd alpm_set_gamma_60cd_cmd;
+/* Status variable for each command */
 static int alpm_disp_range[2];
+static int alpm_partial_area_index;
+static int alpm_gamma_index;
+static int alpm_gamma_para_index;
+static int alpm_gamma_para_length;
 #endif
 #if defined(DYNAMIC_FPS_USE_TE_CTRL)
 int dynamic_fps_use_te_ctrl;
@@ -123,6 +156,8 @@ int dynamic_fps_use_te_ctrl;
 static struct dsi_cmd hmt_aid_ready_to_foward_cmd;
 static struct dsi_cmd hmt_dual_scan_full_enable;
 static struct dsi_cmd hmt_dual_scan_disable;
+static struct dsi_cmd hmt_reverse_enable;
+static struct dsi_cmd hmt_reverse_disable;
 static struct cmd_map aid_map_table_hmt;
 static struct dsi_cmd aid_cmds_list_hmt;
 static struct dsi_cmd aid_cmds_list_hmt_single;
@@ -174,6 +209,7 @@ static struct dsi_cmd_desc brightness_packet[] = {
 	{{DTYPE_DCS_LWRITE, 1, 0, 0, 0, 0}, NULL},
 	{{DTYPE_DCS_LWRITE, 1, 0, 0, 0, 0}, NULL},
 	{{DTYPE_DCS_LWRITE, 1, 0, 0, 0, 0}, NULL},
+	{{DTYPE_DCS_LWRITE, 1, 0, 0, 0, 0}, NULL},	
 };
 
 #define MAX_BR_PACKET_SIZE sizeof(brightness_packet)/sizeof(struct dsi_cmd_desc)
@@ -181,8 +217,6 @@ static struct dsi_cmd_desc brightness_packet[] = {
 DEFINE_LED_TRIGGER(bl_led_trigger);
 
 static struct mdss_dsi_phy_ctrl phy_params;
-
-char board_rev;
 
 static int lcd_attached = 1;
 static int lcd_id = 0;
@@ -214,7 +248,19 @@ int get_lcd_attached(void);
 int get_lcd_id(void);
 int get_lcd_panel_res(void);
 #if defined(ALPM_MODE)
-static u8 alpm_store(u8 mode);
+/*
+ * APIs for ALPM mode
+ * alpm_store()			: Check or store status like alpm mode status or brightness level
+ * alpm_gamma_read()	: Read six gamma value for alpm mode from RBCh register
+						  the first three value will use for 60cd gamma
+						  the next three value will use for 10cd gamma
+						  two gamma set will write to RBBh register as 7th, 8th, 9th parameter
+ * alpm_copy_cmds()		: Copy alpm command from array to array with given length
+ */
+static void alpm_store(u8 mode);
+static void alpm_gamma_read(void);
+static void alpm_copy_cmds(char *dest, char *src, u8 size);
+static void alpm_cmd_debug(char *src, int size);
 #endif
 
 int set_panel_rev(unsigned int id)
@@ -226,12 +272,28 @@ int set_panel_rev(unsigned int id)
 				msd.id3 = EVT0_K_fhd_REVB;
 				break;
 			case 0x01:
-				pr_info("%s : 0x00 EVT0_K_fhd_REVE \n",__func__);
-				msd.id3 = EVT0_K_fhd_REVE;
+				pr_info("%s : 0x01 EVT0_K_fhd_REVF \n",__func__);
+				msd.id3 = EVT0_K_fhd_REVF;
 				break;
+			case 0x02:
+				pr_info("%s : 0x02 EVT0_K_fhd_REVG \n",__func__);
+				msd.id3 = EVT0_K_fhd_REVG;
+				break;
+			case 0x12:
+				pr_info("%s : 0x12 EVT1_K_fhd_REVH \n",__func__);
+				msd.id3 = EVT1_K_fhd_REVH;
+				break;
+			case 0x13:
+				pr_info("%s : 0x13 EVT1_K_fhd_REVI \n",__func__);
+				msd.id3 = EVT1_K_fhd_REVI;
+				break;				
 			default:
-				pr_err("%s : can't find panel id.. \n", __func__);
-				return -EINVAL;
+				if(get_lcd_id()) 
+					msd.id3 = (get_lcd_id()&0xFF);
+				else 
+					msd.id3 = EVT1_K_fhd_REVI;	
+			
+				pr_info("%s : can't find panel id..but set as (0x%x) \n", __func__,msd.id3 );
 				break;
 		}			
 	} else {	/* 0 : WQHD */
@@ -251,6 +313,10 @@ int set_panel_rev(unsigned int id)
 			case 0x03:
 				pr_info("%s : 0x03 EVT0_K_wqhd_REVE \n",__func__);
 				msd.id3 = EVT0_K_wqhd_REVE;
+				break;
+			case 0x04:
+				pr_info("%s : 0x04 EVT0_K_wqhd_REVF \n",__func__);
+				msd.id3 = EVT0_K_wqhd_REVF;
 				break;
 			default:
 				pr_err("%s : can't find panel id.. \n", __func__);
@@ -377,17 +443,17 @@ static int mdss_dsi_extra_power(struct mdss_panel_data *pdata, int enable)
 
 	if (enable) {
 			msleep(1);
-			if (board_rev >= 2) {
-				pr_info("%s: lvs4(VDD3) enable.\n",__func__);
 			
-				ret = regulator_enable( /*VDD3 :1.8V*/
-					(ctrl_pdata->shared_pdata).iovdd_vreg);
-				if (ret) {
-					pr_err("%s: Failed to enable iovdd regulator.\n",
-						__func__);
-					return ret;
-				}
-			}	
+			pr_info("%s: lvs4(VDD3) enable.\n",__func__);
+		
+			ret = regulator_enable( /*VDD3 :1.8V*/
+				(ctrl_pdata->shared_pdata).iovdd_vreg);
+			if (ret) {
+				pr_err("%s: Failed to enable iovdd regulator.\n",
+					__func__);
+				return ret;
+			}
+
 			msleep(5);
 
 			pr_debug("%s: disp_en_gpio set high  \n", __func__);
@@ -400,16 +466,15 @@ static int mdss_dsi_extra_power(struct mdss_panel_data *pdata, int enable)
 			gpio_set_value((ctrl_pdata->disp_en_gpio), 0);/* VDDR :1.5*/
 			msleep(5);
 
-			if (board_rev >= 2) { /*VDD3 :1.8V*/
-				pr_info("%s lvs4(VDD3) diable\n", __func__);
-				mdelay(1);
-				ret = regulator_disable(
-					(ctrl_pdata->shared_pdata).iovdd_vreg);
-				if (ret) {
-					pr_err("%s: Failed to disable regulator.\n",
-						__func__);
-				}
-		   	}
+			pr_info("%s lvs4(VDD3) diable\n", __func__);
+			mdelay(1);
+			ret = regulator_disable(
+				(ctrl_pdata->shared_pdata).iovdd_vreg);
+			if (ret) {
+				pr_err("%s: Failed to disable regulator.\n",
+					__func__);
+			}
+	   	
 			msleep(10);
 	}
 	pr_debug("%s: --\n", __func__);
@@ -456,19 +521,65 @@ void mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 
 	if (enable) {
 		gpio_set_value((ctrl_pdata->rst_gpio), 1);
-		msleep(20);
+		msleep(10);
 		wmb();
 		gpio_set_value((ctrl_pdata->rst_gpio), 0);
-		msleep(20);
+		msleep(10);
 		wmb();
 		gpio_set_value((ctrl_pdata->rst_gpio), 1);
-		msleep(20);
+		msleep(10);
 		wmb();
 		
 	} else {
 		gpio_set_value((ctrl_pdata->rst_gpio), 0);
 		
 	}
+}
+
+static char caset[] = {0x2a, 0x00, 0x00, 0x03, 0x00};	/* DTYPE_DCS_LWRITE */
+static char paset[] = {0x2b, 0x00, 0x00, 0x05, 0x00};	/* DTYPE_DCS_LWRITE */
+static struct dsi_cmd_desc partial_update_enable_cmd[] = {
+	{{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(caset)}, caset},
+	{{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(paset)}, paset},
+};
+int mdss_dsi_panel_partial_update(struct mdss_panel_data *pdata)
+{
+	struct mipi_panel_info *mipi;
+	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+	struct dcs_cmd_req cmdreq;
+	int rc = 0;
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+	mipi  = &pdata->panel_info.mipi;
+	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+
+	caset[1] = (((pdata->panel_info.roi_x) & 0xFF00) >> 8);
+	caset[2] = (((pdata->panel_info.roi_x) & 0xFF));
+	caset[3] = (((pdata->panel_info.roi_x - 1 + pdata->panel_info.roi_w)
+								& 0xFF00) >> 8);
+	caset[4] = (((pdata->panel_info.roi_x - 1 + pdata->panel_info.roi_w)
+								& 0xFF));
+	partial_update_enable_cmd[0].payload = caset;
+	paset[1] = (((pdata->panel_info.roi_y) & 0xFF00) >> 8);
+	paset[2] = (((pdata->panel_info.roi_y) & 0xFF));
+	paset[3] = (((pdata->panel_info.roi_y - 1 + pdata->panel_info.roi_h)
+								& 0xFF00) >> 8);
+	paset[4] = (((pdata->panel_info.roi_y - 1 + pdata->panel_info.roi_h)
+								& 0xFF));
+	partial_update_enable_cmd[1].payload = paset;
+	pr_debug("%s: enabling partial update\n", __func__);
+	memset(&cmdreq, 0, sizeof(cmdreq));
+	cmdreq.cmds = partial_update_enable_cmd;
+	cmdreq.cmds_cnt = 2;
+	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	return rc;
 }
 
 static int get_candela_value(int bl_level)
@@ -507,35 +618,22 @@ static struct dsi_cmd get_aid_aor_control_set_hmt(int cd_idx)
 	int cmd_idx = 0;
 	char *c_payload;
 
-	if (msd.id3 == EVT0_K_wqhd_REVE ){
-		if (!aid_map_revE_table.size || !(cd_idx < aid_map_revE_table.size))
-			goto end;
-		/* Get index in the aid command list*/
-		cmd_idx = aid_map_revE_table.cmd_idx[cd_idx];
-		c_payload = aid_cmds_revE_list.cmd_desc[cmd_idx].payload;
+	if (!aid_map_table_hmt.size || !(cd_idx < aid_map_table_hmt.size))
+		goto end;
+		
+	/* Get index in the aid command list*/
+	cmd_idx = aid_map_table_hmt.cmd_idx[cd_idx];
 
-	} else {
-		if (!aid_map_table_hmt.size || !(cd_idx < aid_map_table_hmt.size)) {
-			goto end;
-		}
-		/* Get index in the aid command list*/
-		cmd_idx = aid_map_table_hmt.cmd_idx[cd_idx];
-
-		if (msd.hmt_stat.hmt_dual)
-			c_payload = aid_cmds_list_hmt.cmd_desc[cmd_idx].payload;
-		else
-			c_payload = aid_cmds_list_hmt_single.cmd_desc[cmd_idx].payload;
-	}
+	if (msd.hmt_stat.hmt_dual)
+		c_payload = aid_cmds_list_hmt.cmd_desc[cmd_idx].payload;
+	else
+		c_payload = aid_cmds_list_hmt_single.cmd_desc[cmd_idx].payload;
 
 	/* Get the command desc */
-	if (msd.id3 == EVT0_K_wqhd_REVE )
-		aid_control.cmd_desc = &(aid_cmds_revE_list.cmd_desc[cmd_idx]);
-	else {
-		if (msd.hmt_stat.hmt_dual)
-			aid_control.cmd_desc = &(aid_cmds_list_hmt.cmd_desc[cmd_idx]);
-		else
-			aid_control.cmd_desc = &(aid_cmds_list_hmt_single.cmd_desc[cmd_idx]);		
-	}
+	if (msd.hmt_stat.hmt_dual)
+		aid_control.cmd_desc = &(aid_cmds_list_hmt.cmd_desc[cmd_idx]);
+	else
+		aid_control.cmd_desc = &(aid_cmds_list_hmt_single.cmd_desc[cmd_idx]);		
 
 	aid_control.num_of_cmds = 1;
 	msd.dstat.curr_aid_idx = cmd_idx;
@@ -545,49 +643,142 @@ end:
 }
 #endif
 
-static struct dsi_cmd get_aid_aor_control_set(int cd_idx)
+static struct dsi_cmd get_aid_aor_control_set_wqhd(int cd_idx)
 {
 	struct dsi_cmd aid_control = {0,};
 	int cmd_idx = 0, payload_size = 0;
 	char *p_payload, *c_payload;
 	int p_idx = msd.dstat.curr_aid_idx;
 
-	if (msd.id3 == EVT0_K_wqhd_REVE ){
-		if (!aid_map_revE_table.size || !(cd_idx < aid_map_revE_table.size))
+	if (msd.id3 == EVT0_K_wqhd_REVF) {
+		if (!aid_map_revF_table.size || !(cd_idx < aid_map_revF_table.size))
 			goto end;
 
 		/* Get index in the aid command list*/
-		cmd_idx = aid_map_revE_table.cmd_idx[cd_idx];
-		c_payload = aid_cmds_revE_list.cmd_desc[cmd_idx].payload;
+		cmd_idx = aid_map_revF_table.cmd_idx[cd_idx];
+		c_payload = aid_cmds_revF_list.cmd_desc[cmd_idx].payload;
 
-	} else {
-	   if (!aid_map_table.size || !(cd_idx < aid_map_table.size))
+	} else if (msd.id3 == EVT0_K_wqhd_REVE) {
+	  if (!aid_map_revE_table.size || !(cd_idx < aid_map_revE_table.size))
 		   goto end;
 
 	   /* Get index in the aid command list*/
-	   cmd_idx = aid_map_table.cmd_idx[cd_idx];
-	   c_payload = aid_cmds_list.cmd_desc[cmd_idx].payload;
+	   cmd_idx = aid_map_revE_table.cmd_idx[cd_idx];
+	   c_payload = aid_cmds_revE_list.cmd_desc[cmd_idx].payload;
+	} else {
+		if (!aid_map_table.size || !(cd_idx < aid_map_table.size))
+			goto end;
+		/* Get index in the aid command list*/
+		cmd_idx = aid_map_table.cmd_idx[cd_idx];
+		c_payload = aid_cmds_list.cmd_desc[cmd_idx].payload;
 	}
 
 	/* Check if current & previous commands are same */
 	if (p_idx >= 0) {
-		if (msd.id3 == EVT0_K_wqhd_REVE ){
-			p_payload = aid_cmds_revE_list.cmd_desc[p_idx].payload;
-			payload_size = aid_cmds_revE_list.cmd_desc[p_idx].dchdr.dlen;
-		}else {
+		if (msd.id3 == EVT0_K_wqhd_REVF ){
+			p_payload = aid_cmds_revF_list.cmd_desc[p_idx].payload;
+			payload_size = aid_cmds_revF_list.cmd_desc[p_idx].dchdr.dlen;
+		} else if (msd.id3 == EVT0_K_wqhd_REVE) {
+		   p_payload = aid_cmds_revE_list.cmd_desc[p_idx].payload;
+		   payload_size = aid_cmds_revE_list.cmd_desc[p_idx].dchdr.dlen;
+		} else {
 		   p_payload = aid_cmds_list.cmd_desc[p_idx].payload;
 		   payload_size = aid_cmds_list.cmd_desc[p_idx].dchdr.dlen;
-		}			
+		}
 
 		if (!memcmp(p_payload, c_payload, payload_size))
 			goto end;
 	}
 
 	/* Get the command desc */
-	if (msd.id3 == EVT0_K_wqhd_REVE )
+	if (msd.id3 == EVT0_K_wqhd_REVF)
+		aid_control.cmd_desc = &(aid_cmds_revF_list.cmd_desc[cmd_idx]);
+	else if (msd.id3 == EVT0_K_wqhd_REVE)
 		aid_control.cmd_desc = &(aid_cmds_revE_list.cmd_desc[cmd_idx]);
 	else
-	   aid_control.cmd_desc = &(aid_cmds_list.cmd_desc[cmd_idx]);
+		aid_control.cmd_desc = &(aid_cmds_list.cmd_desc[cmd_idx]);
+
+	aid_control.num_of_cmds = 1;
+	msd.dstat.curr_aid_idx = cmd_idx;
+
+end:
+	return aid_control;
+}
+
+static struct dsi_cmd get_aid_aor_control_set_fhd(int cd_idx)
+{
+	struct dsi_cmd aid_control = {0,};
+	int cmd_idx = 0, payload_size = 0;
+	char *p_payload, *c_payload;
+	int p_idx = msd.dstat.curr_aid_idx;
+
+	if (msd.id3 <= EVT0_K_fhd_REVF) {
+
+	if (!aid_map_table.size || !(cd_idx < aid_map_table.size))
+		goto end;
+	/* Get index in the aid command list*/
+	cmd_idx = aid_map_table.cmd_idx[cd_idx];
+	c_payload = aid_cmds_list.cmd_desc[cmd_idx].payload;
+	
+
+	/* Check if current & previous commands are same */
+	if (p_idx >= 0) {
+		p_payload = aid_cmds_list.cmd_desc[p_idx].payload;
+		payload_size = aid_cmds_list.cmd_desc[p_idx].dchdr.dlen;
+
+		if (!memcmp(p_payload, c_payload, payload_size))
+			goto end;
+	}
+
+	/* Get the command desc */
+	aid_control.cmd_desc = &(aid_cmds_list.cmd_desc[cmd_idx]);
+	}
+	else if((msd.id3 == EVT1_K_fhd_REVH) || (msd.id3 == EVT0_K_fhd_REVG)){ 
+
+		if (!aid_map_revG_table.size || !(cd_idx < aid_map_revG_table.size))
+			goto end;
+		
+		/* Get index in the aid command list*/
+		cmd_idx = aid_map_revG_table.cmd_idx[cd_idx];
+		c_payload = aid_cmds_revG_list.cmd_desc[cmd_idx].payload;
+		
+		
+		/* Check if current & previous commands are same */
+		if (p_idx >= 0) {
+			p_payload = aid_cmds_revG_list.cmd_desc[p_idx].payload;
+			payload_size = aid_cmds_revG_list.cmd_desc[p_idx].dchdr.dlen;
+		
+			if (!memcmp(p_payload, c_payload, payload_size))
+				goto end;
+		}
+		
+		/* Get the command desc */
+		aid_control.cmd_desc = &(aid_cmds_revG_list.cmd_desc[cmd_idx]);
+
+	}
+	else if(msd.id3 >= EVT1_K_fhd_REVI){
+
+	if (!aid_map_revI_table.size || !(cd_idx < aid_map_revI_table.size))
+		goto end;
+	
+		/* Get index in the aid command list*/
+		cmd_idx = aid_map_revI_table.cmd_idx[cd_idx];
+		c_payload = aid_cmds_revI_list.cmd_desc[cmd_idx].payload;
+		
+		
+		/* Check if current & previous commands are same */
+		if (p_idx >= 0) {
+			p_payload = aid_cmds_revI_list.cmd_desc[p_idx].payload;
+			payload_size = aid_cmds_revI_list.cmd_desc[p_idx].dchdr.dlen;
+		
+			if (!memcmp(p_payload, c_payload, payload_size))
+				goto end;
+		}
+		
+		/* Get the command desc */
+		aid_control.cmd_desc = &(aid_cmds_revI_list.cmd_desc[cmd_idx]);
+
+	}
 
 	aid_control.num_of_cmds = 1;
 	msd.dstat.curr_aid_idx = cmd_idx;
@@ -601,25 +792,27 @@ end:
 	to get the index of the command in elvss command list.
 
 */
-#if 0
-static struct dsi_cmd get_aclcont_control_set(void)
+
+static struct dsi_cmd get_acl_control_on_set(void)
 {
 	struct dsi_cmd aclcont_control = {0,};
-	int cmd_idx = 0;
 	int acl_cond = msd.dstat.curr_acl_cond;
 
 	if (acl_cond) /* already acl condition setted */
 		goto end;
 
 	/* Get the command desc */
-	aclcont_control.cmd_desc = &(aclcont_cmds_list.cmd_desc[cmd_idx]);
-	aclcont_control.num_of_cmds = 1;
+	aclcont_control.cmd_desc = aclcont_cmds_list.cmd_desc;
+	aclcont_control.num_of_cmds = aclcont_cmds_list.num_of_cmds;
 	msd.dstat.curr_acl_cond = 1;
+
+	pr_info("%s #(%d)\n",
+				__func__, aclcont_cmds_list.num_of_cmds);
 
 end:
 	return aclcont_control;
 }
-#endif
+
 /*
 	This function takes acl_map_table and uses cd_idx,
 	to get the index of the command in elvss command list.
@@ -668,8 +861,11 @@ static struct dsi_cmd get_acl_control_off_set(void)
 	}
 
 	/* Get the command desc */
-	acl_control.cmd_desc = &(acl_cmds_list.cmd_desc[0]); /* idx 0 : ACL OFF */
-	acl_control.num_of_cmds = 1;
+	acl_control.cmd_desc = acl_off_cmd.cmd_desc; /* idx 0 : ACL OFF */
+	acl_control.num_of_cmds = acl_off_cmd.num_of_cmds;
+
+	pr_info("%s #(%d)\n",
+				__func__, acl_off_cmd.num_of_cmds);
 
 	msd.dstat.curr_acl_idx = 0;
 	msd.dstat.curr_acl_cond = 0;
@@ -678,6 +874,7 @@ end:
 	return acl_control;
 }
 
+#if 0 /*not used*/
 static struct dsi_cmd get_orp_avg_cal_set(void)
 {
 	struct dsi_cmd opr_set = {0,};
@@ -709,6 +906,7 @@ static struct dsi_cmd get_orp_avg_cal_set(void)
 end:
 	return opr_set;
 }
+#endif 
 
 #if defined(TEMPERATURE_ELVSS)
 // ELVSS TEMPERATURE COMPENSATION for S6E3FA0
@@ -723,30 +921,48 @@ static struct dsi_cmd get_elvss_tempcompen_control_set(void)
 	if (msd.dstat.temperature > 0) {
 		pr_debug("%s temp > 0 \n",__func__);
 		elvss_lowtemp_cmds_list.cmd_desc[1].payload[1] = 0x19; // B8
-		if(msd.dstat.acl_on)
-			elvss_lowtemp_cmds_list.cmd_desc[2].payload[1] = 0x88; // B6 acl on
-		else
-			elvss_lowtemp_cmds_list.cmd_desc[2].payload[1] = 0x98; // B6 acl off
 	} else if (msd.dstat.temperature > -20) {
 		pr_debug("%s 0 >= temp > -20 \n",__func__);
 		elvss_lowtemp_cmds_list.cmd_desc[1].payload[1] = 0x00; // B8
-		if(msd.dstat.acl_on)
-			elvss_lowtemp_cmds_list.cmd_desc[2].payload[1] = 0x8C; // B6 acl on
-		else
-			elvss_lowtemp_cmds_list.cmd_desc[2].payload[1] = 0x9C; // B6 acl off
 	} else {
 		pr_debug("%s temp <= -20 \n",__func__);
 		elvss_lowtemp_cmds_list.cmd_desc[1].payload[1] = 0x94; // B8
-		if(msd.dstat.acl_on)
-			elvss_lowtemp_cmds_list.cmd_desc[2].payload[1] = 0x8C; // B6 acl on
-		else
-			elvss_lowtemp_cmds_list.cmd_desc[2].payload[1] = 0x9C; // B6 acl off
 	}
+
+	pr_info("%s for ELVSS CONTROL acl(%d), temp(%d) B8(0x%x) \n",
+				__func__, msd.dstat.acl_on, msd.dstat.temperature,
+				elvss_lowtemp_cmds_list.cmd_desc[1].payload[1]);
+	
 	elvss_tempcompen_control.cmd_desc = elvss_lowtemp_cmds_list.cmd_desc;
 	elvss_tempcompen_control.num_of_cmds = elvss_lowtemp_cmds_list.num_of_cmds;
 
 	return elvss_tempcompen_control;
 }
+
+static struct dsi_cmd get_elvss_tempcompen_control_set2(void)
+{
+	struct dsi_cmd elvss_tempcompen_control2 = {0,};
+
+	pr_debug("%s for ELVSS CONTROL acl2(%d), temp(%d)\n",
+				__func__, msd.dstat.acl_on, msd.dstat.temperature);
+
+	/* Get the command desc */
+	if (msd.dstat.temperature > -20) /*b6 21th para*/
+		elvss_lowtemp2_cmds_list.cmd_desc[1].payload[1] = msd.dstat.elvss_value;
+	else /*temp <= -20 : b6 21th para-0x05*/
+		elvss_lowtemp2_cmds_list.cmd_desc[1].payload[1] = (msd.dstat.elvss_value - 0x05);		
+
+	pr_info("%s for ELVSS CONTROL acl(%d), temp(%d) B0(0x%x) B6(0x%x)\n",
+				__func__, msd.dstat.acl_on, msd.dstat.temperature,
+				elvss_lowtemp2_cmds_list.cmd_desc[0].payload[1],
+				elvss_lowtemp2_cmds_list.cmd_desc[1].payload[1]);
+	
+	elvss_tempcompen_control2.cmd_desc = elvss_lowtemp2_cmds_list.cmd_desc;
+	elvss_tempcompen_control2.num_of_cmds = elvss_lowtemp2_cmds_list.num_of_cmds;
+
+	return elvss_tempcompen_control2;
+}
+
 #endif
 
 /*
@@ -764,6 +980,43 @@ static struct dsi_cmd get_elvss_control_set(int cd_idx)
 	pr_debug("%s for SMART_ACL acl(%d), temp(%d)\n",
 			__func__, msd.dstat.acl_on, msd.dstat.temperature);
 
+	if(msd.id3 >= EVT1_K_fhd_REVI){
+		if (!smart_acl_elvss_map_revI_table.size || !(cd_idx < smart_acl_elvss_map_revI_table.size) ||
+				!smart_acl_elvss_map_revI_table.size ||
+				!(cd_idx < smart_acl_elvss_map_revI_table.size)) {
+			pr_err("%s failed mapping elvss table\n",__func__);
+			goto end;
+		}
+
+		cmd_idx = smart_acl_elvss_map_revI_table.cmd_idx[cd_idx];
+
+		/* Get the command desc */
+		if(msd.dstat.acl_on || msd.dstat.siop_status) {
+
+			if (msd.dstat.temperature > 0)
+				smart_acl_elvss_cmds_revI_list.cmd_desc[cmd_idx].payload[1] = 0x88;
+			else
+				smart_acl_elvss_cmds_revI_list.cmd_desc[cmd_idx].payload[1] = 0x8C;
+
+			payload = smart_acl_elvss_cmds_revI_list.cmd_desc[cmd_idx].payload;
+			elvss_control.cmd_desc = &(smart_acl_elvss_cmds_revI_list.cmd_desc[cmd_idx]);
+
+
+			pr_debug("ELVSS for SMART_ACL cd_idx=%d, cmd_idx=%d\n", cd_idx, cmd_idx);
+		} else {
+
+			if (msd.dstat.temperature > 0)
+				elvss_cmds_revI_list.cmd_desc[cmd_idx].payload[1] = 0x98;
+			else
+				elvss_cmds_revI_list.cmd_desc[cmd_idx].payload[1] = 0x9C;
+
+			payload = elvss_cmds_revI_list.cmd_desc[cmd_idx].payload;
+			elvss_control.cmd_desc = &(elvss_cmds_revI_list.cmd_desc[cmd_idx]);
+
+			pr_debug("ELVSS for normal cd_idx=%d, cmd_idx=%d\n", cd_idx, cmd_idx);
+		}
+	}
+	else{
 	if (!smart_acl_elvss_map_table.size || !(cd_idx < smart_acl_elvss_map_table.size) ||
 			!smart_acl_elvss_map_table.size ||
 			!(cd_idx < smart_acl_elvss_map_table.size)) {
@@ -798,6 +1051,7 @@ static struct dsi_cmd get_elvss_control_set(int cd_idx)
 
 
 		pr_debug("ELVSS for normal cd_idx=%d, cmd_idx=%d\n", cd_idx, cmd_idx);
+	}
 	}
 
 	elvss_control.num_of_cmds = 1;
@@ -863,7 +1117,7 @@ static int update_bright_packet(int cmd_count, struct dsi_cmd *cmd_set)
 {
 	int i = 0;
 
-	if (cmd_count > MAX_BR_PACKET_SIZE)
+	if (cmd_count > (MAX_BR_PACKET_SIZE - 1))/*cmd_count is index, if cmd_count >13 then panic*/
 		panic("over max brightness_packet size(%d).. !!", MAX_BR_PACKET_SIZE);
 
 	for (i = 0; i < cmd_set->num_of_cmds; i++) {
@@ -878,6 +1132,8 @@ static int update_bright_packet(int cmd_count, struct dsi_cmd *cmd_set)
 		cmd_count++;
 	}
 
+	alpm_cmd_debug(brightness_packet[cmd_count].payload,
+					brightness_packet[cmd_count].dchdr.dlen);
 	return cmd_count;
 }
 
@@ -888,9 +1144,12 @@ static struct dsi_cmd get_hbm_etc_control_set(void)
 
 	/* Get the command desc */
  	if (get_lcd_panel_res()) { // 1 : FHD
-		if (msd.id3 == EVT0_K_fhd_REVB || msd.id3 == EVT0_K_fhd_REVE) {
+		if (msd.id3 <= EVT0_K_fhd_REVF) {
 			etc_hbm_control.cmd_desc = &(hbm_etc_cmds_K_fhd_revE_list.cmd_desc[0]);
 			etc_hbm_control.num_of_cmds = hbm_etc_cmds_K_fhd_revE_list.num_of_cmds;			
+		} else if (msd.id3 >= EVT0_K_fhd_REVG){
+			etc_hbm_control.cmd_desc = &(hbm_etc_cmds_K_fhd_revG_list.cmd_desc[0]);
+			etc_hbm_control.num_of_cmds = hbm_etc_cmds_K_fhd_revG_list.num_of_cmds;	
 		}
 	} else {
 		if (msd.id3 == EVT0_K_wqhd_REVB) {
@@ -902,6 +1161,9 @@ static struct dsi_cmd get_hbm_etc_control_set(void)
 		} else if (msd.id3 == EVT0_K_wqhd_REVE ) {
 			etc_hbm_control.cmd_desc = &(hbm_etc_cmds_K_wqhd_revE_list.cmd_desc[0]);
 			etc_hbm_control.num_of_cmds = hbm_etc_cmds_K_wqhd_revE_list.num_of_cmds;			
+		} else if (msd.id3 == EVT0_K_wqhd_REVF ) {
+			etc_hbm_control.cmd_desc = &(hbm_etc_cmds_K_wqhd_revF_list.cmd_desc[0]);
+			etc_hbm_control.num_of_cmds = hbm_etc_cmds_K_wqhd_revF_list.num_of_cmds;			
 		}
 	}
 
@@ -1070,15 +1332,16 @@ static int make_brightcontrol_set_hmt(int bl_level)
 #endif
 static int make_brightcontrol_set(int bl_level)
 {
-	struct dsi_cmd elvss_control = {0,};
-	struct dsi_cmd acl_control = {0,};
-	struct dsi_cmd opr_avg_cal = {0,};
 	struct dsi_cmd aid_control = {0,};
+	struct dsi_cmd acl_control = {0,};
+	struct dsi_cmd acl_on_cont = {0,};		
+	struct dsi_cmd acl_off_cont = {0,};			
+	struct dsi_cmd elvss_control = {0,};
 	struct dsi_cmd gamma_control = {0,};
-	struct dsi_cmd aclcont_control = {0,};
 	struct dsi_cmd testKey = {0,};
 #if defined(TEMPERATURE_ELVSS)
 	struct dsi_cmd temperature_elvss_control = {0,};
+	struct dsi_cmd temperature_elvss_control2 = {0,};
 #endif
 	int cmd_count = 0, cd_idx = 0, cd_level =0;
 
@@ -1090,23 +1353,23 @@ static int make_brightcontrol_set(int bl_level)
 	cmd_count = update_bright_packet(cmd_count, &testKey);
 
 	/* aid/aor */
-	aid_control = get_aid_aor_control_set(cd_idx);
+	if (get_lcd_panel_res()) // 1 : FHD
+		aid_control = get_aid_aor_control_set_fhd(cd_idx);
+	else // 0 : WQHD
+		aid_control = get_aid_aor_control_set_wqhd(cd_idx);
 	cmd_count = update_bright_packet(cmd_count, &aid_control);
 
 	/* acl */
 	if (msd.dstat.acl_on||msd.dstat.siop_status) {
-		//aclcont_control = get_aclcont_control_set();
-		//cmd_count = update_bright_packet(cmd_count, &aclcont_control);
-		acl_control = get_acl_control_set(cd_idx);
+		acl_on_cont = get_acl_control_on_set(); /*b5 51*/
+		cmd_count = update_bright_packet(cmd_count, &acl_on_cont);
+		acl_control = get_acl_control_set(cd_idx); /*55 02*/
 		cmd_count = update_bright_packet(cmd_count, &acl_control);
 	} else {
 		/* acl off (hbm off) */
-		acl_control = get_acl_control_off_set();
-		cmd_count = update_bright_packet(cmd_count, &acl_control);
+		acl_off_cont = get_acl_control_off_set(); /*b5 41,55 00 */
+		cmd_count = update_bright_packet(cmd_count, &acl_off_cont);
 	}
-
-	opr_avg_cal = get_orp_avg_cal_set();
-	cmd_count = update_bright_packet(cmd_count, &opr_avg_cal);
 
 	/*elvss*/
 	elvss_control = get_elvss_control_set(cd_idx);
@@ -1115,8 +1378,17 @@ static int make_brightcontrol_set(int bl_level)
 #if defined(TEMPERATURE_ELVSS)
 	// ELVSS TEMPERATURE COMPENSATION
 	// ELVSS for Temperature set cmd should be sent after normal elvss set cmd
-	temperature_elvss_control = get_elvss_tempcompen_control_set();
-	cmd_count = update_bright_packet(cmd_count, &temperature_elvss_control);
+	if (msd.dstat.elvss_need_update) {
+		temperature_elvss_control = get_elvss_tempcompen_control_set();
+		cmd_count = update_bright_packet(cmd_count, &temperature_elvss_control);
+
+	if (get_lcd_panel_res() && (msd.id3 >= EVT0_K_fhd_REVG)) {
+			temperature_elvss_control2 = get_elvss_tempcompen_control_set2();
+			cmd_count = update_bright_packet(cmd_count, &temperature_elvss_control2);
+		}
+
+		msd.dstat.elvss_need_update = 0;
+	}
 #endif
 
 	/*gamma*/
@@ -1129,20 +1401,21 @@ static int make_brightcontrol_set(int bl_level)
 
 #if defined(TEMPERATURE_ELVSS)
 	LCD_DEBUG("bright_level: %d, candela_idx: %d( %d cd ), "\
-		"cmd_count(aid,acl,acl_ctrl,elvss,temperature,gamma)::(%d,%d,%d,%d,%d,%d)%d\n",
+		"cmd_count(aid,acl,elvss,temperature,gamma)::(%d,%d,%d,%d,%d)%d,id3(0x%x)\n",
 #else
 	LCD_DEBUG("bright_level: %d, candela_idx: %d( %d cd ), "\
-		"cmd_count(aid,acl,acl_ctrl,elvss,temperature,gamma)::(%d,%d,%d,%d,%d)%d\n",
+		"cmd_count(aid,acl,elvss,temperature,gamma)::(%d,%d,%d,%d)%d,id3(0x%x)\n",
 #endif
 		msd.dstat.bright_level, cd_idx, cd_level,
 		aid_control.num_of_cmds,
-		acl_control.num_of_cmds,
-		aclcont_control.num_of_cmds,
+		msd.dstat.acl_on | msd.dstat.siop_status,
 		elvss_control.num_of_cmds,
 #if defined(TEMPERATURE_ELVSS)
 		temperature_elvss_control.num_of_cmds,
 #endif
-		gamma_control.num_of_cmds, cmd_count);
+		gamma_control.num_of_cmds, 
+		cmd_count,
+		msd.id3);
 	return cmd_count;
 
 }
@@ -1151,11 +1424,11 @@ static int make_brightcontrol_set(int bl_level)
 static int __init current_boot_mode(char *mode)
 {
 	/*
-	*	1 is recovery booting
+	*	1,2 is recovery booting
 	*	0 is normal booting
 	*/
 
-	if (strncmp(mode, "1", 1) == 0)
+        if ((strncmp(mode, "1", 1) == 0)||(strncmp(mode, "2", 1) == 0))
 		msd.dstat.recovery_boot_mode = 1;
 	else
 		msd.dstat.recovery_boot_mode = 0;
@@ -1299,7 +1572,7 @@ static int mipi_samsung_read_nv_mem(struct mdss_panel_data *pdata, struct dsi_cm
 	for (i = 0; i < nv_read_cmds->num_of_cmds; i++)
 		nv_size += nv_read_cmds->read_size[i];
 	
-	pr_info("nv_size= %d, nv_read_cmds->num_of_cmds = %d\n", nv_size, nv_read_cmds->num_of_cmds);
+	pr_debug("nv_size= %d, nv_read_cmds->num_of_cmds = %d\n", nv_size, nv_read_cmds->num_of_cmds);
 	 
 	for (i = 0; i < nv_read_cmds->num_of_cmds; i++) {
 		int count = 0;
@@ -1402,6 +1675,11 @@ static unsigned int mipi_samsung_manufacture_id(struct mdss_panel_data *pdata)
 	struct dsi_buf *rp, *tp;
 
 	unsigned int id = 0 ;
+
+#if defined(CAMERA_LP)
+	return 0x501401;
+#endif
+
 
 	if (get_lcd_attached() == 0)
 	{
@@ -1515,13 +1793,17 @@ static int mipi_samsung_disp_send_cmd(
 			cmd_desc = display_off_cmd.cmd_desc;
 			cmd_size = display_off_cmd.num_of_cmds;
 			break;
+		case PANEL_HSYNC_ON:
+			cmd_desc = hsync_on_seq.cmd_desc;
+			cmd_size = hsync_on_seq.num_of_cmds;	
+			break;			
 		case PANEL_BRIGHT_CTRL:
 #if defined(CAMERA_LP)
 			goto err;
 #endif
 #if defined(CONFIG_LCD_HMT)
-			if (msd.hmt_stat.hmt_on) {
-				pr_err("hmt_on is on!!\n");
+			if (msd.hmt_stat.hmt_dual != HMT_OFF) {
+				pr_err("hmt_dual is on!! do not set brightness..\n");
 				goto err;
 			}
 #endif
@@ -1537,6 +1819,8 @@ static int mipi_samsung_disp_send_cmd(
 			else
 				flag = 0;
 #endif
+			if (msd.dstat.bright_level)
+				msd.dstat.recent_bright_level = msd.dstat.bright_level;
 #if defined(HBM_RE)
 			if(msd.dstat.auto_brightness == 6) {
 				cmd_size = make_brightcontrol_hbm_set();
@@ -1599,6 +1883,10 @@ static int mipi_samsung_disp_send_cmd(
 			cmd_desc = alpm_set_partial_area_cmd.cmd_desc;
 			cmd_size = alpm_set_partial_area_cmd.num_of_cmds;
 			break;
+		case PANEL_ALPM_SET_BL:
+			cmd_desc = alpm_set_gamma_cmd.cmd_desc;
+			cmd_size = alpm_set_gamma_cmd.num_of_cmds;
+			break;
 #endif
 #if defined(CONFIG_LCD_CLASS_DEVICE) && defined(DDI_VIDEO_ENHANCE_TUNING)
 		case MDNIE_ADB_TEST:
@@ -1626,6 +1914,14 @@ static int mipi_samsung_disp_send_cmd(
 		case PANEL_HMT_AID:
 			cmd_desc = hmt_aid_cmd.cmd_desc;
 			cmd_size = hmt_aid_cmd.num_of_cmds;
+			break;
+		case PANEL_HMT_REVERSE_ENABLE:
+			cmd_desc = hmt_reverse_enable.cmd_desc;
+			cmd_size = hmt_reverse_enable.num_of_cmds;
+			break;
+		case PANEL_HMT_REVERSE_DISABLE:
+			cmd_desc = hmt_reverse_disable.cmd_desc;
+			cmd_size = hmt_reverse_disable.num_of_cmds;
 			break;
 #if 0
 		case PANEL_HMT_CHANGE_PORCH:
@@ -1655,12 +1951,6 @@ static int mipi_samsung_disp_send_cmd(
 				msd.dstat.recent_bright_level = msd.dstat.bright_level;
 			cmd_desc = brightness_packet;
 			cmd_size = hmt_bright_set(true);
-			break;
-		case PANEL_HMT_HBM_DISABLE:
-			if(msd.dstat.bright_level)
-				msd.dstat.recent_bright_level = msd.dstat.bright_level;
-			cmd_desc = brightness_packet;
-			cmd_size = hmt_bright_set(false);
 			break;
 #endif
 #endif
@@ -1694,6 +1984,8 @@ static int mipi_samsung_disp_send_cmd(
 
 	if (lock)
 		mutex_unlock(&msd.lock);
+
+	pr_info("%s done..\n", __func__);
 
 	return 0;
 
@@ -1743,21 +2035,20 @@ static void mdss_dsi_panel_read_func(struct mdss_panel_data *pdata)
 		return;
 	}
 
-	if (!msd.manufacture_id)
-		msd.manufacture_id = mipi_samsung_manufacture_id(pdata);
-
 	mipi_samsung_manufacture_date_read(pdata);
 	mipi_samsung_ddi_id_read(pdata);
 
 #if defined(HBM_RE)
 	/* Read mtp (C8h 34th ~ 40th) for HBM */
 	mipi_samsung_read_nv_mem(pdata, &nv_mtp_hbm_read_cmds, hbm_buffer);
-	memcpy(&hbm_gamma_cmds_list.cmd_desc[0].payload[1], hbm_buffer, 6);
+	memcpy(&hbm_gamma_cmds_list.cmd_desc[0].payload[1], hbm_buffer, 7);
 
 	if (get_lcd_panel_res()) { // 1 : FHD
 		/* octa panel Read C8h 40th -> write B6h 21th */
-		if((msd.id3 == EVT0_K_fhd_REVB || msd.id3 == EVT0_K_fhd_REVE) && hbm_etc_cmds_K_fhd_revE_list.cmd_desc)
+		if(msd.id3 <= EVT0_K_fhd_REVF && hbm_etc_cmds_K_fhd_revE_list.cmd_desc)
 			memcpy(&hbm_etc_cmds_K_fhd_revE_list.cmd_desc[1].payload[21], hbm_buffer+6, 1);
+		else if ((msd.id3 >= EVT0_K_fhd_REVG)&& hbm_etc_cmds_K_fhd_revG_list.cmd_desc)
+			memcpy(&hbm_etc_cmds_K_fhd_revG_list.cmd_desc[1].payload[21], hbm_buffer+6, 1);
 	} else { // 0 : WQHD
 		if (msd.id3 == EVT0_K_wqhd_REVB) {
 			/* octa panel Read C8h 40th -> write B6h 22th */
@@ -1771,12 +2062,20 @@ static void mdss_dsi_panel_read_func(struct mdss_panel_data *pdata)
 			/* octa panel Read C8h 40th -> write B6h 21th */
 			if (hbm_etc_cmds_K_wqhd_revE_list.cmd_desc)
 				memcpy(&hbm_etc_cmds_K_wqhd_revE_list.cmd_desc[1].payload[21], hbm_buffer+6, 1);
+		} else if (msd.id3 == EVT0_K_wqhd_REVF) {
+			/* octa panel Read C8h 40th -> write B6h 21th */
+			if (hbm_etc_cmds_K_wqhd_revF_list.cmd_desc)
+				memcpy(&hbm_etc_cmds_K_wqhd_revF_list.cmd_desc[1].payload[21], hbm_buffer+6, 1);
 		}
 	}
 
 	/* Read mtp (C8h 73th ~ 87th) for HBM */
 	mipi_samsung_read_nv_mem(pdata, &nv_mtp_hbm2_read_cmds, hbm_buffer);
 	memcpy(&hbm_gamma_cmds_list.cmd_desc[0].payload[7], hbm_buffer, 15);
+
+	/* Read mtp (B6h 21th) for elvss*/
+	mipi_samsung_read_nv_mem(pdata, &nv_mtp_elvss_read_cmds, hbm_buffer);
+	msd.dstat.elvss_value = hbm_buffer[0];	
 #endif
 
 #if defined(CONFIG_MDNIE_LITE_TUNING)
@@ -1830,8 +2129,10 @@ static int mdss_dsi_panel_dimming_init(struct mdss_panel_data *pdata)
 	BUG_ON(msd.sdimconf->init == NULL);
 	msd.sdimconf->init();
 
-	msd.dstat.is_smart_dim_loaded = true;
+	msd.dstat.temperature = 20; // default temperature
+	msd.dstat.elvss_need_update = 1;
 
+	msd.dstat.is_smart_dim_loaded = true;
 
 	pr_info("%s : --\n",__func__);
 
@@ -1850,7 +2151,8 @@ static int mdss_dsi_panel_dimming_init_HMT(struct mdss_panel_data *pdata)
 
 	msd.hmt_stat.hmt_on = 0;
 	msd.hmt_stat.hmt_bl_level = 0;
-	msd.hmt_stat.hmt_dual = 0;
+	msd.hmt_stat.hmt_dual = HMT_OFF;
+	msd.hmt_stat.hmt_reverse = 0;
 #if 0
 	msd.hmt_stat.hmt_porch = 0;
 	msd.hmt_stat.hmt_aid = 99;
@@ -1899,7 +2201,7 @@ static int mdss_dsi_panel_dimming_init_HMT(struct mdss_panel_data *pdata)
 
 	msd.dstat.is_hmt_smart_dim_loaded = true;
 
-	pr_info("[HMT] %s : --\n",__func__);
+	pr_debug("[HMT] %s : --\n",__func__);
 
 	return 0;
 }
@@ -1972,26 +2274,15 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		}
 	}
 
-	if (pinfo->alpm_event) {
-		if (pinfo->alpm_event(CHECK_CURRENT_STATUS) && pinfo->alpm_event(CHECK_PREVIOUS_STATUS)) {
-			mipi_samsung_disp_send_cmd(PANEL_ALPM_SET_PARTIAL_AREA, true);
-			msd.dstat.on = 1;
-			pr_info("[ALPM_DEBUG] %s: Send Partial update cmds\n", __func__);
-			return 0;
-		} else if (!pinfo->alpm_event(CHECK_CURRENT_STATUS) && pinfo->alpm_event(CHECK_PREVIOUS_STATUS)) {
-			mipi_samsung_disp_send_cmd(PANEL_ALPM_OFF, true);
-			pinfo->alpm_event(CLEAR_MODE_STATUS);
-			pinfo->alpm_event = NULL;
-			pr_info("[ALPM_DEBUG] %s: Send ALPM off cmds\n", __func__);
-		}
-	}
-
 	if (!msd.manufacture_id) {
 		msd.manufacture_id = mipi_samsung_manufacture_id(pdata); 
 
 		if (set_panel_rev(msd.manufacture_id) < 0)
 			pr_err("%s : can't find panel id.. \n", __func__);
 	}
+
+	if (pinfo->alpm_event)
+		alpm_gamma_read();
 
 	if (!msd.dstat.is_panel_read_done)
 		mdss_dsi_panel_read_func(pdata);
@@ -2003,9 +2294,16 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	if (!msd.dstat.is_hmt_smart_dim_loaded)
 		mdss_dsi_panel_dimming_init_HMT(pdata);
 #endif
+	/* Normaly the else is working for PANEL_DISP_ON_SEQ */
+	if (pinfo->alpm_event) {
+		if (!pinfo->alpm_event(CHECK_PREVIOUS_STATUS))
+			mipi_samsung_disp_send_cmd(PANEL_DISPLAY_ON_SEQ, true);
+	} else
+		mipi_samsung_disp_send_cmd(PANEL_DISPLAY_ON_SEQ, true);
 
-	mipi_samsung_disp_send_cmd(PANEL_DISPLAY_ON_SEQ, true);
-
+	if (get_lcd_panel_res() && (msd.id3 >= EVT0_K_fhd_REVG))
+		mipi_samsung_disp_send_cmd(PANEL_HSYNC_ON, true);
+		
 	/* Recovery Mode : Set some default brightness */
 	if (msd.dstat.recovery_boot_mode) {
 		msd.dstat.bright_level = RECOVERY_BRIGHTNESS;
@@ -2017,9 +2315,12 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	msd.dstat.curr_acl_idx = -1;
 	msd.dstat.curr_opr_idx = -1;
 	msd.dstat.curr_aid_idx = -1;
-	msd.dstat.hbm_mode = 0;
 	msd.dstat.on = 1;
 	msd.dstat.wait_disp_on = 1;
+
+	/*default acl off(caps on :b5 41) in on seq. */
+	msd.dstat.curr_acl_idx = 0;
+	msd.dstat.curr_acl_cond = 0;
 
 	msd.mfd->resume_state = MIPI_RESUME_STATE;
 
@@ -2029,28 +2330,49 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 				&& pinfo->alpm_event(CHECK_CURRENT_STATUS)) {
 			/* Turn On ALPM Mode */
 			mipi_samsung_disp_send_cmd(PANEL_ALPM_ON, true);
+			pinfo->alpm_event(STORE_CURRENT_STATUS);
 			pr_info("[ALPM_DEBUG] %s: Send ALPM mode on cmds\n", __func__);
+		} else if (pinfo->alpm_event(CHECK_CURRENT_STATUS)\
+					&& pinfo->alpm_event(CHECK_PREVIOUS_STATUS)) {
+			/* Send partial command */
+			mipi_samsung_disp_send_cmd(PANEL_ALPM_SET_PARTIAL_AREA, true);
+			mipi_samsung_disp_send_cmd(PANEL_ALPM_SET_BL, true);
+			pr_info("[ALPM_DEBUG] %s: Send Partial update and birghtness cmds\n", __func__);
+		} else if (!pinfo->alpm_event(CHECK_CURRENT_STATUS)\
+					&& pinfo->alpm_event(CHECK_PREVIOUS_STATUS)) {
+			/* Turn Off ALPM Mode */
+			mipi_samsung_disp_send_cmd(PANEL_ALPM_OFF, true);
+			pinfo->alpm_event(CLEAR_MODE_STATUS);
+			pr_info("[ALPM_DEBUG] %s: Send ALPM off cmds\n", __func__);
 		}
 	}
-#if defined(CONFIG_MDNIE_LITE_TUNING)
-	is_negative_on();
-#endif
 
 #if defined(PARTIAL_UPDATE)
 	if (partial_disp_range[0] || partial_disp_range[1])
 		mipi_samsung_disp_send_cmd(PANEL_PARTIAL_ON, true);
 #endif
 
+	// to prevent splash during wakeup
+	if (msd.dstat.recent_bright_level) {
+		msd.dstat.bright_level = msd.dstat.recent_bright_level;
+		mipi_samsung_disp_send_cmd(PANEL_BRIGHT_CTRL, true);
+	}
+
+#if defined(CONFIG_MDNIE_LITE_TUNING)
+	is_negative_on();
+#endif
+
 #if defined(CONFIG_LCD_HMT)
 	if (!is_first) {
-		if (msd.hmt_stat.hmt_on) {
+		if (msd.hmt_stat.hmt_dual != HMT_OFF) {
+			pr_info("hmt dual (%d), setting for HMT!\n", msd.hmt_stat.hmt_dual);
 			hmt_dual_scan_update();
-			//hmt_aid_update();
 			hmt_bright_update();
 		}
 	} else
 		is_first = 0;
 #endif
+
 
 end:
 	pr_info("%s : --\n", __func__);
@@ -2074,6 +2396,9 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 
 	msd.ctrl_pdata = ctrl;
 
+	msd.dstat.on = 0;
+	msd.mfd->resume_state = MIPI_SUSPEND_STATE;
+
 	pr_info("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	if (ctrl->shared_pdata.broadcast_enable) {
@@ -2082,9 +2407,6 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 			goto end;
 		}
 	}
-
-	msd.dstat.on = 0;
-	msd.mfd->resume_state = MIPI_SUSPEND_STATE;
 
 	pr_info("DISPLAY_OFF\n");
 	if (pinfo->alpm_event && pinfo->alpm_event(CHECK_CURRENT_STATUS))
@@ -2456,6 +2778,9 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		pr_debug("%s: Unknown backlight control\n", __func__);
 		pinfo->bklt_ctrl = UNKNOWN_CTRL;
 	}
+	
+	rc = of_property_read_u32(np, "qcom,mdss-brightness-max-level", &tmp);
+	pinfo->brightness_max = (!rc ? tmp : MDSS_MAX_BL_BRIGHTNESS);	
 
 	rc = of_property_read_u32_array(np,
 		"qcom,mdss-pan-bl-levels", res, 2);
@@ -2679,6 +3004,10 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_samsung_parse_panel_cmd(np, &display_on_seq,
 				"qcom,panel-display-on-seq");
+
+	mdss_samsung_parse_panel_cmd(np, &hsync_on_seq,
+				"qcom,panel-hsync-on-seq");
+
 	mdss_samsung_parse_panel_cmd(np, &display_off_seq,
 				"qcom,panel-display-off-seq");
 	mdss_samsung_parse_panel_cmd(np, &display_on_cmd,
@@ -2705,6 +3034,9 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	mdss_samsung_parse_panel_cmd(np, &ddi_id_cmds,
 				"samsung,panel-ddi-id-read-cmds");
 
+	mdss_samsung_parse_panel_cmd(np, &mtp_read_sysfs_cmds,
+				"samsung,panel-mtp-read-sysfs-cmds");
+
 	mdss_samsung_parse_panel_cmd(np, &acl_off_cmd,
 				"samsung,panel-acl-off-cmds");
 	mdss_samsung_parse_panel_cmd(np, &acl_cmds_list,
@@ -2718,19 +3050,31 @@ static int mdss_panel_parse_dt(struct device_node *np,
 				"samsung,panel-gamma-cmds-list");
 	mdss_samsung_parse_panel_cmd(np, &elvss_cmds_list,
 				"samsung,panel-elvss-cmds-list");
+	mdss_samsung_parse_panel_cmd(np, &elvss_cmds_revI_list,
+				"samsung,panel-elvss-cmds-revI-list");
+
 	mdss_samsung_parse_panel_cmd(np, &aid_cmds_list,
 				"samsung,panel-aid-cmds-list");
-
 	mdss_samsung_parse_panel_cmd(np, &aid_cmds_revE_list,
 				"samsung,panel-aid-cmds-revE-list");
+	mdss_samsung_parse_panel_cmd(np, &aid_cmds_revF_list,
+				"samsung,panel-aid-cmds-revF-list");
+	mdss_samsung_parse_panel_cmd(np, &aid_cmds_revG_list,
+				"samsung,panel-aid-cmds-revG-list");	
+	mdss_samsung_parse_panel_cmd(np, &aid_cmds_revI_list,
+				"samsung,panel-aid-cmds-revI-list");
 
-	/* Process the mapping tables */
 	mdss_samsung_parse_panel_table(np, &aid_map_table,
-				"samsung,panel-aid-map-table");
-
+					"samsung,panel-aid-map-table");
 	mdss_samsung_parse_panel_table(np, &aid_map_revE_table,
 				"samsung,panel-aid-map-revE-table");
-	
+	mdss_samsung_parse_panel_table(np, &aid_map_revF_table,
+				"samsung,panel-aid-map-revF-table");
+	mdss_samsung_parse_panel_table(np, &aid_map_revG_table,
+				"samsung,panel-aid-map-revG-table");
+	mdss_samsung_parse_panel_table(np, &aid_map_revI_table,
+				"samsung,panel-aid-map-revI-table");	
+
 	mdss_samsung_parse_panel_table(np, &acl_map_table,
 				"samsung,panel-acl-map-table");
 
@@ -2755,9 +3099,14 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	mdss_samsung_parse_panel_cmd(np, &nv_mtp_hbm2_read_cmds,
 				"samsung,panel-nv-mtp-read-hbm2-cmds");
 
+	mdss_samsung_parse_panel_cmd(np, &nv_mtp_elvss_read_cmds,
+				"samsung,panel-nv-mtp-read-elvss-cmds");	
+
 	if (get_lcd_panel_res()) { // 1 : FHD
 		mdss_samsung_parse_panel_cmd(np, &hbm_etc_cmds_K_fhd_revE_list,
 					"samsung,panel-etc-hbm-revE-cmds");
+		mdss_samsung_parse_panel_cmd(np, &hbm_etc_cmds_K_fhd_revG_list,
+					"samsung,panel-etc-hbm-revG-cmds");		
 	} else {	// 0 : WQHD
 		mdss_samsung_parse_panel_cmd(np, &hbm_etc_cmds_K_wqhd_revB_list,
 					"samsung,panel-etc-hbm-revB-cmds");
@@ -2765,7 +3114,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 					"samsung,panel-etc-hbm-revC-cmds");
 		mdss_samsung_parse_panel_cmd(np, &hbm_etc_cmds_K_wqhd_revE_list,
 					"samsung,panel-etc-hbm-revE-cmds");
-		
+		mdss_samsung_parse_panel_cmd(np, &hbm_etc_cmds_K_wqhd_revF_list,
+					"samsung,panel-etc-hbm-revF-cmds");
 	}
 
 	mdss_samsung_parse_panel_cmd(np, &hbm_gamma_cmds_list,
@@ -2782,12 +3132,19 @@ static int mdss_panel_parse_dt(struct device_node *np,
 #if defined(TEMPERATURE_ELVSS)
 	mdss_samsung_parse_panel_cmd(np, &elvss_lowtemp_cmds_list,
 				"samsung,panel-elvss-lowtemp-cmds-list");
+
+	mdss_samsung_parse_panel_cmd(np, &elvss_lowtemp2_cmds_list,
+				"samsung,panel-elvss-lowtemp2-cmds-list");
 #endif
 #if defined(SMART_ACL)
 	mdss_samsung_parse_panel_cmd(np, &smart_acl_elvss_cmds_list,
 				"samsung,panel-smart-acl-elvss-cmds-list");
 	mdss_samsung_parse_panel_table(np, &smart_acl_elvss_map_table,
 				"samsung,panel-smart-acl-elvss-map-table");
+	mdss_samsung_parse_panel_cmd(np, &smart_acl_elvss_cmds_revI_list,
+				"samsung,panel-smart-acl-elvss-cmds-revI-list");
+	mdss_samsung_parse_panel_table(np, &smart_acl_elvss_map_revI_table,
+				"samsung,panel-smart-acl-elvss-map-revI-table");	
 #endif
 #if defined(PARTIAL_UPDATE)
 	mdss_samsung_parse_panel_cmd(np, &partialdisp_on_cmd,
@@ -2802,15 +3159,35 @@ static int mdss_panel_parse_dt(struct device_node *np,
 				"samsung,panel-alpm-off-seq");
 	mdss_samsung_parse_panel_cmd(np, &alpm_set_partial_area_cmd,
 				"samsung,panel-alpm-partial-area");
-
+	of_property_read_u32(np, "samsung,panel-alpm-partial-area-index",
+					&alpm_partial_area_index);
+	/* Gamma setting cmds */
+	mdss_samsung_parse_panel_cmd(np, &alpm_gamma_read_cmd,
+				"samsung,panel-alpm-gamma-read-cmd");
+	mdss_samsung_parse_panel_cmd(np, &alpm_set_gamma_10cd_cmd,
+				"samsung,panel-alpm-gamma-10cd");
+	mdss_samsung_parse_panel_cmd(np, &alpm_set_gamma_60cd_cmd,
+				"samsung,panel-alpm-gamma-60cd");
+	mdss_samsung_parse_panel_cmd(np, &alpm_set_gamma_cmd,
+				"samsung,panel-alpm-gamma-cmds");
+	of_property_read_u32(np, "samsung,panel-alpm-gamma-index",
+					&alpm_gamma_index);
+	of_property_read_u32(np, "samsung,panel-alpm-gamma-para-index",
+					&alpm_gamma_para_index);
+	of_property_read_u32(np, "samsung,panel-alpm-gamma-para-length",
+					&alpm_gamma_para_length);
 #endif
 #if defined(CONFIG_LCD_HMT)
 	mdss_samsung_parse_panel_cmd(np, &hmt_aid_ready_to_foward_cmd,
 				"samsung,panel-hmt-aid-ready-to-foward");
 	mdss_samsung_parse_panel_cmd(np, &hmt_dual_scan_full_enable,
-				"samsung,panel-hmt-dual-scan-full-enable");
+				"samsung,panel-hmt-dual-scan-enable");
 	mdss_samsung_parse_panel_cmd(np, &hmt_dual_scan_disable,
 				"samsung,panel-hmt-dual-scan-disable");
+	mdss_samsung_parse_panel_cmd(np, &hmt_reverse_enable,
+				"samsung,panel-hmt-reverse-enable");
+	mdss_samsung_parse_panel_cmd(np, &hmt_reverse_disable,
+				"samsung,panel-hmt-reverse-disable");
 	mdss_samsung_parse_panel_cmd(np, &hmt_aid_cmd,
 				"samsung,panel-hmt-aid");
 #if 0
@@ -2894,9 +3271,9 @@ static int samsung_dsi_panel_event_handler(int event)
 			pr_info("%s : send CONFIG_MDNIE_LITE_TUNING... \n",__func__);
 			is_negative_on();
 			break;
-#endif		
+#endif
 		default:
-			pr_err("%s : unknown event \n", __func__);
+			pr_err("%s : unknown event (%d)\n", __func__, event);
 			break;
 	}
 
@@ -3148,22 +3525,30 @@ static ssize_t mipi_samsung_disp_lcdtype_show(struct device *dev,
 {
 	char temp[100];
 
-	switch (msd.panel) {
-		case PANEL_FHD_OCTA_S6E3FA0:
-		case PANEL_FHD_OCTA_S6E3FA0_CMD:
-			snprintf(temp, 20, "SDC_AMS568AT01");
-			break;
-		case PANEL_FHD_OCTA_S6E3FA2_CMD:
-			snprintf(temp, 20, "SDC_AMS520BQ01");
-			break;
-		case PANEL_WQHD_OCTA_S6E3HA0_CMD:
-			snprintf(temp, 20, "SDC_AMS520BR01");
-			break;
-		default :
-			snprintf(temp, strnlen(msd.panel_name, 100),
-								msd.panel_name);
-			break;
+	if(msd.manufacture_id){
+		snprintf(temp, 20, "SDC_%x\n",msd.manufacture_id);
+	}else{
+		pr_info("no manufacture id\n");
+
+/*	
+		switch (msd.panel) {
+			case PANEL_FHD_OCTA_S6E3FA0:
+			case PANEL_FHD_OCTA_S6E3FA0_CMD:
+				snprintf(temp, 20, "SDC_AMS568AT01\n");
+				break;
+			case PANEL_FHD_OCTA_S6E3FA2_CMD:
+				snprintf(temp, 20, "SDC_AMS520BQ01\n");
+				break;
+			case PANEL_WQHD_OCTA_S6E3HA0_CMD:
+				snprintf(temp, 20, "SDC_AMS520BR01\n");
+				break;
+			default :
+				snprintf(temp, strnlen(msd.panel_name, 100),
+									msd.panel_name);
+				break;		
+*/				
 	}
+		
 	strlcat(buf, temp, 100);
 
 	return strnlen(buf, 100);
@@ -3262,6 +3647,8 @@ static ssize_t mipi_samsung_disp_acl_store(struct device *dev,
 		acl_set = false;
 	else
 		pr_info("%s: Invalid argument!!", __func__);
+
+	msd.dstat.elvss_need_update = 1;
 
 	if (mfd->panel_power_on) {
 		if (acl_set && !(msd.dstat.acl_on||msd.dstat.siop_status)) {
@@ -3416,8 +3803,11 @@ static ssize_t mipi_samsung_auto_brightness_store(struct device *dev,
 		return size;
 	}
 
+	msd.dstat.elvss_need_update = 1;
+
 	if (msd.mfd->resume_state == MIPI_RESUME_STATE) {
 		mipi_samsung_disp_send_cmd(PANEL_BRIGHT_CTRL, true);
+		mDNIe_Set_Mode(); // LOCAL CE tuning
 		pr_info("%s %d %d\n", __func__, msd.dstat.auto_brightness, msd.dstat.bright_level);
 	} else {
 		pr_info("%s : panel is off state!!\n", __func__);
@@ -3425,6 +3815,48 @@ static ssize_t mipi_samsung_auto_brightness_store(struct device *dev,
 
 	return size;
 }
+
+static ssize_t mipi_samsung_read_mtp_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	int addr, len, start;
+	char *read_buf = NULL;
+
+	sscanf(buf, "%x %d %x" , &addr, &len, &start);
+
+	read_buf = kmalloc(len * sizeof(char), GFP_KERNEL);
+
+	pr_info("%x %d %x\n", addr, len, start);
+
+	mtp_read_sysfs_cmds.cmd_desc[0].payload[0] = addr; // addr
+	mtp_read_sysfs_cmds.cmd_desc[0].payload[1] = len; // size
+	mtp_read_sysfs_cmds.cmd_desc[0].payload[2] = start; // start
+
+	mtp_read_sysfs_cmds.read_size = kzalloc(sizeof(char) * \
+					mtp_read_sysfs_cmds.num_of_cmds, GFP_KERNEL);
+	mtp_read_sysfs_cmds.read_startoffset = kzalloc(sizeof(char) * \
+					mtp_read_sysfs_cmds.num_of_cmds, GFP_KERNEL);
+
+	mtp_read_sysfs_cmds.read_size[0] = len;
+	mtp_read_sysfs_cmds.read_startoffset[0] = start;
+
+	pr_info("%x %x %x %x %x %x %x %x %x\n", 
+		mtp_read_sysfs_cmds.cmd_desc[0].dchdr.dtype,
+		mtp_read_sysfs_cmds.cmd_desc[0].dchdr.last,
+		mtp_read_sysfs_cmds.cmd_desc[0].dchdr.vc,
+		mtp_read_sysfs_cmds.cmd_desc[0].dchdr.ack,
+		mtp_read_sysfs_cmds.cmd_desc[0].dchdr.wait,
+		mtp_read_sysfs_cmds.cmd_desc[0].dchdr.dlen,
+		mtp_read_sysfs_cmds.cmd_desc[0].payload[0], 
+		mtp_read_sysfs_cmds.cmd_desc[0].payload[1], 
+		mtp_read_sysfs_cmds.cmd_desc[0].payload[2]);
+
+	mipi_samsung_read_nv_mem(msd.pdata, &mtp_read_sysfs_cmds, read_buf);
+	
+	kfree(read_buf);
+	return size;
+}
+
 #endif
 
 #if defined(TEMPERATURE_ELVSS)
@@ -3458,7 +3890,7 @@ static ssize_t mipi_samsung_temperature_store(struct device *dev,
 		msd.dstat.temperature_value |=0x80;
 	}
 
-	msd.dstat.temper_need_update = 1;
+	msd.dstat.elvss_need_update = 1;
 
 	if(msd.mfd->resume_state == MIPI_RESUME_STATE) {
 		mipi_samsung_disp_send_cmd(PANEL_BRIGHT_CTRL, true);
@@ -3576,13 +4008,13 @@ static ssize_t mipi_samsung_alpm_store(struct device *dev,
 			 * That will use during ALPM on or switch mode to ALPM
 			 * from None ALPM
 			 */
-			alpm_on_seq.cmd_desc[6].payload[1] = \
+			alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[1] = \
 				(alpm_disp_range[0] >> 8) & 0xFF; /*select msb 1byte*/
-			alpm_on_seq.cmd_desc[6].payload[2] = \
+			alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[2] = \
 				alpm_disp_range[0] & 0xFF;
-			alpm_on_seq.cmd_desc[6].payload[3] = \
+			alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[3] = \
 				(alpm_disp_range[1] >> 8) & 0xFF; /*select msb 1byte*/
-			alpm_on_seq.cmd_desc[6].payload[4] = \
+			alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[4] = \
 				alpm_disp_range[1] & 0xFF;
 
 			/*
@@ -3591,13 +4023,13 @@ static ssize_t mipi_samsung_alpm_store(struct device *dev,
 			 * if ALPM or none ALPM mode already on.
 			 */
 			alpm_set_partial_area_cmd.cmd_desc[0].payload[1] = \
-				alpm_on_seq.cmd_desc[6].payload[1];
+				alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[1];
 			alpm_set_partial_area_cmd.cmd_desc[0].payload[2] = \
-				alpm_on_seq.cmd_desc[6].payload[2];
+				alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[2];
 			alpm_set_partial_area_cmd.cmd_desc[0].payload[3] = \
-				alpm_on_seq.cmd_desc[6].payload[3];
+				alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[3];
 			alpm_set_partial_area_cmd.cmd_desc[0].payload[4] = \
-				alpm_on_seq.cmd_desc[6].payload[4];
+				alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[4];
 		}
 	}
 
@@ -3625,6 +4057,7 @@ static ssize_t mipi_samsung_alpm_store(struct device *dev,
 					msleep(20); //wait 1 frame(more than 16ms)
 					mipi_samsung_disp_send_cmd(PANEL_DISPLAY_ON, true);
 				}
+				pinfo->alpm_event(STORE_CURRENT_STATUS);
 				pr_info("[ALPM_DEBUG] %s: Send ALPM mode on cmds\n", __func__);
 			} else {
 				if (disp_range[0] || disp_range[1]) {
@@ -3649,7 +4082,6 @@ static ssize_t mipi_samsung_alpm_store(struct device *dev,
 					msleep(20); //wait 1 frame(more than 16ms)
 					mipi_samsung_disp_send_cmd(PANEL_DISPLAY_ON, true);
 					pinfo->alpm_event(CLEAR_MODE_STATUS);
-					pinfo->alpm_event = NULL;
 				}
 				pr_info("[ALPM_DEBUG] %s: Send ALPM off cmds\n", __func__);
 			}
@@ -3661,13 +4093,199 @@ static ssize_t mipi_samsung_alpm_store(struct device *dev,
 		pr_info("[ALPM_DEBUG] %s: no operation \n:", __func__);
 	}
 
-	pr_info("%s: alpm_on_seq = 0x%x\n", __func__, alpm_on_seq.cmd_desc[6].payload[1]);
-	pr_info("%s: alpm_on_seq = 0x%x\n", __func__, alpm_on_seq.cmd_desc[6].payload[2]);
-	pr_info("%s: alpm_on_seq = 0x%x\n", __func__, alpm_on_seq.cmd_desc[6].payload[3]);
-	pr_info("%s: alpm_on_seq = 0x%x\n", __func__, alpm_on_seq.cmd_desc[6].payload[4]);
+	pr_info("%s: alpm_on_seq = 0x%x\n", __func__,\
+				alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[1]);
+	pr_info("%s: alpm_on_seq = 0x%x\n", __func__,\
+				alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[2]);
+	pr_info("%s: alpm_on_seq = 0x%x\n", __func__,\
+				alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[3]);
+	pr_info("%s: alpm_on_seq = 0x%x\n", __func__,\
+				alpm_on_seq.cmd_desc[alpm_partial_area_index].payload[4]);
 
 	return size;
 }
+static ssize_t mipi_samsung_alpm_backlight_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int rc;
+	static struct mdss_panel_info *pinfo = NULL;
+	static int bl_level = 60;
+
+	if (unlikely(!pinfo) && msd.pdata)
+		pinfo = &msd.pdata->panel_info;
+
+	if (pinfo && pinfo->alpm_event)
+		bl_level = (int)pinfo->alpm_event(CHECK_BL_VALUE);
+
+	rc = snprintf((char *)buf, sizeof(buf), "%d\n", bl_level);
+	pr_info("[ALPM_DEBUG] %s: Brightness level : %d \n",\
+					 __func__, bl_level);
+
+	return rc;
+}
+
+static ssize_t mipi_samsung_alpm_backlight_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	int bl_level = 0, mode = 0;
+	static int prev_bl_level = 0;
+	struct mdss_panel_info *pinfo = &msd.pdata->panel_info;
+	struct display_status *dstat = &msd.dstat;
+
+	sscanf(buf, "%d" , &bl_level);
+
+	if (pinfo->alpm_event) {
+		mode = pinfo->alpm_event(CHECK_CURRENT_STATUS);
+		prev_bl_level = pinfo->alpm_event(CHECK_BL_VALUE);
+		pr_info("[ALPM_DEBUG] %s: Brightness level : %d\n",
+				__func__, bl_level);
+
+		/*
+		 * The bl_level must be same with STORE_BL_10CD or STORE_BL_60CD
+		 * because ALPM mode only can support 10cd and 60cd
+		 */
+		if (bl_level != STORE_BL_10CD\
+				&& bl_level != STORE_BL_60CD) {
+			pr_info("[ALPM_DEBUG] %s: Invalid brightness level(%d)\n",\
+						 __func__, bl_level);
+			goto error;
+		}
+
+		if (bl_level != prev_bl_level) {
+			pinfo->alpm_event(bl_level);
+
+			if (bl_level == STORE_BL_10CD) {
+				alpm_copy_cmds(&alpm_set_gamma_cmd.cmd_desc[1].payload[alpm_gamma_para_index],\
+						&alpm_set_gamma_10cd_cmd.cmd_desc[0].payload[alpm_gamma_para_index],\
+						(u8)alpm_gamma_para_length);
+			} else if (bl_level == STORE_BL_60CD) {
+				alpm_copy_cmds(&alpm_set_gamma_cmd.cmd_desc[1].payload[alpm_gamma_para_index],\
+						&alpm_set_gamma_60cd_cmd.cmd_desc[0].payload[alpm_gamma_para_index],\
+						(u8)alpm_gamma_para_length);
+			}
+
+			alpm_copy_cmds(&alpm_on_seq.cmd_desc[alpm_gamma_index].payload[alpm_gamma_para_index],\
+						&alpm_set_gamma_cmd.cmd_desc[1].payload[alpm_gamma_para_index],\
+						(u8)alpm_gamma_para_length);
+
+			alpm_cmd_debug(alpm_set_gamma_cmd.cmd_desc[1].payload,\
+							alpm_set_gamma_cmd.cmd_desc[1].dchdr.dlen);
+			alpm_cmd_debug(alpm_on_seq.cmd_desc[alpm_gamma_index].payload,\
+							alpm_on_seq.cmd_desc[alpm_gamma_index].dchdr.dlen);
+			if (dstat->on) {
+				/*
+				 * The 10/60 cd backlight can not change in UNBLANK status
+				 * Because that cause tearing effect so that is not recomended
+				 */
+				/* mipi_samsung_disp_send_cmd(PANEL_ALPM_SET_BL, true); */
+			} else {
+				/* Empty Body */
+			}
+		} else {
+			pr_info("[ALPM_DEBUG] %s: Do not update birhgtness"\
+						"(Current level %d, Requested level %d\n",\
+						__func__, prev_bl_level, bl_level);
+		}
+	}
+
+error:
+	return size;
+}
+
+static void alpm_cmd_debug(char *src, int size)
+{
+#ifdef ALPM_DEBUG
+	char *bp;
+	int i;
+	bp = src;
+
+	pr_info("[ALPM_DEBUG] %s: ", __func__);
+	for (i = 0; i < size; i++)
+		printk("%x ", *bp++);
+	printk("\n");
+#endif
+}
+
+static void alpm_copy_cmds(char *dest, char *src, u8 size)
+{
+	u8 i;
+
+	for (i = 0; i < size; i++)
+		dest[i] = src[i];
+}
+
+static void alpm_gamma_read_func(void)
+{
+	u8 i = 0, gamma_status = 0;
+	static u8 gamma_read_done;
+
+	if (gamma_read_done)
+		return;
+
+	gamma_read_done = 1;
+
+	if (get_lcd_attached() == 0) {
+		printk("%s: get_lcd_attached(0)!\n",__func__);
+		return;
+	}
+
+	if (!alpm_gamma_read_cmd.num_of_cmds) {
+		pr_err("%s : alpm gamma read cmd num is zero..\n",__func__);
+		return;
+	}
+
+	pr_info("[ALPM_DEBUG] %s : alpm gamma read ..\n", __func__);
+	mipi_samsung_disp_send_cmd(PANEL_MTP_ENABLE, true);
+	mdss_dsi_cmd_receive(msd.ctrl_pdata,
+		&alpm_gamma_read_cmd.cmd_desc[0],
+		alpm_gamma_read_cmd.read_size[0]);
+
+	mipi_samsung_disp_send_cmd(PANEL_MTP_DISABLE, true);
+	pr_info("[ALPM_DEBUG] %s: Gamma Value(%x, %x, %x, %x, %x, %x)\n",
+				__func__, msd.ctrl_pdata->rx_buf.data[0],
+				msd.ctrl_pdata->rx_buf.data[1],
+				msd.ctrl_pdata->rx_buf.data[2],
+				msd.ctrl_pdata->rx_buf.data[3],
+				msd.ctrl_pdata->rx_buf.data[4],
+				msd.ctrl_pdata->rx_buf.data[5]);
+
+	for (i = 0; i < alpm_gamma_para_length * 2; i++)
+		gamma_status |= (u8)msd.ctrl_pdata->rx_buf.data[i];
+
+	if (!gamma_status) {
+		pr_err("[ALPM_DEBUG] %s : Fail to read gamma\n", __func__);
+		/*
+		 * Make the gamma command as null packet
+		 * because there is not gamma data to send
+		 */
+		alpm_set_gamma_cmd.cmd_desc[1].payload[0] = 0x0;
+		alpm_set_gamma_cmd.cmd_desc[1].dchdr.dlen = 1;
+		alpm_on_seq.cmd_desc[alpm_gamma_index].payload[0] = 0x0;
+		alpm_on_seq.cmd_desc[alpm_gamma_index].dchdr.dlen = 1;
+	}
+
+	/* Copy gamma value to 10cd, 60cd cmd set */
+	alpm_copy_cmds(&alpm_set_gamma_60cd_cmd.cmd_desc[0].payload[alpm_gamma_para_index],\
+					&msd.ctrl_pdata->rx_buf.data[0],\
+					(u8)alpm_gamma_para_length);
+	alpm_copy_cmds(&alpm_set_gamma_10cd_cmd.cmd_desc[0].payload[alpm_gamma_para_index],\
+					&msd.ctrl_pdata->rx_buf.data[3],\
+					(u8)alpm_gamma_para_length);
+
+	/* Init gamma cmd for alpm on cmd*/
+	alpm_copy_cmds(&alpm_on_seq.cmd_desc[alpm_gamma_index].payload[alpm_gamma_para_index],\
+					&alpm_set_gamma_60cd_cmd.cmd_desc[0].payload[alpm_gamma_para_index],\
+					(u8)alpm_gamma_para_length);
+
+	/* Print out gamma cmd for debug purpose */
+	alpm_cmd_debug(alpm_set_gamma_10cd_cmd.cmd_desc[0].payload,\
+					alpm_set_gamma_10cd_cmd.cmd_desc[0].dchdr.dlen);
+	alpm_cmd_debug(alpm_set_gamma_60cd_cmd.cmd_desc[0].payload,\
+					alpm_set_gamma_60cd_cmd.cmd_desc[0].dchdr.dlen);
+	alpm_cmd_debug(alpm_on_seq.cmd_desc[alpm_gamma_index].payload,
+					alpm_on_seq.cmd_desc[alpm_gamma_index].dchdr.dlen);
+}
+
 #endif
 #if defined(DYNAMIC_FPS_USE_TE_CTRL)
 static ssize_t dynamic_fps_use_te_ctrl_show(struct device *dev,
@@ -3721,6 +4339,7 @@ u8 alpm_event_func(u8 flag)
 {
 	static u8 current_status = 0;
 	static u8 previous_status = 0;
+	static u8 brightness = 60; /* Default brightness level is 60cd */
 	u8 ret = 0;
 
 	switch (flag) {
@@ -3746,6 +4365,15 @@ u8 alpm_event_func(u8 flag)
 			previous_status = 0;
 			current_status = 0;
 			break;
+		case CHECK_BL_VALUE:
+			ret = brightness;
+			break;
+		case STORE_BL_10CD:
+			brightness = STORE_BL_10CD;
+			break;
+		case STORE_BL_60CD:
+			brightness = STORE_BL_60CD;
+			break;
 		default:
 			break;
 	}
@@ -3756,200 +4384,220 @@ u8 alpm_event_func(u8 flag)
 	return ret;
 }
 
-static u8 alpm_store(u8 enable)
+static void alpm_gamma_read()
 {
 	struct mdss_panel_info *pinfo = &msd.pdata->panel_info;
-	u8 mode = enable;
 
-	//Register ALPM event function
+	/* Register ALPM gamm read function */
+	if(unlikely(!pinfo->alpm_gamma_read))
+		pinfo->alpm_gamma_read = alpm_gamma_read_func;
+
+	pinfo->alpm_gamma_read();
+}
+
+static void alpm_store(u8 mode)
+{
+	struct mdss_panel_info *pinfo = &msd.pdata->panel_info;
+
+	/* Register ALPM event function */
 	if (unlikely(!pinfo->alpm_event))
 		pinfo->alpm_event = alpm_event_func;
 
-	if (mode)
-		pinfo->alpm_event(mode);
-	else
-		pinfo->alpm_event(mode);
-
-	return 0;
+	pinfo->alpm_event(mode);
 }
 #endif
 
-#if 1
 #if defined(CONFIG_LCD_HMT)
-#if 0
-static char hmt_aid_reverse_scan_data[][2][3] = {
-		/* REVERSE 1 */
-		/* Normal Scan , Dual Scan */
-		{{0x06,0xCE,0x08}, {0x03,0x67,0x08}}, // 50
-		{{0x06,0x0B,0x08}, {0x03,0x06,0x08}}, // 51
-		{{0x05,0x4A,0x08}, {0x02,0xA5,0x08}}, // 52
-		{{0x04,0x88,0x08}, {0x02,0x44,0x08}}, // 53
-		{{0x03,0xC8,0x08}, {0x01,0xE4,0x08}}, // 54
-		{{0x03,0x06,0x08}, {0x01,0x83,0x08}}, // 55
-		{{0x02,0x44,0x08}, {0x01,0x22,0x08}}, // 56
-		{{0x01,0x83,0x08}, {0x00,0xC1,0x08}}, // 57
-		{{0x00,0xC1,0x08}, {0x00,0x60,0x08}}, // 58
-		{{0x00,0xAE,0x08}, {0x00,0x57,0x08}}, // 59
-		{{0x00,0x9A,0x08}, {0x00,0x4D,0x08}}, // 60
-		{{0x00,0x87,0x08}, {0x00,0x43,0x08}}, // 61
-		{{0x00,0x74,0x08}, {0x00,0x3A,0x08}}, // 62
-		{{0x00,0x60,0x08}, {0x00,0x30,0x08}}, // 63
-
-		{{0x00,0x00,0x00}, {0x00,0x00,0x00}}, // 64
-		{{0x00,0x00,0x00}, {0x00,0x00,0x00}}, // 65
-		{{0x00,0x00,0x00}, {0x00,0x00,0x00}}, // 66
-		{{0x00,0x00,0x00}, {0x00,0x00,0x00}}, // 67
-		{{0x00,0x00,0x00}, {0x00,0x00,0x00}}, // 68
-		{{0x00,0x00,0x00}, {0x00,0x00,0x00}}, // 69
-
-		{{0x06,0xCE,0x28}, {0x03,0x67,0x28}}, // 70
-		{{0x06,0x0B,0x28}, {0x03,0x06,0x28}}, // 71
-		{{0x05,0x4A,0x28}, {0x02,0xA5,0x28}}, // 72
-		{{0x04,0x88,0x28}, {0x02,0x44,0x28}}, // 73
-		{{0x03,0xC8,0x28}, {0x01,0xE4,0x28}}, // 74
-		{{0x03,0x06,0x28}, {0x01,0x83,0x28}}, // 75
-		{{0x02,0x44,0x28}, {0x01,0x22,0x28}}, // 76
-		{{0x01,0x83,0x28}, {0x00,0xC1,0x28}}, // 77
-		{{0x00,0xC1,0x28}, {0x00,0x60,0x28}}, // 78
-		{{0x00,0xAE,0x28}, {0x00,0x57,0x28}}, // 79
-		{{0x00,0x9A,0x28}, {0x00,0x4D,0x28}}, // 80
-		{{0x00,0x87,0x28}, {0x00,0x43,0x28}}, // 81
-		{{0x00,0x74,0x28}, {0x00,0x3A,0x28}}, // 82
-		{{0x00,0x60,0x28}, {0x00,0x30,0x28}}, // 83
-};
-#define SET_HMT_AID_REV_CMD(a,b)\
-	hmt_aid_cmd.cmd_desc[1].payload[3] = \
-		hmt_aid_reverse_scan_data[a - HMT_REVERSE_INDEX][b][0];\
-	hmt_aid_cmd.cmd_desc[1].payload[4] = \
-		hmt_aid_reverse_scan_data[a - HMT_REVERSE_INDEX][b][1];\
-	hmt_aid_cmd.cmd_desc[1].payload[7] = \
-		hmt_aid_reverse_scan_data[a - HMT_REVERSE_INDEX][b][2];
-#endif
-
-static char hmt_aid_forward_scan_data[][2][3] = {
-		/* FORWARD 0 */
-		/* Normal Scan ,    Dual Scan */
-		{{0x01,0x02,0x00}, {0x00,0x81,0x00}}, // 0
-		{{0x02,0x03,0x00}, {0x01,0x02,0x00}}, // 1
-		{{0x03,0x04,0x00}, {0x01,0x82,0x00}}, // 2
-		{{0x04,0x06,0x00}, {0x02,0x03,0x00}}, // 3
-		{{0x05,0x08,0x00}, {0x02,0x84,0x00}}, // 4
-		{{0x06,0x0A,0x00}, {0x03,0x05,0x00}}, // 5
-		{{0x07,0x0B,0x00}, {0x03,0x86,0x00}}, // 6
-		{{0x08,0x0D,0x00}, {0x04,0x06,0x00}}, // 7
-		{{0x09,0x0E,0x00}, {0x05,0x88,0x00}}, // 8
-		
-		{{0x00,0x00,0x00}, {0x00,0x00,0x00}}, // 9
-};
-
-#define SET_HMT_AID_FOR_CMD(a,b)\
-	hmt_aid_cmd.cmd_desc[1].payload[1] = \
-		hmt_aid_forward_scan_data[a][b][0];\
-	hmt_aid_cmd.cmd_desc[1].payload[2] = \
-		hmt_aid_forward_scan_data[a][b][1];\
-	hmt_aid_cmd.cmd_desc[1].payload[10] = \
-		hmt_aid_forward_scan_data[a][b][2];
-
-int hmt_aid_update(void)
+int get_hmt_aid_index(int level)
 {
-	pr_info ("== HMT AID Duty Update Start == \n");
+	int ndx;
 
-	if (msd.dstat.on) {
-		if (msd.hmt_stat.hmt_aid < HMT_AID_INDEX) { /* Foward */ 
+	if (level == 315)
+		ndx = 0;
+	else if (level == 280)
+		ndx = 1;
+	else if (level == 245)
+		ndx = 2;
+	else if (level == 210)
+		ndx = 3;
+	else if (level == 175)
+		ndx = 4;
+	else if (level == 140)
+		ndx = 5;
+	else if (level == 105)
+		ndx = 6;
+	else if (level == 70)
+		ndx = 7;
+	else if (level == 35)
+		ndx = 8;
+	else
+		ndx = 8;
 
-			SET_HMT_AID_FOR_CMD(msd.hmt_stat.hmt_aid,msd.hmt_stat.hmt_dual);
+	pr_info("[HMT] %s : (%d)\n", __func__, ndx);
 
-			pr_info("Foward AID, Input=%d, dual=%d, 1st=0x%x, 2nd=0x%x, 10th=0x%x\n",
-				msd.hmt_stat.hmt_aid, msd.hmt_stat.hmt_dual, 
-				hmt_aid_cmd.cmd_desc[1].payload[1],
-				hmt_aid_cmd.cmd_desc[1].payload[2],
-				hmt_aid_cmd.cmd_desc[1].payload[10]);
-			//mipi_samsung_disp_send_cmd(PANEL_HMT_AID, true);
-			mipi_samsung_disp_send_cmd(PANEL_HMT_AID_READY_TO_FOWARD, true);
-			pr_info("Finish to send AID Foward Command\n");
-		} else {
-			pr_err("%s: Invalid Input!! (%d)\n", __func__, msd.hmt_stat.hmt_aid);
-			return -EINVAL;
-		}
-#if 0
-		else if (msd.hmt_stat.hmt_aid < 99) { /* Reverse */
+	return ndx;		
+}
 
-			SET_HMT_AID_REV_CMD(msd.hmt_stat.hmt_aid,msd.hmt_stat.hmt_dual);
+static char hmt_aid_scan_data_fhd[HMT_AID_INDEX][2][3] = {
+		/* Single Scan ,    Dual Scan */
+		{{0x00,0xC2,0x08}, {0x00,0x60,0x08}}, // 0 OFF DUTY 10%
+		{{0x01,0x84,0x08}, {0x00,0xC2,0x08}}, // 1 OFF DUTY 20%
+		{{0x02,0x44,0x08}, {0x01,0x22,0x08}}, // 2 OFF DUTY 30%
+		{{0x03,0x06,0x08}, {0x01,0x84,0x08}}, // 3 OFF DUTY 40%
+		{{0x03,0xC8,0x08}, {0x01,0xE4,0x08}}, // 4 OFF DUTY 50%
+		{{0x04,0x8A,0x08}, {0x02,0x44,0x08}}, // 5 OFF DUTY 60%
+		{{0x05,0x4C,0x08}, {0x02,0xA6,0x08}}, // 6 OFF DUTY 70%
+		{{0x06,0x0C,0x08}, {0x03,0x06,0x08}}, // 7 OFF DUTY 80%
+		{{0x06,0xCE,0x08}, {0x03,0x68,0x08}}, // 8 OFF DUTY 90%
+};
 
-			pr_info("Reverse AID, Input=%d, dual=%d, 3rd=0x%x, 4th=0x%x, 7th=0x%x\n",
-				msd.hmt_stat.hmt_aid, msd.hmt_stat.hmt_dual, 
-				hmt_aid_cmd.cmd_desc[1].payload[3],
-				hmt_aid_cmd.cmd_desc[1].payload[4],
-				hmt_aid_cmd.cmd_desc[1].payload[7]);
-			mipi_samsung_disp_send_cmd(PANEL_HMT_AID, true);
-			mipi_samsung_disp_send_cmd(PANEL_HMT_AID_READY_TO_REVERSE, true);
-			pr_info("Finish to send AID Reverse Command\n");
-		} 
-#endif
-	}	else {
-		pr_info("%s : LCD is off state\n", __func__);
-		return -EINVAL;
-	}	
+#define SET_HMT_AID_FOR_CMD_FHD(a,b)\
+	hmt_aid_cmd.cmd_desc[2].payload[1] = \
+		hmt_aid_scan_data_fhd[a][b][0];\
+	hmt_aid_cmd.cmd_desc[2].payload[2] = \
+		hmt_aid_scan_data_fhd[a][b][1];\
+	hmt_aid_cmd.cmd_desc[2].payload[8] = \
+		hmt_aid_scan_data_fhd[a][b][2];
+
+int hmt_aid_update_fhd(void)
+{
+	pr_info ("== HMT AID Duty Update (fhd) Start == \n");
+
+	SET_HMT_AID_FOR_CMD_FHD(msd.hmt_stat.hmt_aid, msd.hmt_stat.hmt_dual);
+
+	pr_info("Foward AID, Input=%d, dual=%d, 1st=0x%x, 2nd=0x%x, 10th=0x%x\n",
+		msd.hmt_stat.hmt_aid, msd.hmt_stat.hmt_dual, 
+		hmt_aid_cmd.cmd_desc[2].payload[1],
+		hmt_aid_cmd.cmd_desc[2].payload[2],
+		hmt_aid_cmd.cmd_desc[2].payload[8]);
+
+	mipi_samsung_disp_send_cmd(PANEL_HMT_AID, true);
 
 	pr_info ("== HMT AID Duty Update End == \n");
 
 	return 0;
 }
-#endif
-#endif
 
-#if defined(CONFIG_LCD_HMT)
+static char hmt_aid_scan_data_wqhd[HMT_AID_INDEX][2][3] = {
+		/* Single Scan ,    Dual Scan */
+		{{0x01,0x02,0x00}, {0x00,0x81,0x00}}, // 0 OFF DUTY 10%
+		{{0x02,0x03,0x00}, {0x01,0x02,0x00}}, // 1 OFF DUTY 20%
+		{{0x03,0x04,0x00}, {0x01,0x82,0x00}}, // 2 OFF DUTY 30%
+		{{0x04,0x06,0x00}, {0x02,0x03,0x00}}, // 3 OFF DUTY 40%
+		{{0x05,0x08,0x00}, {0x02,0x84,0x00}}, // 4 OFF DUTY 50%
+		{{0x06,0x0C,0x00}, {0x03,0x0C,0x00}}, // 5 OFF DUTY 60%
+		{{0x07,0x0C,0x00}, {0x03,0x8C,0x00}}, // 6 OFF DUTY 70%
+		{{0x08,0x0D,0x00}, {0x04,0x06,0x00}}, // 7 OFF DUTY 80%
+		{{0x09,0x0E,0x00}, {0x05,0x88,0x00}}, // 8 OFF DUTY 90%
+};
+
+#define SET_HMT_AID_FOR_CMD_WQHD(a,b)\
+	hmt_aid_cmd.cmd_desc[2].payload[1] = \
+		hmt_aid_scan_data_wqhd[a][b][0];\
+	hmt_aid_cmd.cmd_desc[2].payload[2] = \
+		hmt_aid_scan_data_wqhd[a][b][1];\
+	hmt_aid_cmd.cmd_desc[2].payload[10] = \
+		hmt_aid_scan_data_wqhd[a][b][2];
+
+int hmt_aid_update_wqhd(void)
+{
+	pr_info ("== HMT AID Duty Update (wqhd) Start == \n");
+
+	SET_HMT_AID_FOR_CMD_WQHD(msd.hmt_stat.hmt_aid, msd.hmt_stat.hmt_dual);
+
+	pr_info("Foward AID, Input=%d, dual=%d, 1st=0x%x, 2nd=0x%x, 10th=0x%x\n",
+		msd.hmt_stat.hmt_aid, msd.hmt_stat.hmt_dual, 
+		hmt_aid_cmd.cmd_desc[2].payload[1],
+		hmt_aid_cmd.cmd_desc[2].payload[2],
+		hmt_aid_cmd.cmd_desc[2].payload[10]);
+
+	mipi_samsung_disp_send_cmd(PANEL_HMT_AID, true);
+
+	pr_info ("== HMT AID Duty Update End == \n");
+
+	return 0;
+}
+
+/* 
+ * level 80, 95, 115, 130 -> update AID + GAMMA
+ * level 105, 140 -> update only AID
+ */
+ 
 int hmt_bright_update(void)
 {
-	if (msd.hmt_stat.hmt_on) {
-		mipi_samsung_disp_send_cmd(PANEL_HMT_BRIGHT, true);
+	if (msd.hmt_stat.hmt_dual != HMT_OFF) {
+
+		if (msd.hmt_stat.hmt_reverse) {
+			msd.hmt_stat.hmt_aid = HMT_AID_INDEX - 1 - msd.hmt_stat.hmt_aid; // reverse
+			if (get_lcd_panel_res()) // 1 : FHD
+					hmt_aid_update_fhd();
+				else // 0 : WQHD
+					hmt_aid_update_wqhd();
+
+		} else {
+		if (msd.hmt_stat.hmt_bl_level == 105 || msd.hmt_stat.hmt_bl_level == 140) {
+			msd.hmt_stat.hmt_aid = get_hmt_aid_index(msd.hmt_stat.hmt_bl_level);
+			if (get_lcd_panel_res()) // 1 : FHD
+				hmt_aid_update_fhd();
+			else // 0 : WQHD
+				hmt_aid_update_wqhd();
+		} else
+			mipi_samsung_disp_send_cmd(PANEL_HMT_BRIGHT, true);
+		}
 	} else {
 		mipi_samsung_disp_send_cmd(PANEL_BRIGHT_CTRL, true);
 	}
 
 	return 0;
 }
+
 int hmt_dual_scan_update(void)
 {
-	if (msd.hmt_stat.hmt_on) {
-		if (msd.hmt_stat.hmt_dual == 0) {
-			pr_info("Single Scan Enable ++ \n");
-			skip_te_enable = 0;
-			mipi_samsung_disp_send_cmd(PANEL_DUAL_SCAN_DISABLE, true);
-			//hmt_aid_update();
-			//hmt_porch_update();
-			pr_info("Single Scan Enable -- \n");
-		}
-#if 0
-		else if (msd.hmt_stat.hmt_dual == 1) {
-			pr_info("Dual Scan Half(A) Enable ++ \n");
-			mipi_samsung_disp_send_cmd(PANEL_DUAL_SCAN_DISABLE, true);
-			mipi_samsung_disp_send_cmd(PANEL_DUAL_SCAN_HALF_ENABLE, true);
-			skip_te_enable = 1;
-			hmt_aid_update();
-			hmt_porch_update();
-			pr_info("Dual Scan Half(A) Enable -- \n");
-		}
-#endif
-		else if(msd.hmt_stat.hmt_dual == 1) {
-			pr_info("Dual Scan Full(B) Enable ++ \n");
-			mipi_samsung_disp_send_cmd(PANEL_DUAL_SCAN_DISABLE, true);
-			mipi_samsung_disp_send_cmd(PANEL_DUAL_SCAN_FULL_ENABLE, true);
-			skip_te_enable = 1;
-			//hmt_aid_update();
-			//hmt_porch_update();
-			pr_info("Dual Scan Full(B) Enable -- \n");
-		} else {
-			pr_err("Invalid input (%d).. \n", msd.hmt_stat.hmt_dual);
-			pr_err("0 : Single Scan \n");
-			pr_err("1 : Dual   Scan \n");
-		}
-	} else {
+	if (msd.hmt_stat.hmt_dual == HMT_SINGLE_SCAN) {
 		pr_info("Single Scan Enable ++ \n");
 		skip_te_enable = 0;
 		mipi_samsung_disp_send_cmd(PANEL_DUAL_SCAN_DISABLE, true);
 		pr_info("Single Scan Enable -- \n");
+	} else if (msd.hmt_stat.hmt_dual == HMT_DUAL_SCAN) {
+		pr_info("Dual Scan Enable ++ \n");
+		skip_te_enable = 1;
+		mipi_samsung_disp_send_cmd(PANEL_DUAL_SCAN_DISABLE, true);
+		mipi_samsung_disp_send_cmd(PANEL_DUAL_SCAN_FULL_ENABLE, true);
+		pr_info("Dual Scan Enable -- \n");
+	} else if (msd.hmt_stat.hmt_dual == HMT_OFF) {
+		pr_info("HMT OFF.. \n");
+		skip_te_enable = 0;
+		msd.hmt_stat.hmt_reverse = 0;
+		mipi_samsung_disp_send_cmd(PANEL_DUAL_SCAN_DISABLE, true);
+	} else {
+		pr_err("Invalid input (%d).. \n", msd.hmt_stat.hmt_dual);
+		pr_err("-1 : HMT off \n");
+		pr_err("0 : Single Scan \n");
+		pr_err("1 : Dual   Scan \n");
 	}
+
+	return 0;
+}
+
+int hmt_reverse_update(void)
+{
+	if (msd.hmt_stat.hmt_reverse) {
+		pr_info("REVERSE ENABLE ++\n");
+		mipi_samsung_disp_send_cmd(PANEL_HMT_REVERSE_ENABLE, true);
+		pr_info("REVERSE ENABLE --\n");
+	} else {
+		pr_info("REVERSE DISABLE ++ \n");
+		mipi_samsung_disp_send_cmd(PANEL_HMT_REVERSE_DISABLE, true);
+		pr_info("REVERSE DISABLE -- \n");
+	}
+
+	return 0;
+}
+
+int hmt_update(void)
+{
+	hmt_dual_scan_update();
+	hmt_reverse_update();
 
 	return 0;
 }
@@ -4122,46 +4770,6 @@ static int hmt_bright_set(int hbm_enable)
 
 }
 
-static int hmt_hbm_update(void)
-{
-	if (msd.dstat.on) {
-		if (hmt_hbm_input) {
-			pr_info("%s :: Enable \n", __func__);
-			mipi_samsung_disp_send_cmd(PANEL_HMT_HBM_ENABLE, true);
-		} else {
-			pr_info("%s :: Disable \n", __func__);
-			mipi_samsung_disp_send_cmd(PANEL_HMT_HBM_DISABLE, true);
-		}
-	} else {
-		pr_info("%s : LCD is off state\n", __func__);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static ssize_t mipi_samsung_hmt_hbm_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	int rc;
-
-	rc = snprintf((char *)buf, sizeof(buf), "%d\n", hmt_hbm_input);
-	pr_info("HMT hbm input : %d\n", *buf);
-
-	return rc;
-}
-
-static ssize_t mipi_samsung_hmt_hbm_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t size)
-{
-	int input;
-	sscanf(buf, "%d " , &input);
-	hmt_hbm_input = input;
-	hmt_hbm_update();
-
-	return size;
-}
-
 static ssize_t mipi_samsung_hmt_change_fps_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -4285,30 +4893,26 @@ static ssize_t mipi_samsung_force_500cd_store(struct device *dev,
 
 	return size;
 }
+
 #endif
 
-static ssize_t mipi_samsung_hmt_on_show(struct device *dev,
+static ssize_t mipi_samsung_hmt_aid_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	int rc;
 
-	rc = snprintf((char *)buf, sizeof(buf), "%d\n", msd.hmt_stat.hmt_on);
-	pr_info("[HMT] on input : %d\n", *buf);
-
-	if (msd.dstat.is_smart_dim_loaded)
-		msd.sdimconf_hmt->print_aid_log();
-	else
-		pr_err("[HMT] smart dim is not loaded..\n");
+	rc = snprintf((char *)buf, sizeof(buf), "%d\n", msd.hmt_stat.hmt_aid);
+	pr_info("[HMT] aid input : %d\n", *buf);
 
 	return rc;
 }
 
-static ssize_t mipi_samsung_hmt_on_store(struct device *dev,
+static ssize_t mipi_samsung_hmt_aid_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	int input;
-	
-	sscanf(buf, "%d", &input);
+
+	sscanf(buf, "%d" , &input);
 	pr_info("[HMT] %s: input (%d)\n", __func__, input);
 
 	if (!msd.dstat.on) {
@@ -4316,16 +4920,29 @@ static ssize_t mipi_samsung_hmt_on_store(struct device *dev,
 		return size;
 	}
 
-	if (msd.hmt_stat.hmt_on == input) {
-		pr_err("[HMT] hmt already %s!\n", msd.hmt_stat.hmt_on?"on":"off");
+	if (msd.hmt_stat.hmt_dual == HMT_OFF) {
+		pr_info("[HMT] hmt is off!\n");
 		return size;
 	}
 
-	msd.hmt_stat.hmt_on = input;
+	if 
+(input >= HMT_AID_INDEX) {
+		pr_err("[HMT] out(%d) of index(%d)!\n", input, HMT_AID_INDEX);
+		return size;
+	}
 
-	hmt_dual_scan_update();
-	hmt_bright_update();
+	if (msd.hmt_stat.hmt_aid == input) {
+		pr_err("[HMT] hmt aid already %d!\n", msd.hmt_stat.hmt_aid);
+		return size;
+	}
 
+	msd.hmt_stat.hmt_aid = input;
+
+	if (msd.hmt_stat.hmt_reverse)
+		hmt_bright_update();
+	else
+		pr_err("[HMT] %s : not reserve mode!\n", __func__);
+ 
 	return size;
 }
 
@@ -4353,8 +4970,8 @@ static ssize_t mipi_samsung_hmt_bright_store(struct device *dev,
 		return size;
 	}
 
-	if (!msd.hmt_stat.hmt_on) {
-		pr_err("[HMT] %s : hmt is not on!\n", __func__);
+	if (msd.hmt_stat.hmt_dual == HMT_OFF) {
+		pr_info("[HMT] hmt is off!\n");
 		return size;
 	}
 
@@ -4393,35 +5010,31 @@ static ssize_t mipi_samsung_hmt_dual_scan_store(struct device *dev,
 		return size;
 	}
 
-	if (!msd.hmt_stat.hmt_on) {
-		pr_err("[HMT] %s : hmt is not on!\n", __func__);
-		return size;
-	}
-
 	if (msd.hmt_stat.hmt_dual == input) {
 		pr_info("[HMT] hmt already %s scan mode!\n", msd.hmt_stat.hmt_dual?"dual":"single");
 		return size;
 	}	
 
 	msd.hmt_stat.hmt_dual = input;
-	hmt_dual_scan_update();
+	//hmt_dual_scan_update();
+	hmt_update();
 	hmt_bright_update();
 
 	return size;
 }
 
-static ssize_t mipi_samsung_hmt_aid_show(struct device *dev,
+static ssize_t mipi_samsung_hmt_reverse_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	int rc;
 
-	rc = snprintf((char *)buf, sizeof(buf), "%d\n", msd.hmt_stat.hmt_aid);
-	pr_info("[HMT] aid input : %d\n", *buf);
+	rc = snprintf((char *)buf, sizeof(buf), "%d\n", msd.hmt_stat.hmt_dual);
+	pr_info("[HMT] reverse input : %d\n", *buf);
 
 	return rc;
 }
 
-static ssize_t mipi_samsung_hmt_aid_store(struct device *dev,
+static ssize_t mipi_samsung_hmt_reverse_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	int input;
@@ -4434,21 +5047,19 @@ static ssize_t mipi_samsung_hmt_aid_store(struct device *dev,
 		return size;
 	}
 
-	if (!msd.hmt_stat.hmt_on) {
-		pr_err("[HMT] %s : hmt is not on!\n", __func__);
+	if (msd.hmt_stat.hmt_dual == HMT_OFF) {
+		pr_info("[HMT] hmt is off!\n");
 		return size;
 	}
 
-	if (msd.hmt_stat.hmt_aid == input) {
-		pr_info("[HMT] hmt aid already %s scan mode!\n", msd.hmt_stat.hmt_dual?"dual":"single");
-		return size;
-	}
+	msd.hmt_stat.hmt_reverse = input;
+	//hmt_reverse_update();
+	hmt_update();
+	hmt_bright_update();
 
-	msd.hmt_stat.hmt_aid = input;
-	hmt_aid_update();
- 
 	return size;
 }
+
 #endif
 
 static DEVICE_ATTR(lcd_power, S_IRUGO | S_IWUSR,
@@ -4469,6 +5080,9 @@ static DEVICE_ATTR(power_reduce, S_IRUGO | S_IWUSR | S_IWGRP,
 static DEVICE_ATTR(siop_enable, S_IRUGO | S_IWUSR | S_IWGRP,
 			mipi_samsung_disp_siop_show,
 			mipi_samsung_disp_siop_store);
+static DEVICE_ATTR(read_mtp, S_IRUGO | S_IWUSR | S_IWGRP,
+			NULL,
+			mipi_samsung_read_mtp_store);
 #if defined(TEMPERATURE_ELVSS)
 static DEVICE_ATTR(temperature, S_IRUGO | S_IWUSR | S_IWGRP,
 			mipi_samsung_temperature_show,
@@ -4486,6 +5100,9 @@ static DEVICE_ATTR(partial_disp, S_IRUGO | S_IWUSR | S_IWGRP,
 static DEVICE_ATTR(alpm, S_IRUGO | S_IWUSR | S_IWGRP,
 			mipi_samsung_alpm_show,
 			mipi_samsung_alpm_store);
+static DEVICE_ATTR(alpm_backlight, S_IRUGO | S_IWUSR | S_IWGRP,
+			mipi_samsung_alpm_backlight_show,
+			mipi_samsung_alpm_backlight_store);
 #endif
 #if defined(DYNAMIC_FPS_USE_TE_CTRL)
 static DEVICE_ATTR(dynamic_fps_use_te, S_IRUGO | S_IWUSR | S_IWGRP,
@@ -4498,19 +5115,18 @@ static DEVICE_ATTR(panel_res, S_IRUGO,
 			NULL);
 #endif
 #if defined(CONFIG_LCD_HMT)
-static DEVICE_ATTR(hmt_on, S_IRUGO | S_IWUGO | S_IXUGO,
-			mipi_samsung_hmt_on_show,
-			mipi_samsung_hmt_on_store);
 static DEVICE_ATTR(hmt_bright, S_IRUGO | S_IWUGO | S_IXUGO,
 			mipi_samsung_hmt_bright_show,
 			mipi_samsung_hmt_bright_store);
 static DEVICE_ATTR(hmt_dual_scan, S_IRUGO | S_IWUGO | S_IXUGO,
 			mipi_samsung_hmt_dual_scan_show,
 			mipi_samsung_hmt_dual_scan_store);
+static DEVICE_ATTR(hmt_reverse, S_IRUGO | S_IWUGO | S_IXUGO,
+			mipi_samsung_hmt_reverse_show,
+			mipi_samsung_hmt_reverse_store);
 static DEVICE_ATTR(hmt_aid, S_IRUGO | S_IWUGO | S_IXUGO,
 			mipi_samsung_hmt_aid_show,
 			mipi_samsung_hmt_aid_store);
-
 #if 0
 static DEVICE_ATTR(hmt_change_porch, S_IRUGO | S_IWUSR | S_IWGRP,
 			mipi_samsung_hmt_change_porch_show,
@@ -4524,8 +5140,6 @@ static DEVICE_ATTR(force_500cd, S_IRUGO | S_IWUSR | S_IWGRP,
 static DEVICE_ATTR(hmt_change_fps, S_IRUGO | S_IWUSR | S_IWGRP,
 			mipi_samsung_hmt_change_fps_show,
 			mipi_samsung_hmt_change_fps_store);
-static DEVICE_ATTR(hmt_hbm, S_IRUGO | S_IWUSR | S_IWGRP,
-			mipi_samsung_hmt_hbm_show, mipi_samsung_hmt_hbm_store);
 #endif
 #endif
 
@@ -4538,6 +5152,7 @@ static struct attribute *panel_sysfs_attributes[] = {
 	&dev_attr_power_reduce.attr,
 	&dev_attr_siop_enable.attr,
 	&dev_attr_aid_log.attr,
+	&dev_attr_read_mtp.attr,
 #if defined(TEMPERATURE_ELVSS)
 	&dev_attr_temperature.attr,
 #endif
@@ -4546,6 +5161,7 @@ static struct attribute *panel_sysfs_attributes[] = {
 #endif
 #if defined(ALPM_MODE)
 	&dev_attr_alpm.attr,
+	&dev_attr_alpm_backlight.attr,
 #endif
 #if defined(DYNAMIC_FPS_USE_TE_CTRL)
 	&dev_attr_dynamic_fps_use_te.attr,
@@ -4553,14 +5169,13 @@ static struct attribute *panel_sysfs_attributes[] = {
 #if defined(TEST_RESOLUTION)
 	&dev_attr_panel_res.attr,
 #endif
-#if defined(CONFIG_LCD_HMT)
-	&dev_attr_hmt_on.attr,
+#if defined(CONFIG_LCD_HMT)	
 	&dev_attr_hmt_bright.attr,
 	&dev_attr_hmt_dual_scan.attr,
+	&dev_attr_hmt_reverse.attr,
 	&dev_attr_hmt_aid.attr,
-#if 0	
+#if 0
 	&dev_attr_hmt_change_fps.attr,
-	&dev_attr_hmt_hbm.attr,
 	&dev_attr_hmt_change_porch.attr,
 	&dev_attr_hmt.attr,
 	&dev_attr_force_500cd.attr,
@@ -4655,10 +5270,12 @@ static int mdss_samsung_create_sysfs(void)
 #endif
 
 int mdss_dsi_panel_init(struct device_node *node, struct mdss_dsi_ctrl_pdata *ctrl_pdata,
-				bool cmd_cfg_conf_splash)
+				bool cmd_cfg_cont_splash)
 {
 	int rc = 0;
 	static const char *panel_name;
+	bool cont_splash_enabled;
+	bool partial_update_enabled;
 
 	pr_debug("%s: ++ \n", __func__);
 
@@ -4679,6 +5296,22 @@ int mdss_dsi_panel_init(struct device_node *node, struct mdss_dsi_ctrl_pdata *ct
 	if (rc)
 		return rc;
 
+	if (cmd_cfg_cont_splash)
+		cont_splash_enabled = of_property_read_bool(node,
+				"qcom,cont-splash-enabled");
+	else
+		cont_splash_enabled = false;
+	if (!cont_splash_enabled) {
+		pr_info("%s:%d Continuous splash flag not found.\n",
+				__func__, __LINE__);
+		ctrl_pdata->panel_data.panel_info.cont_splash_enabled = 0;
+	} else {
+		pr_info("%s:%d Continuous splash flag enabled.\n",
+				__func__, __LINE__);
+
+		ctrl_pdata->panel_data.panel_info.cont_splash_enabled = 1;
+	}
+
 	ctrl_pdata->on = mdss_dsi_panel_on;
 	ctrl_pdata->off = mdss_dsi_panel_off;
 	ctrl_pdata->event_handler = samsung_dsi_panel_event_handler;
@@ -4696,6 +5329,16 @@ int mdss_dsi_panel_init(struct device_node *node, struct mdss_dsi_ctrl_pdata *ct
 	msd.dstat.on = 0;
 	msd.dstat.recent_bright_level = 0;
 
+	partial_update_enabled =of_property_read_bool(node,"qcom,partial-update-enabled");
+	if (partial_update_enabled) {
+		pr_info("%s:%d Partial update enabled.\n", __func__, __LINE__);
+		ctrl_pdata->panel_data.panel_info.partial_update_enabled = 1;
+		ctrl_pdata->partial_update_fnc = mdss_dsi_panel_partial_update;
+	} else {
+		pr_info("%s:%d Partial update disabled.\n", __func__, __LINE__);
+		ctrl_pdata->panel_data.panel_info.partial_update_enabled = 0;
+		ctrl_pdata->partial_update_fnc = NULL;
+	}
 #if defined(CONFIG_LCD_CLASS_DEVICE)
 	rc = mdss_samsung_create_sysfs();
 	if (rc) {
@@ -4789,6 +5432,7 @@ static int __init get_lcd_id_cmdline(char *mode)
 
 #if defined(CONFIG_LCD_FORCE_VIDEO_MODE)
 	lcd_attached = 1;
+	lcd_id = 0x501401;/*revF*/
 #endif
 
 	pr_info( "%s: LCD_ID = 0x%X, lcd_attached =%d", __func__,lcd_id, lcd_attached);
@@ -4797,21 +5441,6 @@ static int __init get_lcd_id_cmdline(char *mode)
 }
 
 __setup( "lcd_id=0x", get_lcd_id_cmdline );
-static int __init mdss_panel_current_hw_rev(char *rev)
-{
-	/*
-	*	1 is recovery booting
-	*	0 is normal booting
-	*/
-
-	board_rev = *rev - '0';
-
-	pr_info("%s : %d", __func__, board_rev);
-
-	return 1;
-}
-
-__setup("samsung.board_rev=", mdss_panel_current_hw_rev);
 
 MODULE_DESCRIPTION("Samsung DSI panel driver");
 MODULE_AUTHOR("Krishna Kishor Jha <krishna.jha@samsung.com>");

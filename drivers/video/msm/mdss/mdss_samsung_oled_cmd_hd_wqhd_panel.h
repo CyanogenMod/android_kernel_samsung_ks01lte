@@ -68,33 +68,26 @@ enum mipi_samsung_cmd_list {
 	PANEL_ALPM_ON,
 	PANEL_ALPM_OFF,
 	PANEL_ALPM_SET_PARTIAL_AREA,
+	PANEL_HSYNC_ON,
+	PANEL_ALPM_SET_BL,
 #if defined(CONFIG_LCD_HMT)
 	PANEL_HMT_BRIGHT,	
 	PANEL_HMT_AID_READY_TO_FOWARD,
 	PANEL_DUAL_SCAN_FULL_ENABLE,
 	PANEL_DUAL_SCAN_DISABLE,
 	PANEL_HMT_AID,
+	PANEL_HMT_REVERSE_ENABLE,
+	PANEL_HMT_REVERSE_DISABLE,
 #if 0
 	PANEL_HMT_AID_READY_TO_REVERSE,
 	PANEL_DUAL_SCAN_HALF_ENABLE,
 	PANEL_HMT_CHANGE_FPS,
 	PANEL_HMT_HBM_ENABLE,
-	PANEL_HMT_HBM_DISABLE,
 	PANEL_HMT_CHANGE_PORCH,
 	PANEl_FORCE_500CD,
 #endif
 #endif
 };
-
-#if defined(CONFIG_LCD_HMT)
-enum hmt_cmd_list{
-	HMT_ENABLE,
-	HMT_DUAL_SCAN,
-	HMT_HBM,
-	HMT_AID,
-	HMT_FPS
-};
-#endif
 
 enum {
 	MIPI_RESUME_STATE,
@@ -137,9 +130,10 @@ struct display_status {
 
 	int temperature;
 	char temperature_value;
-	int temper_need_update;
+	int elvss_need_update;
 	int siop_status;
 	int hbm_mode;
+	char elvss_value;
 
 #if defined(CONFIG_DUAL_LCD)
 	int lcd_sel;
@@ -147,11 +141,16 @@ struct display_status {
 };
 
 #if defined(CONFIG_LCD_HMT)
+#define HMT_SINGLE_SCAN 0
+#define HMT_DUAL_SCAN 1
+#define HMT_OFF -1
+
 struct hmt_status {
 	unsigned int hmt_on;
 	unsigned int hmt_bl_level;
 	unsigned int hmt_dual;
 	unsigned int hmt_aid;
+	unsigned int hmt_reverse;
 #if 0
 	unsigned int hmt_porch;
 #endif

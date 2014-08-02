@@ -25,6 +25,8 @@
 #include "mdss_samsung_oled_cmd_hd_wqhd_panel.h"
 #elif defined(CONFIG_FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_WQXGA_PT_PANEL)
 #include "mdss_samsung_tft_video_dual_dsi_panel.h"
+#elif defined(CONFIG_FB_MSM_MDSS_MDP3) // MDP3
+#include "dsi_v2.h"
 #else
 #include "mdss_samsung_dsi_panel.h"
 #endif
@@ -50,6 +52,29 @@
 #elif defined(CONFIG_FB_MSM_MIPI_SAMSUNG_YOUM_CMD_FULL_HD_PT_PANEL) // F
 #define MDNIE_TUNE_FIRST_SIZE 108
 #define MDNIE_TUNE_SECOND_SIZE 5
+#elif defined(CONFIG_FB_MSM_MDSS_SAMSUNG_OCTA_VIDEO_720P_PT_PANEL) //FRESCO_KOR
+#define MDNIE_TUNE_FIRST_SIZE 108
+#define MDNIE_TUNE_SECOND_SIZE 5
+#define MDNIE_COLOR_BLIND_FIRST_SIZE 118
+#define MDNIE_COLOR_BLIND_SECOND_SIZE 5
+#elif defined(CONFIG_FB_MSM_MDSS_MAGNA_OCTA_VIDEO_720P_PANEL)
+#define MDNIE_TUNE_FIRST_SIZE 92
+#define MDNIE_TUNE_SECOND_SIZE 5
+#define MDNIE_COLOR_BLIND_FIRST_SIZE 92
+#define MDNIE_COLOR_BLIND_SECOND_SIZE 5
+#elif defined(CONFIG_FB_MSM_MIPI_VIDEO_WVGA_NT35502_PT_PANEL) // KANAS
+#define MDNIE_TUNE_FIRST_SIZE 17
+#define MDNIE_TUNE_SECOND_SIZE 25
+#define MDNIE_TUNE_THIRD_SIZE 49
+#define MDNIE_TUNE_FOURTH_SIZE 19
+#define MDNIE_TUNE_FIFTH_SIZE 5
+#endif
+
+#if defined(CONFIG_FB_MSM_MIPI_VIDEO_WVGA_NT35502_PT_PANEL) // KANAS
+#define NEGATIVE_COLOR_USE_ACCESSIBILLITY
+#define MDNIE_LITE_MODE  
+#define DDI_VIDEO_ENHANCE_TUNING
+#define COORDINATE_DATA_NONE
 #endif
 
 #define MDNIE_COLOR_BLINDE_CMD 18
@@ -126,28 +151,34 @@ enum SCENARIO {
 
 enum BACKGROUND {
 	DYNAMIC_MODE = 0,
+#ifndef MDNIE_LITE_MODE
 	STANDARD_MODE,
 #if !defined(CONFIG_SUPPORT_DISPLAY_OCTA_TFT)
 	NATURAL_MODE,
 #endif
 	MOVIE_MODE,
 	AUTO_MODE,
+#endif /* MDNIE_LITE_MODE */
 	MAX_BACKGROUND_MODE,
 };
 
 enum OUTDOOR {
 	OUTDOOR_OFF_MODE = 0,
+#ifndef MDNIE_LITE_MODE
 	OUTDOOR_ON_MODE,
+#endif /* MDNIE_LITE_MODE */
 	MAX_OUTDOOR_MODE,
 };
 
 enum ACCESSIBILITY {
     ACCESSIBILITY_OFF,
 	NEGATIVE,
+#ifndef	NEGATIVE_COLOR_USE_ACCESSIBILLITY
 	COLOR_BLIND,
 #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL)
 	SCREEN_CURTAIN,
 #endif
+#endif /* NEGATIVE_COLOR_USE_ACCESSIBILLITY */
 	ACCESSIBILITY_MAX,
 };
 
@@ -170,11 +201,22 @@ struct mdnie_lite_tun_type {
 #if defined(CONFIG_TDMB)
 	enum DMB dmb;
 #endif
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL)
+	int scr_white_red;
+	int scr_white_green;
+	int scr_white_blue;
+#endif
 };
 
+#if defined(CONFIG_FB_MSM_MDSS_MDP3)
+void mdnie_lite_tuning_init(struct mdss_dsi_driver_data *msd);
+#else
 void mdnie_lite_tuning_init(struct mipi_samsung_driver_data *msd);
+#endif
+
 void init_mdnie_class(void);
 void is_negative_on(void);
 void coordinate_tunning(int x, int y);
+void mDNIe_Set_Mode(void);
 
 #endif /*_MDNIE_LITE_TUNING_H_*/

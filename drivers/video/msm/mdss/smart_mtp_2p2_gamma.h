@@ -295,9 +295,7 @@ static int candela_coeff_2p25[] = {
 4120649 ,
 4157386 ,
 4194304 ,
-
 };
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^2.1)*4194304
@@ -561,7 +559,6 @@ static int candela_coeff_2p1[] = {
 4194304 ,
 
 };
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^2.05)*4194304
@@ -824,7 +821,6 @@ static int candela_coeff_2p05[] = {
 4160655 ,
 4194304 ,
 };
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^2.0)*4194304
@@ -1089,7 +1085,6 @@ static int candela_coeff_2p0[] = {
 
 };
 
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^1.95)*4194304
@@ -1352,7 +1347,6 @@ static int candela_coeff_1p95[] = {
 4162290 ,
 4194304 ,
 };
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^1.9)*4194304
@@ -1615,7 +1609,6 @@ static int candela_coeff_1p9[] = {
 4163107 ,
 4194304 ,
 };
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^1.85)*4194304
@@ -1879,7 +1872,6 @@ static int candela_coeff_1p85[] = {
 4194304 ,
 };
 
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^1.8)*4194304
@@ -2142,7 +2134,6 @@ static int candela_coeff_1p8[] = {
 4164744 ,
 4194304 ,
 };
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^1.75)*4194304
@@ -2405,7 +2396,6 @@ static int candela_coeff_1p75[] = {
 4165562 ,
 4194304 ,
 };
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^1.7)*4194304
@@ -2668,7 +2658,6 @@ static int candela_coeff_1p7[] = {
 4166380 ,
 4194304 ,
 };
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^1.65)*4194304
@@ -2931,7 +2920,6 @@ static int candela_coeff_1p65[] = {
 4167199 ,
 4194304 ,
 };
-
 /*
 *		index : 0 ~ 255
 *		((index/255)^1.6)*4194304
@@ -3712,7 +3700,6 @@ static int s6e63m0_curve_2p2[] = {
 4877311 ,
 4915200 ,
 };
-
 /*
 *		index : 0 ~ 255
 *		300 is max CANDELA
@@ -5300,7 +5287,6 @@ static int curve_2p15_350[] = {
 1455656995 ,
 1468006400 ,
 };
-
 /*
 *		index : 0 ~ 255
 *		350 is max CANDELA

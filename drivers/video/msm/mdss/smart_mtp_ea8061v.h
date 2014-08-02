@@ -1,7 +1,7 @@
 /*
  * =================================================================
  *
- *       Filename:  smart_mtp_s6e3.h
+ *       Filename:  smart_mtp_ea8061v.h
  *
  *    Description:  Smart dimming algorithm implementation
  *
@@ -29,8 +29,8 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
  * 02110-1301, USA.
  *
 */
-#ifndef _SMART_MTP_S6E3_H_
-#define _SMART_MTP_S6E3_H_
+#ifndef _SMART_MTP_EA8061V_H_
+#define _SMART_MTP_EA8061V_H_
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -40,19 +40,25 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #include <linux/ctype.h>
 #include <asm/div64.h>
 
-/* octa ldi */
-#define EVT0_K_fhd_REVB 0x00
-#define EVT0_K_fhd_REVF 0x01 
+/* octa ldi id3 */
+#define EVT0_ID 0x00
+#define EVT0_SECOND_ID 0x01
+#define EVT1_ID 0x21
+#define EVT1_SECOND_ID 0x22
+#define EVT1_H_REV_I 0x23
+#define EVT1_H_REV_J 0x24
 
-#define EVT0_K_fhd_REVG 0x02 
-#define EVT1_K_fhd_REVH 0x12
-#define EVT1_K_fhd_REVI 0x13
+/* youm ldi id3 */
+#define EVT0_F_REV_A 0x10
+#define EVT0_F_REV_E 0x11
+#define EVT0_F_REV_F 0x12
+#define EVT2_F_REV_G 0x32
 
-#define EVT0_K_wqhd_REVB 0x00
-#define EVT0_K_wqhd_REVC 0x01
-#define EVT0_K_wqhd_REVD 0x02
-#define EVT0_K_wqhd_REVE 0x03
-#define EVT0_K_wqhd_REVF 0x04
+#define EVT2_FRESCO_REV_G 0x43
+
+/* EA8061V ldi id3 */
+#define EVT0_EA8061V_REV_A 0x82
+#define EVT0_EA8061V_KMINI_REV_A 0x84
 
 /*
 *	From 4.8 inch model use AID function
@@ -76,17 +82,13 @@ enum {
 */
 #define BIT_SHFIT_MUL 4194304
 
-#define S6E3_GRAY_SCALE_MAX 256
+#define EA8061V_GRAY_SCALE_MAX 256
 
 /*6.3*4194304 */
-#define S6E3_VREG0_REF_6P3 26424115
-
-/*6.2*4194304 */
-#define S6E3_VREG0_REF_6P2 26004685
-
+#define EA8061V_VREG0_REF_6P3 26424115
 
 /*V0,V3,V11,V23,V35,V51,V87,V151,V203,V255*/
-#define S6E3_MAX 11
+#define EA8061V_MAX 11
 
 /* PANEL DEPENDENT THINGS */
 #define MAX_CANDELA 350
@@ -187,7 +189,7 @@ struct GRAY_VOLTAGE {
 } __packed;
 
 struct GRAY_SCALE {
-	struct GRAY_VOLTAGE TABLE[S6E3_GRAY_SCALE_MAX];
+	struct GRAY_VOLTAGE TABLE[EA8061V_GRAY_SCALE_MAX];
 	struct GRAY_VOLTAGE VT_TABLE;
 } __packed;
 

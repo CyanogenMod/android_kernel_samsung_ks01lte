@@ -1,10 +1,11 @@
 /*
  * =================================================================
  *
- *       Filename:  smart_mtp_s6e3.h
+ *       Filename:  smart_mtp_s6e8aa4.h
  *
  *    Description:  Smart dimming algorithm implementation
  *
+ *        Author: jb09.kim
  *        Company:  Samsung Electronics
  *
  * ================================================================
@@ -29,8 +30,8 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
  * 02110-1301, USA.
  *
 */
-#ifndef _SMART_MTP_S6E3_H_
-#define _SMART_MTP_S6E3_H_
+#ifndef _SMART_MTP_S6E8AA4_H_
+#define _SMART_MTP_S6E8AA4_H_
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -40,34 +41,22 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #include <linux/ctype.h>
 #include <asm/div64.h>
 
-/* octa ldi */
-#define EVT0_K_fhd_REVB 0x00
-#define EVT0_K_fhd_REVF 0x01 
-
-#define EVT0_K_fhd_REVG 0x02 
-#define EVT1_K_fhd_REVH 0x12
-#define EVT1_K_fhd_REVI 0x13
-
-#define EVT0_K_wqhd_REVB 0x00
-#define EVT0_K_wqhd_REVC 0x01
-#define EVT0_K_wqhd_REVD 0x02
-#define EVT0_K_wqhd_REVE 0x03
-#define EVT0_K_wqhd_REVF 0x04
-
 /*
 *	From 4.8 inch model use AID function
 *	CASE#1 is used for now.
 */
 #define AID_OPERATION
 
-enum {
-	GAMMA_CURVE_1P9 = 0,
-	GAMMA_CURVE_2P15,
-	GAMMA_CURVE_2P2,
-};
+#define GAMMA_CURVE_2P25 1
+#define GAMMA_CURVE_2P2 2
+#define GAMMA_CURVE_2P15 3
+#define GAMMA_CURVE_2P1 4
+#define GAMMA_CURVE_2P0 5
+#define GAMMA_CURVE_1P9 6
+
 
 #define MTP_START_ADDR 0xC8
-#define LUMINANCE_MAX 65
+#define LUMINANCE_MAX 62
 #define GAMMA_SET_MAX 33
 #define BIT_SHIFT 22
 /*
@@ -76,21 +65,17 @@ enum {
 */
 #define BIT_SHFIT_MUL 4194304
 
-#define S6E3_GRAY_SCALE_MAX 256
+#define S6E8AA4_GRAY_SCALE_MAX 256
 
-/*6.3*4194304 */
-#define S6E3_VREG0_REF_6P3 26424115
+/* 5.8*4194304 = 24326963.2 */
+#define S6E8AA4_VREG0_REF 24326963
 
-/*6.2*4194304 */
-#define S6E3_VREG0_REF_6P2 26004685
-
-
-/*V0,V3,V11,V23,V35,V51,V87,V151,V203,V255*/
-#define S6E3_MAX 11
+/*V0,V1,V3,V11,V23,V35,V51,V87,V151,V203,V255*/
+#define S6E8AA4_MAX 11
 
 /* PANEL DEPENDENT THINGS */
-#define MAX_CANDELA 350
-#define MIN_CANDELA	2
+#define MAX_CANDELA 300
+#define MIN_CANDELA	5
 
 /*
 *	ID 0x20
@@ -187,7 +172,7 @@ struct GRAY_VOLTAGE {
 } __packed;
 
 struct GRAY_SCALE {
-	struct GRAY_VOLTAGE TABLE[S6E3_GRAY_SCALE_MAX];
+	struct GRAY_VOLTAGE TABLE[S6E8AA4_GRAY_SCALE_MAX];
 	struct GRAY_VOLTAGE VT_TABLE;
 } __packed;
 
@@ -245,7 +230,6 @@ struct SMART_DIM {
 
 	int brightness_level;
 	int ldi_revision;
-	int vregout_voltage;
 } __packed;
 
 #endif
