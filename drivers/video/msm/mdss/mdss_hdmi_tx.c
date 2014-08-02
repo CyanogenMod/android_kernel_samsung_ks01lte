@@ -34,6 +34,7 @@
 #include "mdss.h"
 #include "mdss_panel.h"
 #include <linux/mdss_hdmi_mhl.h>
+#include <linux/jiffies.h>
 
 #define DRV_NAME "hdmi-tx"
 #define COMPATIBLE_NAME "qcom,hdmi-tx"
@@ -1137,10 +1138,23 @@ error:
 	return status;
 } /* hdmi_tx_read_sink_info */
 
+#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
+/* this code is to fix hpd interrupt issue.
+ * when hpd interrupt is coming within 200ms, hdmi doesn't turn off.
+ * So, give the minimum 200ms to handle hpd interrupt.
+ */
+static u64 old_jiffies;
+#endif
+
+
 static void hdmi_tx_hpd_int_work(struct work_struct *work)
 {
 	struct hdmi_tx_ctrl *hdmi_ctrl = NULL;
 	struct dss_io_data *io;
+#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
+	u64 current_jiffies;
+	unsigned int time_gap;
+#endif
 
 	hdmi_ctrl = container_of(work, struct hdmi_tx_ctrl, hpd_int_work);
 	if (!hdmi_ctrl || !hdmi_ctrl->hpd_initialized) {
@@ -1150,6 +1164,15 @@ static void hdmi_tx_hpd_int_work(struct work_struct *work)
 	io = &hdmi_ctrl->pdata.io[HDMI_TX_CORE_IO];
 	DEV_INFO("%s: Got HPD interrupt\n", __func__);
 
+#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
+	current_jiffies = get_jiffies_64();
+	time_gap = jiffies_to_msecs(current_jiffies - old_jiffies);
+	if (time_gap < 230) {
+		msleep(230 - time_gap);
+		DEV_INFO("[hdmi] hpd int time is less than 230ms - %u\n", time_gap);
+	}
+	old_jiffies = current_jiffies;
+#endif
 	if (hdmi_ctrl->hpd_state) {
 		if (hdmi_tx_enable_power(hdmi_ctrl, HDMI_TX_DDC_PM, true)) {
 			DEV_ERR("%s: Failed to enable ddc power\n", __func__);
@@ -1164,9 +1187,6 @@ static void hdmi_tx_hpd_int_work(struct work_struct *work)
 		DEV_INFO("%s: sense cable CONNECTED: state switch to %d\n",
 			__func__, hdmi_ctrl->sdev.state);
 	} else {
-#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
-		hdmi_ctrl->hpd_feature_on = false;
-#endif
 		hdmi_tx_set_audio_switch_node(hdmi_ctrl, 0, false);
 		hdmi_tx_wait_for_audio_engine(hdmi_ctrl);
 
@@ -1814,6 +1834,11 @@ static int hdmi_tx_enable_power(struct hdmi_tx_ctrl *hdmi_ctrl,
 		goto error;
 	}
 
+#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
+	if (hdmi_ctrl->is_power_enabled[module] == enable)
+		return rc;
+#endif
+
 	if (enable) {
 		rc = msm_dss_enable_vreg(power_data->vreg_config,
 			power_data->num_vreg, 1);
@@ -1849,11 +1874,19 @@ static int hdmi_tx_enable_power(struct hdmi_tx_ctrl *hdmi_ctrl,
 	} else {
 		msm_dss_enable_clk(power_data->clk_config,
 			power_data->num_clk, 0);
+#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
+		msm_dss_clk_set_rate(power_data->clk_config,
+			power_data->num_clk);
+#endif
 		msm_dss_enable_gpio(power_data->gpio_config,
 			power_data->num_gpio, 0);
 		msm_dss_enable_vreg(power_data->vreg_config,
 			power_data->num_vreg, 0);
 	}
+
+#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
+	hdmi_ctrl->is_power_enabled[module] = enable;
+#endif
 
 	return rc;
 
@@ -2611,6 +2644,14 @@ static void hdmi_tx_power_off_work(struct work_struct *work)
 
 	hdmi_tx_powerdown_phy(hdmi_ctrl);
 
+#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
+	/*
+	* this is needed to avoid pll lock failure due to
+	* clk framework's rate caching.
+	*/
+	hdmi_ctrl->pdata.power_data[HDMI_TX_CORE_PM].clk_config[0].rate = 0;
+#endif
+
 #ifdef MHL_CEC_SUPPORT
 	hdmi_cec_deconfig(hdmi_ctrl->feature_data[HDMI_TX_FEAT_CEC]);
 #endif
@@ -2900,7 +2941,9 @@ static int hdmi_tx_set_mhl_hpd(struct platform_device *pdev, uint8_t on)
 	hdmi_ctrl->mhl_hpd_on = on;
 
 	if (!on && hdmi_ctrl->hpd_feature_on) {
+#if !defined (CONFIG_VIDEO_MHL_V2) && !defined (CONFIG_VIDEO_MHL_SII8246)
 		rc = hdmi_tx_sysfs_enable_hpd(hdmi_ctrl, false);
+#endif
 	} else if (on && !hdmi_ctrl->hpd_feature_on) {
 		rc = hdmi_tx_sysfs_enable_hpd(hdmi_ctrl, true);
 	} else {
@@ -2945,12 +2988,28 @@ static irqreturn_t hdmi_tx_isr(int irq, void *data)
 		hdmi_ctrl->hpd_state =
 			(DSS_REG_R(io, HDMI_HPD_INT_STATUS) & BIT(1)) >> 1;
 		spin_unlock_irqrestore(&hdmi_ctrl->hpd_state_lock, flags);
-
+#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
+		if (hdmi_ctrl->hpd_state == 1) {
+			/*
+			* Ack the interrupt and enable HPD interrupts
+			* to make sure to get disconnect interrupt.
+			*/
+			DSS_REG_W(io, HDMI_HPD_INT_CTRL, BIT(0) | BIT(2));
+		} else {
+			/*
+			* Ack the interrupt and enable HPD interrupts
+			* to make sure to get connect interrupt.
+			*/
+			DSS_REG_W(io, HDMI_HPD_INT_CTRL,
+				BIT(0) | BIT(2) | BIT(1));
+		}
+#else
 		/*
 		 * Ack the current hpd interrupt and stop listening to
 		 * new hpd interrupt.
 		 */
 		DSS_REG_W(io, HDMI_HPD_INT_CTRL, BIT(0));
+#endif
 		queue_work(hdmi_ctrl->workq, &hdmi_ctrl->hpd_int_work);
 	}
 
@@ -3028,8 +3087,11 @@ static int hdmi_tx_dev_init(struct hdmi_tx_ctrl *hdmi_ctrl)
 	mutex_init(&hdmi_ctrl->cable_notify_mutex);
 
 	INIT_LIST_HEAD(&hdmi_ctrl->cable_notify_handlers);
-
+#if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
+	hdmi_ctrl->workq = create_singlethread_workqueue("hdmi_tx_workq");
+#else
 	hdmi_ctrl->workq = create_workqueue("hdmi_tx_workq");
+#endif
 	if (!hdmi_ctrl->workq) {
 		DEV_ERR("%s: hdmi_tx_workq creation failed.\n", __func__);
 		rc = -EPERM;

@@ -78,6 +78,7 @@ struct sii8240_platform_data {
 	bool (*vbus_present)(void);
 	int (*muic_otg_set)(int on);
 	int charging_type;
+	void (*int_gpio_config)(bool);
 	/* void (*vbus_present)(bool on); */
 #ifdef CONFIG_SAMSUNG_MHL_UNPOWERED
 	int (*get_vbus_status)(void);
@@ -99,6 +100,9 @@ struct sii8240_platform_data {
 	struct regulator *vcc_3p3v;
 	struct platform_device *hdmi_pdev;
 	struct msm_hdmi_mhl_ops *hdmi_mhl_ops;
+#endif
+#ifdef CONFIG_EXTCON
+	bool is_smartdock;
 #endif
 };
 extern int system_rev;
