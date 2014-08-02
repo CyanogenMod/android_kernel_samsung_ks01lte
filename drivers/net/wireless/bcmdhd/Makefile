@@ -7,7 +7,7 @@ DHDCFLAGS += -Wall -Wstrict-prototypes -Dlinux -DLINUX -DBCMDRIVER             \
         -DBCMDONGLEHOST -DUNRELEASEDCHIP -DBCMDMA32 -DBCMFILEIMAGE            \
         -DDHDTHREAD -DBDC -DOOB_INTR_ONLY                                     \
         -DDHD_BCMEVENTS -DSHOW_EVENTS -DBCMDBG                                \
-        -DMMC_SDIO_ABORT -DBCMSDIO -DBCMLXSDMMC -DBCMPLATFORM_BUS -DWLP2P     \
+        -DMMC_SDIO_ABORT -DBCMSDIO -DBCMLXSDMMC -DWLP2P     \
         -DWIFI_ACT_FRAME -DARP_OFFLOAD_SUPPORT          \
         -DKEEP_ALIVE -DCSCAN -DPKT_FILTER_SUPPORT                             \
         -DEMBEDDED_PLATFORM -DPNO_SUPPORT
@@ -62,7 +62,7 @@ DHDCFLAGS += -DDISABLE_11H_SOFTAP
 DHDCFLAGS += -DSUPPORT_PM2_ONLY
 DHDCFLAGS += -DSUPPORT_DEEP_SLEEP
 DHDCFLAGS += -DSUPPORT_AMPDU_MPDU_CMD
-DHDCFLAGS += -DPASS_IPV4_SUSPEND
+DHDCFLAGS += -DBLOCK_IPV6_PACKET -DPASS_IPV4_SUSPEND
 
 # For special PNO Event keep wake lock for 10sec
 DHDCFLAGS += -DCUSTOM_PNO_EVENT_LOCK_xTIME=10
@@ -105,51 +105,99 @@ DHDCFLAGS += -DWAIT_DEQUEUE
 # Config PM Control
 DHDCFLAGS += -DCONFIG_CONTROL_PM
 
+# Use Android wake lock mechanism
+DHDCFLAGS += -DCONFIG_HAS_WAKELOCK
+
 # idle count
 DHDCFLAGS += -DDHD_USE_IDLECOUNT
 
 # Used short dwell time during initial scan
 DHDCFLAGS += -DUSE_INITIAL_SHORT_DWELL_TIME
 
-############
-# JellyBean
-############
+# SKB TAILPAD to avoid out of boundary memory access
+DHDCFLAGS += -DDHDENABLE_TAILPAD
+
+##############################
+# Android Platform Definition
+##############################
+
+##########
+# KitKat
+##########
+# Definitions are filtered by Kernel version
 DHDCFLAGS += -DWL_ENABLE_P2P_IF
-DHDCFLAGS += -DMULTIPLE_SUPPLICANT
-DHDCFLAGS += -DWL_CFG80211_STA_EVENT
-
-#################
-# JellyBean Plus
-#################
 DHDCFLAGS += -DWL_SUPPORT_BACKPORTED_KPATCHES
-
-########################################################
-# Kitkat Only, These FLAGS should be removed on JB/JBP.
-########################################################
+# Default definitions for KitKat
+DHDCFLAGS += -DWL_CFG80211_STA_EVENT
 DHDCFLAGS += -DWL_IFACE_COMB_NUM_CHANNELS
+# To support p2p private command on kernel 3.8 or above
 DHDCFLAGS += -DWL_NEWCFG_PRIVCMD_SUPPORT
-DHDCFLAGS :=$(filter-out -DMULTIPLE_SUPPLICANT,$(DHDCFLAGS))
+
+
 
 ##########################
 # driver type
 # m: module type driver
 # y: built-in type driver
 ##########################
-ifeq ($(CONFIG_MODULES),y)
 DRIVER_TYPE ?= m
-else
-DRIVER_TYPE ?= y
-endif
 
 #########################
 # Chip dependent feature
 #########################
+ifneq ($(CONFIG_BCM4354),)
+  DHDCFLAGS += -DBCM4354_CHIP -DHW_OOB -DSUPPORT_MULTIPLE_REVISION
+  DHDCFLAGS += -DMIMO_ANT_SETTING
+  DHDCFLAGS += -DUSE_CID_CHECK
+  DHDCFLAGS += -DENABLE_BCN_LI_BCN_WAKEUP
+  DHDCFLAGS += -DSDIO_CRC_ERROR_FIX
+
+# tput enhancement
+  DHDCFLAGS += -DCUSTOM_GLOM_SETTING=8 -DCUSTOM_RXCHAIN=1
+  DHDCFLAGS += -DUSE_DYNAMIC_F2_BLKSIZE -DDYNAMIC_F2_BLKSIZE_FOR_NONLEGACY=128
+  DHDCFLAGS += -DBCMSDIOH_TXGLOM -DCUSTOM_TXGLOM=1 -DBCMSDIOH_TXGLOM_HIGHSPEED
+  DHDCFLAGS += -DDHDTCPACK_SUPPRESS
+  DHDCFLAGS += -DUSE_WL_TXBF
+  DHDCFLAGS += -DUSE_WL_FRAMEBURST
+  DHDCFLAGS += -DRXFRAME_THREAD
+  DHDCFLAGS += -DREPEAT_READFRAME
+  DHDCFLAGS += -DCUSTOM_AMPDU_BA_WSIZE=64 -DCUSTOM_IBSS_AMPDU_BA_WSIZE=16
+  DHDCFLAGS += -DCUSTOM_DPC_CPUCORE=0
+  DHDCFLAGS += -DPROP_TXSTATUS_VSDB
+  DHDCFLAGS += -DCUSTOM_DEF_TXGLOM_SIZE=40 -DDHD_TXBOUND=40
+  DHDCFLAGS += -DENABLE_ADAPTIVE_SCHED -DCUSTOM_CPUFREQ_THRESH=1000000
+  DHDCFLAGS += -DCUSTOM_MAX_TXGLOM_SIZE=40
+  DHDCFLAGS += -DMAX_HDR_READ=128
+  DHDCFLAGS += -DDHD_FIRSTREAD=128
+  DHDCFLAGS += -DCUSTOM_AMPDU_MPDU=16
+  DHDCFLAGS += -DCUSTOM_TXINRX_THRES=64
+
+# New Features
+  DHDCFLAGS += -DWL11U
+  DHDCFLAGS += -DBCMCCX
+  DHDCFLAGS += -DWES_SUPPORT
+  DHDCFLAGS += -DOKC_SUPPORT
+  DHDCFLAGS += -DWLTDLS
+  DHDCFLAGS += -DWLFBT
+  DHDCFLAGS += -DDHD_ENABLE_LPC
+  DHDCFLAGS += -DWLAIBSS
+  DHDCFLAGS += -DSUPPORT_LTECX
+  DHDCFLAGS += -DSUPPORT_2G_VHT
+  DHDCFLAGS += -DSUPPORT_WL_TXPOWER
+  DHDCFLAGS += -DTEST_TX_POWER_CONTROL
+ifeq ($(CONFIG_BCM4354),y)
+  DHDCFLAGS += -DENABLE_INSMOD_NO_FW_LOAD
+  DHDCFLAGS += -DUSE_LATE_INITCALL_SYNC
+  DRIVER_TYPE = y
+endif
+  DHDCFLAGS += -DCUSTOM_PSPRETEND_THR=30
+endif
 
 ifneq ($(CONFIG_BCM4339),)
   DHDCFLAGS += -DBCM4339_CHIP -DHW_OOB
   DHDCFLAGS += -DUSE_CID_CHECK
   DHDCFLAGS += -DENABLE_BCN_LI_BCN_WAKEUP
-  DHDCFLAGS += -DSDIO_CRC_ERROR_FIX
+  DHDCFLAGS += -DUSE_SDIOFIFO_IOVAR
 
   # tput enhancement
   DHDCFLAGS += -DCUSTOM_GLOM_SETTING=8 -DCUSTOM_RXCHAIN=1
@@ -162,7 +210,7 @@ ifneq ($(CONFIG_BCM4339),)
   DHDCFLAGS += -DCUSTOM_AMPDU_BA_WSIZE=64 -DCUSTOM_IBSS_AMPDU_BA_WSIZE=16
   DHDCFLAGS += -DCUSTOM_DPC_CPUCORE=0
   DHDCFLAGS += -DPROP_TXSTATUS_VSDB
-ifeq ($(CONFIG_ARCH_MSM8974),y)
+ifeq ($(CONFIG_ARCH_MSM),y)
   DHDCFLAGS += -DCUSTOM_DEF_TXGLOM_SIZE=32 -DDHD_TXBOUND=32
   DHDCFLAGS += -DENABLE_ADAPTIVE_SCHED -DCUSTOM_CPUFREQ_THRESH=1000000
 endif
@@ -173,14 +221,12 @@ endif
   DHDCFLAGS += -DBCMCCX
   DHDCFLAGS += -DWES_SUPPORT
   DHDCFLAGS += -DOKC_SUPPORT
-  DHDCFLAGS += -DWLTDLS
+  DHDCFLAGS += -DWLTDLS -DWLTDLS_AUTO_ENABLE
   DHDCFLAGS += -DWLFBT
   DHDCFLAGS += -DDHD_ENABLE_LPC
   DHDCFLAGS += -DWLAIBSS
   DHDCFLAGS += -DSUPPORT_LTECX
-ifneq ($(CONFIG_2GHZ_VHT_NO_SUPPORT),y)
   DHDCFLAGS += -DSUPPORT_2G_VHT
-endif
   DHDCFLAGS += -DSUPPORT_WL_TXPOWER
   DHDCFLAGS += -DBCMCCX_S69
 ifeq ($(CONFIG_BCM4339),y)
@@ -188,13 +234,14 @@ ifeq ($(CONFIG_BCM4339),y)
   DHDCFLAGS += -DUSE_LATE_INITCALL_SYNC
   DRIVER_TYPE = y
 endif
+  DHDCFLAGS += -DCUSTOM_PSPRETEND_THR=30
 endif
 
 ifneq ($(CONFIG_BCM4335),)
   DHDCFLAGS += -DBCM4335_CHIP -DHW_OOB -DSUPPORT_MULTIPLE_REVISION
   DHDCFLAGS += -DUSE_CID_CHECK
   DHDCFLAGS += -DENABLE_BCN_LI_BCN_WAKEUP
-  DHDCFLAGS += -DSDIO_CRC_ERROR_FIX
+  DHDCFLAGS += -DUSE_SDIOFIFO_IOVAR
 
   # tput enhancement
   DHDCFLAGS += -DCUSTOM_GLOM_SETTING=8 -DCUSTOM_RXCHAIN=1
@@ -213,7 +260,7 @@ ifneq ($(CONFIG_BCM4335),)
 ifeq ($(CONFIG_MACH_JF),y)
   DHDCFLAGS += -DCUSTOM_DEF_TXGLOM_SIZE=32 -DDHD_TXBOUND=32
 endif
-ifeq ($(CONFIG_ARCH_MSM8974),y)
+ifeq ($(CONFIG_ARCH_MSM),y)
   DHDCFLAGS += -DCUSTOM_DEF_TXGLOM_SIZE=32 -DDHD_TXBOUND=32
   DHDCFLAGS += -DENABLE_ADAPTIVE_SCHED -DCUSTOM_CPUFREQ_THRESH=1000000
 endif
@@ -280,7 +327,7 @@ ifneq ($(CONFIG_BCM43241),)
   DHDCFLAGS += -DBCM43241_CHIP -DHW_OOB
   DHDCFLAGS += -DMIMO_ANT_SETTING
   DHDCFLAGS += -DCUSTOM_GLOM_SETTING=1 -DCUSTOM_SDIO_F2_BLKSIZE=128
-  DHDCFLAGS += -DSDIO_CRC_ERROR_FIX
+  DHDCFLAGS += -DUSE_SDIOFIFO_IOVAR
   DHDCFLAGS += -DAMPDU_HOSTREORDER
 ifeq ($(CONFIG_BCM43241),m)
   DHDCFLAGS += -fno-pic
@@ -325,6 +372,17 @@ ifeq ($(GGSM_WIFI_5GHz_CHANNELS),true)
   DHDCFLAGS += -DCUSTOMER_SET_COUNTRY
 endif
 
+ifeq ($(CONFIG_OF),y)
+ifneq ($(CONFIG_MACH_UNIVERSAL5430),)
+obj-$(CONFIG_MACH_UNIVERSAL5430) += dhd_custom_exynos.o
+DHDCFLAGS += -DDHD_OF_SUPPORT
+endif
+ifneq ($(CONFIG_MACH_UNIVERSAL5422),)
+obj-$(CONFIG_MACH_UNIVERSAL5422) += dhd_custom_exynos.o
+DHDCFLAGS += -DDHD_OF_SUPPORT
+endif
+endif
+
 ##############################################################
 # dhd_sec_feature.h
 DHDCFLAGS += -include "dhd_sec_feature.h"
@@ -343,9 +401,10 @@ KBUILD_CFLAGS += -I$(LINUXDIR)/include -I$(shell pwd)
 
 DHDOFILES := bcmsdh.o bcmsdh_linux.o bcmsdh_sdmmc.o bcmsdh_sdmmc_linux.o \
 	dhd_cdc.o dhd_pno.o dhd_common.o dhd_wlfc.o dhd_ip.o dhd_custom_gpio.o dhd_custom_sec.o \
-	dhd_linux.o dhd_linux_sched.o dhd_cfg80211.o dhd_sdio.o aiutils.o bcmevent.o \
+	dhd_linux.o dhd_linux_sched.o dhd_cfg80211.o dhd_sdio.o dhd_linux_wq.o aiutils.o bcmevent.o \
 	bcmutils.o bcmwifi_channels.o hndpmu.o linux_osl.o sbutils.o siutils.o \
-	wl_android.o wl_cfg80211.o wl_cfgp2p.o wldev_common.o wl_linux_mon.o wl_roam.o
+	wl_android.o wl_cfg80211.o wl_cfgp2p.o wl_cfg_btcoex.o wldev_common.o wl_linux_mon.o wl_roam.o \
+	dhd_linux_platdev.o dhd_pno.o dhd_linux_wq.o wl_cfg_btcoex.o
 
 # For SPI projects
 ifeq ($(CONFIG_SPI_SC8810),y)
