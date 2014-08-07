@@ -5,6 +5,7 @@
 #include <linux/err.h>
 #include <linux/skbuff.h>
 #include <linux/wlan_plat.h>
+#include <linux/mmc/host.h>
 #include <mach/gpio.h>
 #include <mach/board.h>
 #if defined(CONFIG_SPARSE_IRQ)
@@ -142,6 +143,13 @@ static int brcm_init_wlan_mem(void)
 	return 0;
 
  err_mem_alloc:
+	if (wlan_static_scan_buf0)
+		kfree(wlan_static_scan_buf0);
+	if (wlan_static_scan_buf1)
+		kfree(wlan_static_scan_buf1);
+	if (wlan_static_dhd_info_buf)
+		kfree(wlan_static_dhd_info_buf);
+
 	pr_err("Failed to mem_alloc for WLAN\n");
 	for (j = 0 ; j < i ; j++)
 		kfree(wlan_mem_array[j].mem_ptr);
@@ -158,7 +166,7 @@ static int brcm_init_wlan_mem(void)
 #endif /* CONFIG_BROADCOM_WIFI_RESERVED_MEM */
 
 /* MSM8974 WLAN_EN GPIO Number */
-#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_SEC_KSPORTS_PROJECT)
 #define GPIO_WL_REG_ON 308
 #elif defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_VIENNA_PROJECT) || defined(CONFIG_SEC_LT03_PROJECT) ||\
       defined(CONFIG_SEC_PICASSO_PROJECT) || defined(CONFIG_SEC_V2_PROJECT) || defined(CONFIG_SEC_JS_PROJECT) ||\
@@ -171,7 +179,7 @@ static int brcm_init_wlan_mem(void)
 
 /* MSM8974 WLAN_HOST_WAKE GPIO Number */
 #if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT)
-#if defined(CONFIG_MACH_KLTE_JPN)
+#if defined(CONFIG_MACH_KLTE_JPN_WLAN_OBSOLETE)
 #define GPIO_WL_HOST_WAKE 73
 #else
 #define GPIO_WL_HOST_WAKE 92
@@ -190,6 +198,12 @@ static unsigned config_gpio_wl_reg_on[] = {
 	GPIO_CFG(GPIO_WL_REG_ON, 0, GPIO_CFG_OUTPUT,
 		GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA) };
 #endif /* not defined (CONFIG_SEC_K_PROJECT && CONFIG_SEC_KS01_PROJECT) && CONFIG_SEC_KACTIVE_PROJECT*/
+
+static int brcm_wifi_cd; /* WIFI virtual 'card detect' status */
+static void (*wifi_status_cb)(int card_present, void *dev_id);
+static void *wifi_status_cb_devid;
+static void *wifi_mmc_host;
+extern void sdio_ctrl_power(struct mmc_host *card, bool onoff);
 
 static unsigned get_gpio_wl_host_wake(void)
 {
@@ -301,7 +315,16 @@ static int brcm_wlan_power(int onoff)
 						"failed to pull down\n", __func__);
 		}
 #endif /* defined CONFIG_SEC_KS01_PROJECT */
+
+#if defined(CONFIG_BCM4339) || defined(CONFIG_BCM4335) || defined(CONFIG_BCM4354)
+	/* Power on/off SDIO host */
+	sdio_ctrl_power((struct mmc_host *)wifi_mmc_host, onoff);
+#endif /* CONFIG_BCM4339 || CONFIG_BCM4335  || CONFIG_BCM4354 */
 	} else {
+#if defined(CONFIG_BCM4339) || defined(CONFIG_BCM4335) || defined(CONFIG_BCM4354)
+	/* Power on/off SDIO host */
+	sdio_ctrl_power((struct mmc_host *)wifi_mmc_host, onoff);
+#endif /* CONFIG_BCM4339 || CONFIG_BCM4335  || CONFIG_BCM4354 */
 /*
 		if (gpio_request(GPIO_WL_REG_ON, "WL_REG_ON"))
 		{
@@ -325,6 +348,8 @@ static int brcm_wlan_power(int onoff)
 		printk(KERN_INFO"WL_REG_ON off-step-2 : [%d]\n" , gpio_get_value(GPIO_WL_REG_ON));
 #endif
 	}
+
+
 	return 0;
 }
 
@@ -337,19 +362,15 @@ static int brcm_wlan_reset(int onoff)
 	return 0;
 }
 
-
-static int brcm_wifi_cd; /* WIFI virtual 'card detect' status */
-static void (*wifi_status_cb)(int card_present, void *dev_id);
-static void *wifi_status_cb_devid;
-
 int brcm_wifi_status_register(
-		void (*callback)(int card_present, void *dev_id),
-		void *dev_id)
+	void (*callback)(int card_present, void *dev_id),
+	void *dev_id, void *mmc_host)
 {
 	if (wifi_status_cb)
 		return -EAGAIN;
 	wifi_status_cb = callback;
 	wifi_status_cb_devid = dev_id;
+	wifi_mmc_host = mmc_host;
 	printk(KERN_INFO "%s: callback is %p, devid is %p\n",
 		__func__, wifi_status_cb, dev_id);
 	return 0;
