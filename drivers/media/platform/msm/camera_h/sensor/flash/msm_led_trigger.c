@@ -32,6 +32,9 @@
 #if defined(CONFIG_LEDS_MAX77803)
 #include <linux/leds-max77803.h>
 #endif
+#if defined(CONFIG_LEDS_MAX77828)
+#include <linux/leds-max77828.h>
+#endif
 #include "msm_led_flash.h"
 
 #define FLASH_NAME "camera-led-flash"
@@ -143,6 +146,16 @@ static ssize_t ktd2692_flash(struct device *dev,
 			is_torch_enabled = false;
 		} else {
 			KTD2692_set_flash(LVP_SETTING | 0x00);
+#if defined(CONFIG_MACH_MONDRIAN)
+			switch (state) {
+			    case 4:
+				pr_info("factory torch current : 190MA");
+				KTD2692_set_flash(MOVIE_CURRENT | 0x08);
+				break;
+			    default:
+				break;
+			}
+#endif
 			KTD2692_set_flash(MODE_CONTROL | 0x01); /* Movie mode */
 			is_torch_enabled = true;
 		}
@@ -249,6 +262,32 @@ static int32_t msm_led_trigger_config(struct msm_led_flash_ctrl_t *fctrl,
 			gpio_direction_output(led_torch_en, 0);
 			gpio_free(led_torch_en);
 		}	
+		break;
+
+	default:
+		rc = -EFAULT;
+		break;
+	}
+#elif defined(CONFIG_LEDS_MAX77828)
+	switch (cfg->cfgtype) {
+	case MSM_CAMERA_LED_OFF:
+		pr_err("CAM Flash OFF");
+		max77828_led_en(0, 0);
+		max77828_led_en(0, 1);
+		break;
+
+	case MSM_CAMERA_LED_LOW:
+		pr_err("CAM Pre Flash ON");
+		max77828_led_en(1, 0);
+		break;
+
+	case MSM_CAMERA_LED_HIGH:
+		pr_err("CAM Flash ON");
+		max77828_led_en(1, 1);
+		break;
+
+	case MSM_CAMERA_LED_INIT:
+	case MSM_CAMERA_LED_RELEASE:
 		break;
 
 	default:

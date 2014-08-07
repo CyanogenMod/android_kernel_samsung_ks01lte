@@ -164,7 +164,7 @@ static ssize_t back_camera_firmware_load_store(struct device *dev,
 static ssize_t front_camera_firmware_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
-	char cam_fw[] = "S5K6B2YX S5K6B2YX\n";
+	char cam_fw[] = "S5K6B2YX N\n";
 
 	return  snprintf(buf, sizeof(cam_fw), "%s", cam_fw);
 }
