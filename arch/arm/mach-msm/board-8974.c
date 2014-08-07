@@ -31,9 +31,6 @@
 #include <mach/board.h>
 #include <mach/gpiomux.h>
 #include <mach/msm_iomap.h>
-#ifdef CONFIG_ION_MSM
-#include <mach/ion.h>
-#endif
 #include <mach/msm_memtypes.h>
 #include <mach/msm_smd.h>
 #include <mach/restart.h>
@@ -45,6 +42,9 @@
 #include <mach/socinfo.h>
 #include <mach/msm_smem.h>
 #include <linux/module.h>
+#ifdef CONFIG_ANDROID_PERSISTENT_RAM
+#include <linux/persistent_ram.h>
+#endif
 
 #include "board-dt.h"
 #include "clock.h"
@@ -93,6 +93,24 @@ extern int msm_show_resume_irq_mask;
 #ifdef CONFIG_SEC_THERMISTOR
 #include <mach/sec_thermistor.h>
 #include <mach/msm8974-thermistor.h>
+#endif
+
+#ifdef CONFIG_ANDROID_PERSISTENT_RAM
+/* CONFIG_SEC_DEBUG reserving memory for persistent RAM*/
+#define RAMCONSOLE_PHYS_ADDR 0x1FB00000
+static struct persistent_ram_descriptor per_ram_descs[] __initdata = {
+{
+	.name = "ram_console",
+	.size = SZ_1M,
+}
+};
+
+static struct persistent_ram per_ram __initdata = {
+	.descs = per_ram_descs,
+	.num_descs = ARRAY_SIZE(per_ram_descs),
+	.start = RAMCONSOLE_PHYS_ADDR,
+	.size = SZ_1M
+};
 #endif
 
 extern int poweroff_charging;
@@ -162,32 +180,32 @@ struct max77804k_led_platform_data max77804k_led_pdata = {
 
 #ifdef CONFIG_LEDS_MAX77828
 struct max77828_led_platform_data max77828_led_pdata = {
-        .num_leds = 5,
+	.num_leds = 5,
 
-        .leds[0].name = "leds-sec1",
+	.leds[0].name = "leds-sec1",
 	.leds[0].default_trigger = "flash",
-        .leds[0].id = MAX77828_FLASH,
-        .leds[0].brightness = MAX77828_FLASH_IOUT,
+	.leds[0].id = MAX77828_FLASH,
+	.leds[0].brightness = MAX77828_FLASH_IOUT,
 
-        .leds[1].name = "torch-sec1",
+	.leds[1].name = "torch-sec1",
 	.leds[1].default_trigger = "torch",
-        .leds[1].id = MAX77828_TORCH,
-        .leds[1].brightness = MAX77828_TORCH_IOUT,
+	.leds[1].id = MAX77828_TORCH,
+	.leds[1].brightness = MAX77828_TORCH_IOUT,
 
-        .leds[2].name = "led_r",
-        .leds[2].id = MAX77828_RGB_R,
-        .leds[2].brightness = (int)LED_OFF,
-        .leds[2].max_brightness = MAX77828_LED_CURRENT,
+	.leds[2].name = "led_r",
+	.leds[2].id = MAX77828_RGB_R,
+	.leds[2].brightness = (int)LED_OFF,
+	.leds[2].max_brightness = MAX77828_LED_CURRENT,
 
-        .leds[3].name = "led_g",
-        .leds[3].id = MAX77828_RGB_G,
-        .leds[3].brightness = (int)LED_OFF,
-        .leds[3].max_brightness = MAX77828_LED_CURRENT,
+	.leds[3].name = "led_g",
+	.leds[3].id = MAX77828_RGB_G,
+	.leds[3].brightness = (int)LED_OFF,
+	.leds[3].max_brightness = MAX77828_LED_CURRENT,
 
-        .leds[4].name = "led_b",
-        .leds[4].id = MAX77828_RGB_B,
-        .leds[4].brightness = (int)LED_OFF,
-        .leds[4].max_brightness = MAX77828_LED_CURRENT,
+	.leds[4].name = "led_b",
+	.leds[4].id = MAX77828_RGB_B,
+	.leds[4].brightness = (int)LED_OFF,
+	.leds[4].max_brightness = MAX77828_LED_CURRENT,
 };
 #endif
 
@@ -335,38 +353,17 @@ static struct i2c_board_info max77826_pmic_info[] __initdata = {
 };
 #endif /* CONFIG_REGULATOR_MAX77826 */
 
-static struct memtype_reserve msm8974_reserve_table[] __initdata = {
-	[MEMTYPE_SMI] = {
-	},
-	[MEMTYPE_EBI0] = {
-		.flags	=	MEMTYPE_FLAGS_1M_ALIGN,
-	},
-	[MEMTYPE_EBI1] = {
-		.flags	=	MEMTYPE_FLAGS_1M_ALIGN,
-	},
-};
-
-static int msm8974_paddr_to_memtype(phys_addr_t paddr)
-{
-	return MEMTYPE_EBI1;
-}
-
-static struct reserve_info msm8974_reserve_info __initdata = {
-	.memtype_reserve_table = msm8974_reserve_table,
-	.paddr_to_memtype = msm8974_paddr_to_memtype,
-};
-
 void __init msm_8974_reserve(void)
 {
-	reserve_info = &msm8974_reserve_info;
-	of_scan_flat_dt(dt_scan_for_memory_reserve, msm8974_reserve_table);
-	msm_reserve();
+	of_scan_flat_dt(dt_scan_for_memory_reserve, NULL);
+#ifdef CONFIG_ANDROID_PERSISTENT_RAM
+	persistent_ram_early_init(&per_ram);
+#endif
 }
 
 static void __init msm8974_early_memory(void)
 {
-	reserve_info = &msm8974_reserve_info;
-	of_scan_flat_dt(dt_scan_for_memory_hole, msm8974_reserve_table);
+	of_scan_flat_dt(dt_scan_for_memory_hole, NULL);
 }
 
 #ifdef CONFIG_MFD_MAX77803
@@ -408,6 +405,7 @@ static void samsung_sys_class_init(void)
 		pr_err("Failed to create class(sec)!\n");
 		return;
 	}
+					
 };
 
 /*
