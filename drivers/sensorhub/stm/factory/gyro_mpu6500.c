@@ -408,10 +408,9 @@ ssize_t mpu6500_gyro_selftest(char *buf, struct ssp_data *data)
 	}
 
 	data->uTimeOutCnt = 0;
-
-			pr_err("[SSP]%d %d %d %d %d %d %d %d %d %d %d %d", chTempBuf[0], chTempBuf[1],
-					chTempBuf[2], chTempBuf[3], chTempBuf[4], chTempBuf[5], chTempBuf[6],
-					chTempBuf[7], chTempBuf[8], chTempBuf[9], chTempBuf[10], chTempBuf[11]);
+	pr_err("[SSP]%d %d %d %d %d %d %d %d %d %d %d %d", chTempBuf[0], chTempBuf[1],
+		chTempBuf[2], chTempBuf[3], chTempBuf[4], chTempBuf[5], chTempBuf[6],
+		chTempBuf[7], chTempBuf[8], chTempBuf[9], chTempBuf[10], chTempBuf[11]);
 
 	initialized = chTempBuf[0];
 	shift_ratio[0] = (s16)((chTempBuf[2] << 8) +
@@ -454,6 +453,12 @@ ssize_t mpu6500_gyro_selftest(char *buf, struct ssp_data *data)
 		shift_ratio[0], shift_ratio[1],	shift_ratio[2]);
 	pr_info("[SSP] avg %+8ld %+8ld %+8ld (LSB)\n", avg[0], avg[1], avg[2]);
 	pr_info("[SSP] rms %+8ld %+8ld %+8ld (LSB)\n", rms[0], rms[1], rms[2]);
+
+	if (total_count == 0) {
+		pr_err("[SSP] %s, total_count is 0. goto exit\n", __func__);
+		ret_val = 2;
+		goto exit;
+	}
 
 	if (hw_result < 0) {
 		pr_err("[SSP] %s - hw selftest fail(%d), sw selftest skip\n",

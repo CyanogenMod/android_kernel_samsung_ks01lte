@@ -1502,14 +1502,17 @@ wcd9xxx_cs_find_plug_type(struct wcd9xxx_mbhc *mbhc,
 	}
 
 	if (type == PLUG_TYPE_HEADSET && dgnd && !dgnd->mic_bias) {
-		/* if plug type is Headphone report as GND_MIC_SWAP */
-		if (dgnd->_type == PLUG_TYPE_HEADPHONE) {
+		/* if plug mic voltage are in range then report as GND_MIC_SWAP */
+		if ((dgnd->_vdces + WCD9XXX_CS_GM_SWAP_THRES_MIN_MV <
+		     minv) &&
+		    (dgnd->_vdces + WCD9XXX_CS_GM_SWAP_THRES_MAX_MV >
+		     maxv)) {
 			pr_debug("%s: GND_MIC_SWAP\n", __func__);
 			type = PLUG_TYPE_GND_MIC_SWAP;
 			/*
-			 * if type is GND_MIC_SWAP we should not check
-			 * HPHL status hence goto exit
-			 */
+		 	* if type is GND_MIC_SWAP we should not check
+		 	* HPHL status hence goto exit
+		 	*/
 			goto exit;
 		} else if (dgnd->_type != PLUG_TYPE_HEADSET && !dmicbias) {
 			pr_debug("%s: Invalid, inconsistent types\n", __func__);

@@ -148,6 +148,11 @@ static int msm_vibrator_probe(struct platform_device *pdev)
 	}
 	vib->pmic_gpio_enabled = of_property_read_bool(pdev->dev.of_node, "samsung,is_pmic_vib_en");
 
+	#ifdef CONFIG_SEC_AFYON_PROJECT
+		vib->pmic_gpio_enabled = 0;
+	#endif
+	
+	printk(KERN_ALERT " VIB PMIC GPIO ENABLED Flag is %d \n", vib->pmic_gpio_enabled);
 	if (!(vib->pmic_gpio_enabled)){
 		rc = gpio_tlmm_config(GPIO_CFG(vib->motor_en, 0, GPIO_CFG_OUTPUT,
 			GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);

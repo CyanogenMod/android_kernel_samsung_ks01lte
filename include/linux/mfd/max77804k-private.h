@@ -151,6 +151,10 @@ enum max77804k_haptic_reg {
 #define MAX77804K_ENABLE_BIT 1
 #define MAX77804K_DISABLE_BIT 0
 
+/* MAX77804K MAINCNTL1 register */
+#define PMIC_MAINCTRL1_MREN_SHIFT	3
+#define PMIC_MAINCTRL1_MREN_MASK	(1 << PMIC_MAINCTRL1_MREN_SHIFT)
+
 /* MAX77804K CHG_CNFG_00 register */
 #define CHG_CNFG_00_MODE_SHIFT		0
 #define CHG_CNFG_00_CHG_SHIFT		0
@@ -164,6 +168,8 @@ enum max77804k_haptic_reg {
 #define CHG_CNFG_00_BUCK_MASK		(1 << CHG_CNFG_00_BUCK_SHIFT)
 #define CHG_CNFG_00_BOOST_MASK		(1 << CHG_CNFG_00_BOOST_SHIFT)
 #define CHG_CNFG_00_DIS_MUIC_CTRL_MASK	(1 << CHG_CNFG_00_DIS_MUIC_CTRL_SHIFT)
+#define CHG_CNFG_00_OTG_CTRL		\
+	(CHG_CNFG_00_OTG_MASK | CHG_CNFG_00_BOOST_MASK | CHG_CNFG_00_DIS_MUIC_CTRL_MASK)
 
 /* MAX77804K CHG_CNFG_04 register */
 #define CHG_CNFG_04_CHG_CV_PRM_SHIFT		0
@@ -301,9 +307,6 @@ enum max77804k_irq {
 	/* PMIC; Charger */
 	MAX77804K_CHG_IRQ_BYP_I,
 	MAX77804K_CHG_IRQ_BATP_I,
-#if defined(CONFIG_SEC_H_PROJECT)
-	MAX77804K_CHG_IRQ_THM_I,
-#endif
 	MAX77804K_CHG_IRQ_BAT_I,
 	MAX77804K_CHG_IRQ_CHG_I,
 	MAX77804K_CHG_IRQ_WCIN_I,
@@ -380,7 +383,9 @@ extern int max77804k_bulk_write(struct i2c_client *i2c, u8 reg, int count,
 				u8 *buf);
 extern int max77804k_update_reg(struct i2c_client *i2c,
 				u8 reg, u8 val, u8 mask);
+#if !defined(CONFIG_EXTCON_MAX77804K)
 extern int max77804k_muic_get_charging_type(void);
+#endif
 extern int max77804k_muic_get_status1_adc1k_value(void);
 extern int max77804k_muic_get_status1_adc_value(void);
 extern void otg_control(int);
@@ -415,7 +420,6 @@ enum cable_type_muic {
 #if defined(CONFIG_MUIC_DET_JACK)
 	CABLE_TYPE_EARJACK_MUIC,
 #endif
-	CABLE_TYPE_CHARGING_CABLE_MUIC,
 	CABLE_TYPE_UNKNOWN_MUIC
 };
 

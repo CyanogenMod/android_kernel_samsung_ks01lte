@@ -14,14 +14,13 @@
  */
 
 #ifndef __IST30XX_TSP_H__
+#include "ist30xx.h"
+
 #define __IST30XX_TSP_H__
 
 #define IST30XX_DD_VERSION  (2)
 
 #define IST30XX_MULTIPLE_TSP    (0)
-
-#define TSP_CHIP_VENDOR     ("IMAGIS")
-#define TSP_CHIP_NAME       ("IST3032B")
 
 #define IST30XXB_PARSE_TSPTYPE(k)   ((k >> 1) & 0xF)
 
@@ -49,6 +48,6 @@
 #define TSP_TOTAL_NUM       (TSP_TX_NUM * TSP_RX_NUM)
 
 #define TSP_THRESHOLD       (30)
-#define TKEY_THRESHOLD      (350)
+#define TKEY_THRESHOLD      (700)
 
 #endif  // __IST30XX_TSP_H__

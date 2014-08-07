@@ -200,6 +200,15 @@ int proximity_open_calibration(struct ssp_data *data)
 	mm_segment_t old_fs;
 	struct file *cancel_filp = NULL;
 
+	if(data->prox_state == OFFSET_CAL_DATA) {
+		data->uProxHiThresh = data->proximity_highThreshold;
+		data->uProxLoThresh = data->proximity_lowThreshold;
+		goto exit;
+	}
+	else if (data->prox_state ==  FILE_OPEN_FAIL) {
+		goto exit;
+	}
+
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
@@ -210,6 +219,7 @@ int proximity_open_calibration(struct ssp_data *data)
 			pr_err("[SSP]: %s - Can't open cancelation file\n",
 				__func__);
 		set_fs(old_fs);
+		data->prox_state = FILE_OPEN_FAIL;
 		goto exit;
 	}
 
@@ -220,8 +230,12 @@ int proximity_open_calibration(struct ssp_data *data)
 		iRet = -EIO;
 	}
 
-	if (data->uProxCanc != 0) /*If there is an offset cal data. */
+	if (data->uProxCanc != 0) /*If there is an offset cal data. */ {
 		get_proximity_threshold(data);
+		data->prox_state = OFFSET_CAL_DATA;
+		data->proximity_highThreshold = data->uProxHiThresh;
+		data->proximity_lowThreshold = data->uProxLoThresh;
+	}
 
 	pr_info("%s: proximity ps_canc = %d, ps_thresh hi - %d lo - %d\n",
 		__func__, data->uProxCanc, data->uProxHiThresh,
@@ -241,6 +255,8 @@ static int proximity_store_cancelation(struct ssp_data *data, int iCalCMD)
 	int iRet = 0;
 	mm_segment_t old_fs;
 	struct file *cancel_filp = NULL;
+
+	data->prox_state = STORE_SUCCESS;
 
 	if (iCalCMD) {
 		data->uProxCanc = get_proximity_rawdata(data);

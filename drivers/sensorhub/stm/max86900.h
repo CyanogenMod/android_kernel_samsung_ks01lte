@@ -27,6 +27,9 @@
 
 #define MAX86900_DEBUG
 
+#define MAX86900_SLAVE_ADDR			0x51
+#define MAX86900A_SLAVE_ADDR		0x57
+
 //MAX86900 Registers
 #define MAX86900_INTERRUPT_STATUS	0x00
 #define MAX86900_INTERRUPT_ENABLE	0x01
@@ -36,9 +39,33 @@
 #define MAX86900_FIFO_READ_POINTER	0x04
 #define MAX86900_FIFO_DATA			0x05
 #define MAX86900_MODE_CONFIGURATION	0x06
-#define MAX86900_SPO2_CONFIGURATION		0x07
-#define MAX86900_LED_CONFIGURATION		0x09
-#define MAX86900_FIFO_SIZE			16
+#define MAX86900_SPO2_CONFIGURATION	0x07
+#define MAX86900_LED_CONFIGURATION	0x09
+#define MAX86900_TEMP_INTEGER		0x16
+#define MAX86900_TEMP_FRACTION		0x17
+
+
+//Self Test
+#define MAX86900_TEST_MODE		0xFF
+#define MAX86900_TEST_GTST		0x80
+#define MAX86900_TEST_ENABLE_IDAC	0x81
+#define MAX86900_TEST_ENABLE_PLETH	0x82
+#define MAX86900_TEST_ALC			0x8F
+#define MAX86900_TEST_ROUTE_MODULATOR	0x97
+#define MAX86900_TEST_LOOK_MODE_RED		0x98
+#define MAX86900_TEST_LOOK_MODE_IR		0x99
+#define MAX86900_TEST_IDAC_GAIN		0x9C
+
+
+#define MAX86900_FIFO_SIZE		16
+
+typedef enum _PART_TYPE
+{
+	PART_TYPE_MAX86900 = 0,
+	PART_TYPE_MAX86900A,
+	PART_TYPE_MAX86900B,
+	PART_TYPE_MAX86900C,
+} PART_TYPE;
 
 struct max86900_platform_data
 {
@@ -53,16 +80,36 @@ struct max86900_device_data
 	struct input_dev *hrm_input_dev;
 	struct mutex i2clock;
 	struct mutex activelock;
-
+	struct regulator *vdd_1p8;
+#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+	struct regulator *vdd_3p3;
+#endif
+	const char *sub_ldo4;
+#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+	const char *led_l19;
+#endif
 	bool *bio_status;
 	u8 is_enable;
+	u8 led_current;
+	u8 hr_range;
+	u8 hr_range2;
+	u8 look_mode_ir;
+	u8 look_mode_red;
+	u8 eol_test_is_enable;
+	u8 part_type;
+	u8 default_current;
+	u8 test_current_ir;
+	u8 test_current_red;
+	u8 eol_test_status;
 	u16 led;
 	u16 sample_cnt;
 	int hrm_int;
 	int irq;
-
-	struct regulator *vdd_1p8;
-	const char *sub_ldo4;
+	int hrm_temp;
+	char *eol_test_result;
+	char *lib_ver;
+	int ir_sum;
+	int r_sum;
 };
 
 extern int sensors_create_symlink(struct kobject *target, const char *name);

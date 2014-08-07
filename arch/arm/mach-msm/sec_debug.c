@@ -46,6 +46,7 @@
 #include <linux/fcntl.h>
 #include <linux/fs.h>
 #endif
+#include <linux/debugfs.h>
 #include <asm/system_info.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
@@ -224,8 +225,6 @@ static unsigned pm8841_rev = 0;
 unsigned int sec_dbg_level;
 
 uint runtime_debug_val;
-static uint32_t tzapps_start_addr;
-static uint32_t tzapps_size;
 
 module_param_named(enable, enable, uint, 0644);
 module_param_named(enable_user, enable_user, uint, 0644);
@@ -730,8 +729,8 @@ void *kfree_hook(void *p, void *caller)
 /* onlyjazz.ed26 : make the restart_reason global to enable it early
    in sec_debug_init and share with restart functions */
 void *restart_reason;
-#ifdef USE_RESTART_REASSON_DDR
-void *restart_reason_ddr_address;
+#ifdef CONFIG_RESTART_REASON_DDR
+void *restart_reason_ddr_address = NULL;
 /* Using bottom of sec_dbg DDR address range for writting restart reason */
 #define  RESTART_REASON_DDR_ADDR 0x3FFFE000
 #endif
@@ -1221,6 +1220,58 @@ int kernel_sec_get_debug_level(void)
 }
 EXPORT_SYMBOL(kernel_sec_get_debug_level);
 
+#ifdef CONFIG_SEC_MONITOR_BATTERY_REMOVAL
+static unsigned normal_off = 0;
+static int __init power_normal_off(char *val)
+{
+	normal_off = strncmp(val, "1", 1) ? 0 : 1;
+	pr_info("%s, normal_off:%d\n", __func__, normal_off);
+        return 1;
+}
+__setup("normal_off=", power_normal_off);
+
+bool kernel_sec_set_normal_pwroff(int value)
+{
+	int normal_poweroff = value;
+	pr_info(" %s, value :%d\n", __func__, value);
+	sec_set_param(param_index_normal_poweroff, &normal_poweroff);
+
+	return 1;
+}
+EXPORT_SYMBOL(kernel_sec_set_normal_pwroff);
+
+static int sec_get_normal_off(void *data, u64 *val)
+{
+        *val = normal_off;
+        return 0;
+}
+DEFINE_SIMPLE_ATTRIBUTE(normal_off_fops, sec_get_normal_off, NULL, "%lld\n");
+
+static int __init sec_logger_init(void)
+{
+#ifdef CONFIG_DEBUG_FS
+        struct dentry *dent;
+        struct dentry   *dbgfs_file;
+
+        dent = debugfs_create_dir("sec_logger", 0);
+        if (IS_ERR_OR_NULL(dent)) {
+                pr_err("Failed to create debugfs dir of sec_logger\n");
+                return PTR_ERR(dent);
+	}
+
+        dbgfs_file = debugfs_create_file("normal_off", 0644, dent,
+						 NULL, &normal_off_fops);
+        if (IS_ERR_OR_NULL(dbgfs_file)) {
+                pr_err("Failed to create debugfs file of normal_off file\n");
+	        debugfs_remove_recursive(dent);
+                return PTR_ERR(dbgfs_file);
+        }
+#endif
+        return 0;
+}
+late_initcall(sec_logger_init);
+#endif
+
 /* core reg dump function*/
 static void sec_debug_save_core_reg(struct sec_debug_core_t *core_reg)
 {
@@ -1408,6 +1459,19 @@ static void sec_debug_set_upload_cause(enum sec_debug_upload_cause_t type)
 	__raw_writel(type, upload_cause);
 
 	pr_emerg("(%s) %x\n", __func__, type);
+
+#ifdef CONFIG_RESTART_REASON_DDR
+	if(type == UPLOAD_CAUSE_POWER_LONG_PRESS) {
+		if(restart_reason_ddr_address) {
+			void * upload_cause_ddr_address = restart_reason_ddr_address + 0x10;
+			/* UPLOAD_CAUSE_POWER_LONG_PRESS magic number to DDR restart reason address */
+			__raw_writel(UPLOAD_CAUSE_POWER_LONG_PRESS, upload_cause_ddr_address);
+			pr_info("%s: Write UPLOAD_CAUSE_POWER_LONG_PRESS to DDR : 0x%x \n",
+					__func__,__raw_readl(upload_cause_ddr_address));
+		}
+	}
+#endif
+
 }
 
 extern struct uts_namespace init_uts_ns;
@@ -1529,9 +1593,16 @@ int sec_debug_dump_stack(void)
 }
 EXPORT_SYMBOL(sec_debug_dump_stack);
 
+#ifdef CONFIG_TOUCHSCREEN_MMS252// debug for tsp ghost touch
+extern void dump_tsp_log(void);
+#endif
+
 void sec_debug_check_crash_key(unsigned int code, int value)
 {
 	static enum { NONE, STEP1, STEP2, STEP3} state = NONE;
+#ifdef CONFIG_TOUCHSCREEN_MMS252
+        static enum { NO, T1, T2, T3} state_tsp = NO;
+#endif
 
 	printk(KERN_ERR "%s code %d value %d state %d enable %d\n", __func__, code, value, state, enable);
 
@@ -1541,6 +1612,41 @@ void sec_debug_check_crash_key(unsigned int code, int value)
 		else
 			sec_debug_set_upload_cause(UPLOAD_CAUSE_INIT);
 	}
+
+#ifdef CONFIG_TOUCHSCREEN_MMS252
+	if(code == KEY_VOLUMEUP && !value){
+		 state_tsp = NO;
+	} else {
+
+		switch (state_tsp) {
+		case NO:
+			if (code == KEY_VOLUMEUP && value)
+				state_tsp = T1;
+			else
+				state_tsp = NO;
+			break;
+		case T1:
+			if (code == KEY_HOMEPAGE && value)
+				state_tsp = T2;
+			else
+				state_tsp = NO;
+			break;
+		case T2:
+			if (code == KEY_HOMEPAGE && !value)
+				state_tsp = T3;
+			else
+				state_tsp = NO;
+			break;
+		case T3:
+			if (code == KEY_HOMEPAGE && value) {
+				pr_info("[TSP] dump_tsp_log : %d\n", __LINE__ );
+				dump_tsp_log();
+			}
+			break;
+		}
+	}
+
+#endif
 
 	if (!enable)
 		return;
@@ -1765,12 +1871,6 @@ void sec_debug_save_cpu_freq_voltage(int cpu, int flag, unsigned long value)
 {
 }
 #endif
-void sec_debug_secure_app_addr_size(uint32_t addr,uint32_t size)
-{
-	tzapps_start_addr = addr;
-	tzapps_size =  size;
-}
-
 int sec_debug_subsys_init(void)
 {
 #ifdef CONFIG_SEC_DEBUG_VERBOSE_SUMMARY_HTML
@@ -1798,9 +1898,6 @@ int sec_debug_subsys_init(void)
 	}
 
 	memset(secdbg_subsys, 0, sizeof(secdbg_subsys));
-	
-	secdbg_subsys->secure_app_start_addr = tzapps_start_addr;
-	secdbg_subsys->secure_app_size = tzapps_size;
 
 	secdbg_krait = &secdbg_subsys->priv.krait;
 
@@ -1863,7 +1960,8 @@ int sec_debug_subsys_init(void)
 	ADD_VAR_TO_VARMON(speed_bin);
 	ADD_VAR_TO_VARMON(pvs_bin);
 #endif
-#endif
+#endif 
+
 #ifdef CONFIG_ARCH_MSM8974PRO
 	ADD_VAR_TO_VARMON(pmc8974_rev);
 #else
@@ -2210,13 +2308,13 @@ int __init sec_debug_init(void)
 {
 	restart_reason = MSM_IMEM_BASE + RESTART_REASON_ADDR;
 	/* Using bottom of sec_dbg DDR address range for writting restart reason */
-#ifdef USE_RESTART_REASSON_DDR
+#ifdef CONFIG_RESTART_REASON_DDR
 		restart_reason_ddr_address = ioremap_nocache(RESTART_REASON_DDR_ADDR, SZ_4K);
 		pr_emerg("%s: restart_reason_ddr_address : 0x%x \n", __func__,(unsigned int)restart_reason_ddr_address);
 #endif
 
 	pr_emerg("%s: enable=%d\n", __func__, enable);
-
+	pr_emerg("%s:__raw_readl restart_reason=%d\n", __func__, __raw_readl(restart_reason));
 	/* check restart_reason here */
 	pr_emerg("%s: restart_reason : 0x%x\n", __func__,
 		(unsigned int)restart_reason);
@@ -2293,10 +2391,20 @@ void sec_debug_print_file_list(void)
 	}
 }
 
-void sec_debug_EMFILE_error_proc(void)
+void sec_debug_EMFILE_error_proc(unsigned long files_addr)
 {
-	printk(KERN_ERR "Too many open files(%d:%s)\n",
-		current->tgid, current->group_leader->comm);
+	if (files_addr!=(unsigned long)(current->files)) {
+		printk(KERN_ERR "Too many open files Error at %pS\n"
+						"%s(%d) thread of %s process tried fd allocation by proxy.\n"
+						"files_addr = 0x%lx, current->files=0x%p\n",
+					__builtin_return_address(0),
+					current->comm,current->tgid,current->group_leader->comm,
+					files_addr, current->files);
+		return;
+	}
+
+	printk(KERN_ERR "Too many open files(%d:%s) at %pS\n",
+		current->tgid, current->group_leader->comm,__builtin_return_address(0));
 
 	if (!enable)
 		return;

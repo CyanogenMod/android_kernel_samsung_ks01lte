@@ -1039,6 +1039,8 @@ static int fwu_enter_flash_prog(void)
 	struct f01_device_status f01_device_status;
 	struct f01_device_control f01_device_control;
 	struct synaptics_rmi4_data *rmi4_data = fwu->rmi4_data;
+	unsigned char int_enable = 0x00;
+
 	retval = fwu_read_f34_flash_status();
 	if (retval < 0)
 		return retval;
@@ -1046,6 +1048,21 @@ static int fwu_enter_flash_prog(void)
 	if (fwu->program_enabled)
 		return 0;
 
+/* To block interrupt from finger or hovering during enter flash program mode
+ * 1. F01_RMI_CTRL1(Interrupt Enable 0) register is cleared on this position.
+ * 2. After enter flash program mode, interrupt occured only by Flash bit(0x01)
+ * 3. After finish all flashing and reset, Interrupt enable register will be set as default value
+ */
+	retval = fwu->fn_ptr->write(rmi4_data,
+			fwu->f01_fd.ctrl_base_addr + 1,
+			&int_enable, sizeof(int_enable));
+
+	if (retval < 0) {
+		dev_err(&rmi4_data->i2c_client->dev,
+			"%s: Failed to write interrupt enable register\n", __func__);
+		return retval;
+	}
+	msleep(20);
 	retval = fwu_write_bootloader_id();
 	if (retval < 0)
 		return retval;

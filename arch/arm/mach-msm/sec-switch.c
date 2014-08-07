@@ -23,12 +23,13 @@
 #define DEBUG_STATUS   			1
 #endif
 
-#ifdef CONFIG_USB_SWITCH_FSA9485
-#include <linux/i2c/fsa9485.h>
-#include <linux/power_supply.h>
 #ifdef CONFIG_USB_HOST_NOTIFY
 #include <linux/host_notify.h>
 #endif
+
+#ifdef CONFIG_USB_SWITCH_FSA9485
+#include <linux/i2c/fsa9485.h>
+#include <linux/power_supply.h>
 #endif
 
 #if defined(CONFIG_USB_SWITCH_RT8973)
@@ -74,9 +75,6 @@
 
 #include "devices.h"
 
-#ifdef CONFIG_USB_HOST_NOTIFY
-#include <linux/host_notify.h>
-#endif
 #include <linux/pm_runtime.h>
 #include <linux/usb.h>
 #include <linux/usb/hcd.h>
@@ -118,6 +116,13 @@
 #include <linux/sec_class.h>
 #if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
 static int MHL_Connected;
+#endif
+#ifdef CONFIG_TOUCHSCREEN_FTS
+#include <linux/i2c/fts.h>
+#endif
+
+#ifdef CONFIG_KEYBOARD_CYPRESS_TKEY_HL
+#include <linux/i2c/touchkey_hl.h>
 #endif
 static struct switch_dev switch_dock = {
 	.name = "dock",
@@ -172,6 +177,21 @@ void mxt_tsp_register_callback(struct mxt_callbacks *cb)
 }
 #endif
 
+#if defined(CONFIG_TOUCHSCREEN_MMS252) || defined(CONFIG_TOUCHSCREEN_MMS300)
+struct tsp_callbacks *charger_callbacks;
+struct tsp_callbacks {
+        void (*inform_charger)(struct tsp_callbacks *tsp_cb, bool mode);
+};
+
+void melfas_register_callback(void *cbv)
+{
+	struct tsp_callbacks *cb = cbv;
+	charger_callbacks = cb;
+	pr_debug("[TSP] melfas_register_callback\n");
+}
+EXPORT_SYMBOL(melfas_register_callback);
+#endif
+
 #ifdef TK_INFORM_CHARGER
 struct touchkey_callbacks *tk_charger_callbacks;
 void touchkey_charger_infom(bool en)
@@ -182,6 +202,19 @@ void touchkey_charger_infom(bool en)
 void touchkey_register_callback(void *cb)
 {
 	tk_charger_callbacks = cb;
+}
+#endif
+
+#ifdef FTS_SUPPORT_TA_MODE
+struct fts_callbacks *fts_charger_callbacks;
+void fts_charger_infom(int cable_type)
+{
+	if (fts_charger_callbacks && fts_charger_callbacks->inform_charger)
+		fts_charger_callbacks->inform_charger(fts_charger_callbacks, cable_type);
+}
+void fts_register_callback(void *cb)
+{
+	fts_charger_callbacks = cb;
 }
 #endif
 
@@ -361,7 +394,6 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 {
 #ifdef CONFIG_CHARGER_MAX77803
 	struct power_supply *psy = power_supply_get_by_name("battery");
-	struct power_supply *psy_ps = power_supply_get_by_name("ps");
 	union power_supply_propval value;
 	static enum cable_type_muic previous_cable_type = CABLE_TYPE_NONE_MUIC;
 #endif
@@ -379,13 +411,16 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 	touchkey_charger_infom(cable_type);
 #endif
 
+#ifdef FTS_SUPPORT_TA_MODE
+	fts_charger_infom(cable_type);
+#endif
+
 #ifdef CONFIG_JACK_MON
 	switch (cable_type) {
 	case CABLE_TYPE_OTG_MUIC:
 	case CABLE_TYPE_NONE_MUIC:
 	case CABLE_TYPE_JIG_UART_OFF_MUIC:
 	case CABLE_TYPE_MHL_MUIC:
-	case CABLE_TYPE_CHARGING_CABLE_MUIC:
 		is_cable_attached = false;
 		break;
 	case CABLE_TYPE_USB_MUIC:
@@ -417,13 +452,12 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 #endif
 
 #ifdef CONFIG_CHARGER_MAX77803
-	pr_info("%s: cable type for charger: cable_type(%d), previous_cable_type(%d)\n",
-			__func__, cable_type, previous_cable_type);
 	/*  charger setting */
 	if (previous_cable_type == cable_type) {
 		pr_info("%s: SKIP cable setting\n", __func__);
 		goto skip;
 	}
+	previous_cable_type = cable_type;
 
 	switch (cable_type) {
 	case CABLE_TYPE_NONE_MUIC:
@@ -474,34 +508,20 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 	case CABLE_TYPE_INCOMPATIBLE_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_UNKNOWN;
 		break;
-	case CABLE_TYPE_CHARGING_CABLE_MUIC:
-		current_cable_type = POWER_SUPPLY_TYPE_POWER_SHARING;
-		break;
 	default:
 		pr_err("%s: invalid type for charger:%d\n",
 				__func__, cable_type);
 		goto skip;
 	}
 
-	if (!psy || !psy->set_property || !psy_ps || !psy_ps->set_property) {
-		pr_err("%s: fail to get battery/ps psy\n", __func__);
-	} else {
-		if (current_cable_type == POWER_SUPPLY_TYPE_POWER_SHARING) {
-			value.intval = current_cable_type;
-			psy_ps->set_property(psy_ps, POWER_SUPPLY_PROP_ONLINE, &value);
-		} else {
-			if (previous_cable_type == CABLE_TYPE_CHARGING_CABLE_MUIC) {
-				value.intval = current_cable_type;
-				psy_ps->set_property(psy_ps, POWER_SUPPLY_PROP_ONLINE, &value);
-			} else {
-				value.intval = current_cable_type;
-				psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
-			}
-		}
+	if (!psy || !psy->set_property)
+		pr_err("%s: fail to get battery psy\n", __func__);
+	else {
+		value.intval = current_cable_type;
+		psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
 	}
-	previous_cable_type = cable_type;
-#endif
 skip:
+#endif
 #ifdef CONFIG_JACK_MON
 	jack_event_handler("charger", is_cable_attached);
 #endif
@@ -525,7 +545,7 @@ void max77803_set_jig_state(int jig_state)
 int max77803_muic_set_safeout(int path);
 
 extern void set_ncm_ready(bool);
-#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_K_PROJECT)
 extern unsigned int system_rev;
 static unsigned int gpio_redriver_en;
 void set_redriver_power(int on)
@@ -542,6 +562,7 @@ void set_redriver_power(int on)
 #endif
 #if defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_F_PROJECT)
 extern unsigned int system_rev;
+extern void force_dwc3_gadget_disconnect(void);
 #define GPIO_REDRIVER_EN 129
 extern u8 usb30en;
 void set_redriver_power(int on)
@@ -583,7 +604,7 @@ void max77803_muic_usb_cb(u8 usb_mode)
 
 	if (usb_mode == USB_CABLE_DETACHED
 		|| usb_mode == USB_CABLE_ATTACHED) {
-#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_K_PROJECT)
 		set_redriver_power(usb_mode);
 #endif
 		if (usb_mode == USB_CABLE_ATTACHED)
@@ -598,6 +619,7 @@ void max77803_muic_usb_cb(u8 usb_mode)
 			set_ncm_ready(0);
 			usb30en = 0;
 			set_redriver_power(usb_mode);
+			force_dwc3_gadget_disconnect();
 #endif
 		}
 #ifdef CONFIG_USB_HOST_NOTIFY
@@ -698,7 +720,7 @@ void max77803_muic_init_cb(void)
 	if (ret < 0)
 		pr_err("Failed to register dock switch. %d\n", ret);
 
-#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_K_PROJECT)
 	/* set gpio to enable redriver for USB3.0 */
 	if(system_rev>=4)
 		gpio_redriver_en = 312;
@@ -1111,7 +1133,7 @@ void max77804k_set_jig_state(int jig_state)
 int max77804k_muic_set_safeout(int path);
 
 extern void set_ncm_ready(bool);
-#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_K_PROJECT)
 extern unsigned int system_rev;
 static unsigned int gpio_redriver_en;
 void set_redriver_power(int on)
@@ -1149,7 +1171,7 @@ void max77804k_muic_usb_cb(u8 usb_mode)
 
 	if (usb_mode == USB_CABLE_DETACHED
 		|| usb_mode == USB_CABLE_ATTACHED) {
-#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_K_PROJECT)
 		set_redriver_power(usb_mode);
 #endif
 		if (usb_mode == USB_CABLE_ATTACHED)
@@ -1258,7 +1280,7 @@ void max77804k_muic_init_cb(void)
 	if (ret < 0)
 		pr_err("Failed to register dock switch. %d\n", ret);
 
-#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_K_PROJECT)
 	/* set gpio to enable redriver for USB3.0 */
 	if(system_rev>=4)
 		gpio_redriver_en = 312;
@@ -1560,6 +1582,7 @@ int max77888_muic_charger_cb(enum cable_type_muic cable_type)
 		break;
 	case CABLE_TYPE_AUDIODOCK_MUIC:
 	case CABLE_TYPE_TA_MUIC:
+	case CABLE_TYPE_LANHUB_MUIC:
 	case CABLE_TYPE_CARDOCK_MUIC:
 	case CABLE_TYPE_DESKDOCK_MUIC:
 	case CABLE_TYPE_SMARTDOCK_MUIC:
@@ -1613,6 +1636,9 @@ int max77888_muic_charger_cb(enum cable_type_muic cable_type)
 		break;
 	case CABLE_TYPE_CDP_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_USB_CDP;
+		break;
+	case CABLE_TYPE_LANHUB_MUIC:
+		current_cable_type = POWER_SUPPLY_TYPE_MAINS;
 		break;
 	case CABLE_TYPE_AUDIODOCK_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_MISC;
@@ -1739,15 +1765,24 @@ void max77888_muic_usb_cb(u8 usb_mode)
 
 	} else if (usb_mode == USB_POWERED_HOST_DETACHED
 		|| usb_mode == USB_POWERED_HOST_ATTACHED) {
-		if (usb_mode == USB_POWERED_HOST_DETACHED){
+		if (usb_mode == USB_POWERED_HOST_DETACHED) {
 			pr_info("USB Host HNOTIFY_SMARTDOCK_OFF");
 			sec_otg_notify(HNOTIFY_SMARTDOCK_OFF);
-		}else{
+		} else {
 			pr_info("USB Host HNOTIFY_SMARTDOCK_ON");
 			sec_otg_notify(HNOTIFY_SMARTDOCK_ON);
 		}
-#endif
+	} else if (usb_mode == USB_LANHUB_DETACHED
+		|| usb_mode == USB_LANHUB_ATTACHED) {
+		if (usb_mode == USB_LANHUB_DETACHED) {
+			pr_info("USB Host HNOTIFY_LANHUB_OFF");
+			sec_otg_notify(HNOTIFY_LANHUB_OFF);
+		} else {
+			pr_info("USB Host HNOTIFY_LANHUB_ON");
+			sec_otg_notify(HNOTIFY_LANHUB_ON);
+		}
 	}
+#endif
 }
 #if defined (CONFIG_VIDEO_MHL_V2) || defined (CONFIG_VIDEO_MHL_SII8246)
 static BLOCKING_NOTIFIER_HEAD(acc_mhl_notifier);
@@ -1922,7 +1957,7 @@ int msm8930_get_cable_status(void) {return (int)set_cable_status; }
 
 /* support for LPM charging */
 //#ifdef CONFIG_SAMSUNG_LPM_MODE
-#if defined(CONFIG_BATTERY_SAMSUNG)
+#if defined(CONFIG_BATTERY_SAMSUNG) || defined(CONFIG_QPNP_SEC_CHARGER)
 bool sec_bat_is_lpm(void)
 {
 	return (bool)poweroff_charging; 
@@ -2008,7 +2043,7 @@ int tsu6721_dock_init(void)
 	return 0;
 }
 #if defined(DEBUG_STATUS)
-static unsigned status_count;
+static int status_count;
 #endif
 void tsu6721_callback(enum cable_type_t cable_type, int attached)
 {
@@ -2030,15 +2065,15 @@ void tsu6721_callback(enum cable_type_t cable_type, int attached)
 
 	switch (cable_type) {
 	case CABLE_TYPE_USB:
-		
+
 #if defined(DEBUG_STATUS)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s USB Cable status attached (%u) \n",__func__, status_count);
+                       pr_err("%s USB Cable status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s USB Cable Status detached (%u) \n", __func__,status_count);
+                       pr_err("%s USB Cable Status detached (%d) \n", __func__,status_count);
                }
 #endif
 		sec_otg_set_vbus_state(attached);
@@ -2048,10 +2083,10 @@ void tsu6721_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Charger status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Charger status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s charger status detached (%u) \n", __func__,status_count);
+                       pr_err("%s charger status detached (%d) \n", __func__,status_count);
                }
 #endif
 		break;
@@ -2060,10 +2095,10 @@ void tsu6721_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s UART Status attached (%u) \n",__func__, status_count);
+                       pr_err("%s UART Status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s UART status detached (%u) \n", __func__,status_count);
+                       pr_err("%s UART status detached (%d) \n", __func__,status_count);
                }
 #endif
 		break;
@@ -2072,10 +2107,10 @@ void tsu6721_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s JIG cable status attached (%u) \n",__func__, status_count);
+                       pr_err("%s JIG cable status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s JIG cable status detached (%u) \n", __func__,status_count);
+                       pr_err("%s JIG cable status detached (%d) \n", __func__,status_count);
                }
 #endif
 		return;
@@ -2084,22 +2119,23 @@ void tsu6721_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s CDP status attached (%u) \n",__func__, status_count);
+                       pr_err("%s CDP status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s CDP Status detached (%u) \n", __func__,status_count);
+                       pr_err("%s CDP Status detached (%d) \n", __func__,status_count);
                }
 #endif
+		sec_otg_set_vbus_state(attached);
 		break;
 	case CABLE_TYPE_OTG:
 #if defined(DEBUG_STATUS)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s OTG status attached (%u) \n",__func__, status_count);
+                       pr_err("%s OTG status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s OTG status detached (%u) \n", __func__,status_count);
+                       pr_err("%s OTG status detached (%d) \n", __func__,status_count);
                }
 #endif
 	       return;
@@ -2108,10 +2144,10 @@ void tsu6721_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Audiodock status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Audiodock status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s Audiodock status detached (%u) \n", __func__,status_count);
+                       pr_err("%s Audiodock status detached (%d) \n", __func__,status_count);
                }
 #endif
 		return;
@@ -2120,10 +2156,10 @@ void tsu6721_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Cardock status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Cardock status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s Cardock status detached (%u) \n", __func__,status_count);
+                       pr_err("%s Cardock status detached (%d) \n", __func__,status_count);
                }
 #endif
 		switch_set_state(&switch_dock, attached ? 2 : 0);
@@ -2133,10 +2169,10 @@ void tsu6721_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Deskdock status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Deskdock status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s Deskdock status detached (%u) \n", __func__,status_count);
+                       pr_err("%s Deskdock status detached (%d) \n", __func__,status_count);
                }
 #endif
 		switch_set_state(&switch_dock, attached);
@@ -2146,10 +2182,10 @@ void tsu6721_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Incompatible Charger status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Incompatible Charger status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s Incomabtible Charger status detached (%u) \n", __func__,status_count);
+                       pr_err("%s Incomabtible Charger status detached (%d) \n", __func__,status_count);
                }
 #endif
 		break;
@@ -2301,6 +2337,22 @@ int rt8973_dock_init(void)
 	return 0;
 }
 
+#ifdef MUIC_SUPPORT_CARDOCK_FUNCTION
+void rt8973_jig_callback(jig_type_t type, uint8_t attached)
+{
+	//Check JIG cable type and whether dock finished the initialization or not (rt8973_dock_init)
+	if (type == JIG_UART_BOOT_ON && switch_dock.dev != NULL) {
+		if (attached)
+			pr_err("%s Cardock status attached \n",__func__);
+		else
+			pr_err("%s Cardock status detached \n", __func__);
+
+		switch_set_state(&switch_dock, attached ? 2 : 0);
+	}
+	return;
+}
+#endif
+
 void sec_charger_cb(u8 cable_type)
 {
 	union power_supply_propval value;
@@ -2315,6 +2367,7 @@ void sec_charger_cb(u8 cable_type)
 		break;
 	case MUIC_RT8973_CABLE_TYPE_USB:
 	case MUIC_RT8973_CABLE_TYPE_CDP:
+	case MUIC_RT8973_CABLE_TYPE_L200K_SPEC_USB:
 		current_cable_type = POWER_SUPPLY_TYPE_USB;
 		break;
 	case MUIC_RT8973_CABLE_TYPE_REGULAR_TA:
@@ -2382,15 +2435,15 @@ struct rt8973_platform_data  rt8973_pdata = {
     .ocp_callback = NULL,
     .otp_callback = NULL,
     .ovp_callback = NULL,
-#if defined(CONFIG_SEC_HEAT_PROJECT)
     .usb_callback = rt8973_usb_cb,
-#else
-    .usb_callback = NULL,
-#endif
     .uart_callback = NULL,
     .otg_callback = NULL,
+    .dock_init = rt8973_dock_init,
+#ifdef MUIC_SUPPORT_CARDOCK_FUNCTION
+    .jig_callback = rt8973_jig_callback,
+#else
     .jig_callback = NULL,
-
+#endif
 };
 
 /*static struct i2c_board_info rtmuic_i2c_boardinfo[] __initdata = {
@@ -2409,6 +2462,67 @@ struct rt8973_platform_data  rt8973_pdata = {
 
 static enum cable_type_t set_cable_status;
 int current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
+int msm8930_get_cable_status(void) {return (int)set_cable_status; }
+
+extern int poweroff_charging;
+
+/* support for LPM charging */
+bool sec_bat_is_lpm(void)
+{
+	return (bool)poweroff_charging; 
+}
+
+int sec_bat_get_cable_status(void)
+{
+	int rc;
+	struct power_supply *psy;
+	union power_supply_propval value;
+
+	psy = power_supply_get_by_name("battery");
+	switch (set_cable_status) {
+	case CABLE_TYPE_MISC:
+		value.intval = POWER_SUPPLY_TYPE_MISC;
+		break;
+	case CABLE_TYPE_USB:
+		value.intval = POWER_SUPPLY_TYPE_USB;
+		break;
+	case CABLE_TYPE_AC:
+	case CABLE_TYPE_AUDIO_DOCK:
+		value.intval = POWER_SUPPLY_TYPE_MAINS;
+		break;
+	case CABLE_TYPE_UARTOFF:
+		value.intval = POWER_SUPPLY_TYPE_UARTOFF;
+		break;
+	case CABLE_TYPE_CARDOCK:
+		value.intval = POWER_SUPPLY_TYPE_CARDOCK;
+		break;
+	case CABLE_TYPE_CDP:
+		value.intval = POWER_SUPPLY_TYPE_USB_CDP;
+		break;
+	case CABLE_TYPE_INCOMPATIBLE:
+		value.intval = POWER_SUPPLY_TYPE_MAINS;
+		break;
+	case CABLE_TYPE_DESK_DOCK:
+		value.intval = POWER_SUPPLY_TYPE_MISC;
+		break;
+	case CABLE_TYPE_NONE:
+		value.intval = POWER_SUPPLY_TYPE_BATTERY;
+	if (set_cable_status == CABLE_TYPE_UARTOFF)
+	value.intval = POWER_SUPPLY_TYPE_UARTOFF;
+		break;
+	default:
+                pr_err("%s: LPM boot with invalid cable :%d\n", __func__,set_cable_status);
+	}
+
+	rc = psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE,&value);
+
+	if (rc) {
+		pr_err("%s: fail to set power_suppy ONLINE property(%d)\n",
+			__func__, rc);
+        }
+
+	return (int)set_cable_status;
+}
 
 #ifdef CONFIG_VIDEO_MHL_V2
 static BLOCKING_NOTIFIER_HEAD(acc_mhl_notifier);
@@ -2542,6 +2656,21 @@ static void fsa9485_mhl_cb(bool attached)
 }
 #endif
 
+void fsa9485_set_mhl_cable(bool attached) {
+	union power_supply_propval value;
+
+	pr_info("%s: MHL Cable setting in LPM Mode%d\n", __func__, attached);
+
+	if (poweroff_charging && attached) {
+		value.intval = POWER_SUPPLY_TYPE_MHL_USB;
+		current_cable_type = value.intval;
+		value.intval = current_cable_type;
+	} else {
+		pr_info("%s: Ignore Cable setting, Not LPM mode\n", __func__);
+	}
+}
+EXPORT_SYMBOL(fsa9485_set_mhl_cable);
+
 bool fsa9485_muic_is_mhl_attached(void)
 {
 	return 0;
@@ -2564,7 +2693,11 @@ static void fsa9485_otg_cb(bool attached)
 }
 
 #if defined(CONFIG_SEC_VIENNA_PROJECT) || defined(CONFIG_SEC_V2_PROJECT)
-extern int vienna_usb_rdrv_pin;
+extern int sec_qcom_usb_rdrv;
+#endif
+
+#ifdef CONFIG_SEC_BERLUTI_PROJECT
+extern void sec_otg_set_vbus_state(int);
 #endif
 
 static void fsa9485_usb_cb(bool attached)
@@ -2576,12 +2709,13 @@ static void fsa9485_usb_cb(bool attached)
 	pr_info("fsa9485_usb_cb attached %d\n", attached);
 	set_cable_status = attached ? CABLE_TYPE_USB : CABLE_TYPE_NONE;
 
+#ifndef CONFIG_SEC_BERLUTI_PROJECT
         /* Vienna SS - USB 3.0 redriver enable/disable */
 #if defined(CONFIG_SEC_VIENNA_PROJECT) || defined(CONFIG_SEC_V2_PROJECT)
-	gpio_set_value(vienna_usb_rdrv_pin, attached);
-	pr_info("%s vienna_usb_rdrv_pin = %d, enable=%d\n",
+	gpio_set_value(sec_qcom_usb_rdrv, attached);
+	pr_info("%s sec_qcom_usb_rdrv = %d, enable=%d\n",
 		__func__,
-		vienna_usb_rdrv_pin,
+		sec_qcom_usb_rdrv,
 		attached);
 #endif
 
@@ -2593,6 +2727,9 @@ static void fsa9485_usb_cb(bool attached)
 	pr_info("%s: MUIC attached: %d\n", __func__, attached);
 
 	power_supply_set_present(psy, attached);
+#else
+	sec_otg_set_vbus_state(attached);
+#endif
 
 #if defined(CONFIG_TOUCHSCREEN_ATMEL_MXT1664S) || defined(CONFIG_TOUCHSCREEN_ATMEL_MXT1188S)
 	mxt_tsp_charger_infom(attached);
@@ -2755,6 +2892,7 @@ static void fsa9485_usb_cdp_cb(bool attached)
 	set_cable_status =
 		attached ? CABLE_TYPE_CDP : CABLE_TYPE_NONE;
 
+#ifndef CONFIG_SEC_BERLUTI_PROJECT
 	psy = power_supply_get_by_name("dwc-usb");
 	if (!psy) {
 		pr_info("%s: couldn't get usb power supply\n", __func__);
@@ -2763,7 +2901,9 @@ static void fsa9485_usb_cdp_cb(bool attached)
 	pr_info("%s: MUIC attached: %d\n", __func__, attached);
 
 	power_supply_set_present(psy, attached);
-
+#else
+	sec_otg_set_vbus_state(attached);
+#endif
 
 	for (i = 0; i < 10; i++) {
 		psy = power_supply_get_by_name("battery");
@@ -2846,6 +2986,8 @@ static void fsa9485_dock_cb(int attached)
 	}
 }
 
+#ifndef CONFIG_SEC_BERLUTI_PROJECT
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 static void fsa9485_lanhub_cb(bool attached)
 {
 	union power_supply_propval value;
@@ -2949,7 +3091,7 @@ static void fsa9485_lanhubta_cb(bool attached)
 
 	current_cable_type = value.intval;
 }
-
+#endif
 static void fsa9485_smartdock_cb(bool attached)
 {
 	union power_supply_propval value;
@@ -3002,6 +3144,7 @@ static void fsa9485_audio_dock_cb(bool attached)
 
 //	msm_otg_set_smartdock_state(attached);
 }
+#endif
 
 static int fsa9485_dock_init(void)
 {
@@ -3079,10 +3222,21 @@ struct fsa9485_platform_data fsa9485_pdata = {
 	.dock_cb	= fsa9485_dock_cb,
 	.dock_init	= fsa9485_dock_init,
 	.usb_cdp_cb	= fsa9485_usb_cdp_cb,
+#ifndef CONFIG_SEC_BERLUTI_PROJECT
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 	.lanhub_cb	= fsa9485_lanhub_cb,
 	.lanhubta_cb	= fsa9485_lanhubta_cb,
+#endif
 	.smartdock_cb	= fsa9485_smartdock_cb,
 	.audio_dock_cb	= fsa9485_audio_dock_cb,
+#else
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
+	.lanhub_cb	= NULL,
+	.lanhubta_cb	= NULL,
+#endif
+	.smartdock_cb	= NULL,
+	.audio_dock_cb	= NULL,
+#endif
 #ifdef CONFIG_VIDEO_MHL_V2
 	.mhl_cb = fsa9485_muic_mhl_cb,
 #endif
@@ -3092,6 +3246,8 @@ struct fsa9485_platform_data fsa9485_pdata = {
 
 /*Adding Support for SM5502 MUIC Call Backs*/
 #if defined(CONFIG_SM5502_MUIC)
+
+extern int check_sm5502_jig_state(void);
 void sm5502_oxp_callback(int state)
 {
 #if 0 //ovp stub-implemented on completion
@@ -3118,37 +3274,110 @@ int sm5502_dock_init(void)
 	return 0;
 }
 #if defined(DEBUG_STATUS)
-static unsigned status_count;
+static int status_count;
 #endif
+
+#if defined(CONFIG_MUIC_SM5502_SUPPORT_LANHUB_TA)
+void sm5502_lanhub_callback(enum cable_type_t cable_type, int attached, bool lanhub_ta)
+{
+	union power_supply_propval value;
+	struct power_supply *psy;
+	int i, ret = 0;
+
+	pr_info("SM5502 Lanhub Callback called, cable %d, attached %d, TA: %s \n",
+				cable_type,attached,(lanhub_ta ? "Yes":"No"));
+	if(lanhub_ta)
+		set_cable_status = attached ? CABLE_TYPE_LANHUB : POWER_SUPPLY_TYPE_OTG;
+	else
+		set_cable_status = attached ? CABLE_TYPE_LANHUB : CABLE_TYPE_NONE;
+
+	pr_info("%s:sm5502 cable type : %d", __func__, set_cable_status);
+
+	for (i = 0; i < 10; i++) {
+		psy = power_supply_get_by_name("battery");
+		if (psy)
+			break;
+	}
+
+	if (i == 10) {
+		pr_err("%s: fail to get battery ps\n", __func__);
+		return;
+	}
+
+	if (!psy || !psy->set_property)
+                pr_err("%s: fail to set battery psy\n", __func__);
+        else {
+		switch (set_cable_status) {
+		case CABLE_TYPE_LANHUB:
+			value.intval = POWER_SUPPLY_TYPE_LAN_HUB;
+			break;
+	        case POWER_SUPPLY_TYPE_OTG:
+	        case CABLE_TYPE_NONE:
+			value.intval = lanhub_ta ? POWER_SUPPLY_TYPE_OTG : POWER_SUPPLY_TYPE_BATTERY;
+			break;
+		default:
+	                pr_err("invalid status:%d\n", attached);
+	                return;
+		}
+
+	        ret = psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
+		if (ret) {
+			pr_err("%s: fail to set power_suppy ONLINE property(%d)\n",
+				__func__, ret);
+	        }
+
+	}
+
+#ifdef CONFIG_USB_HOST_NOTIFY
+	if (attached){
+		if(lanhub_ta) {
+			pr_info("USB Host HNOTIFY LANHUB_N_TA_ON\n");
+		}
+		else{
+			pr_info("USB Host HNOTIFY_LANHUB_ON\n");
+			sec_otg_notify(HNOTIFY_LANHUB_ON);
+		}
+	}else{
+		if(lanhub_ta) {
+                        pr_info("USB Host HNOTIFY LANHUB ON\n");
+                }
+                else{
+			pr_info("USB Host HNOTIFY_LANHUB_OFF");
+			sec_otg_notify(HNOTIFY_LANHUB_OFF);
+		}
+	}
+#endif
+
+}
+#endif
+
 void sm5502_callback(enum cable_type_t cable_type, int attached)
 {
 	union power_supply_propval value;
-	int i, ret = 0;
-	struct power_supply *psy;
+	struct power_supply *psy = power_supply_get_by_name("battery");
 	static enum cable_type_t previous_cable_type = CABLE_TYPE_NONE;
-
-	printk("%s, called \n",__func__);
-#if defined(CONFIG_TOUCHSCREEN_MXTS) ||defined(CONFIG_TOUCHSCREEN_MXT224E)
+	pr_info("%s, called : cable_type :%d \n",__func__, cable_type);
+#if defined(CONFIG_TOUCHSCREEN_MXTS) ||defined(CONFIG_TOUCHSCREEN_MXT224E) || defined(CONFIG_TOUCHSCREEN_MMS252) || defined(CONFIG_TOUCHSCREEN_MMS300)
         if (charger_callbacks && charger_callbacks->inform_charger)
                 charger_callbacks->inform_charger(charger_callbacks,
                 attached);
 #endif
+#if defined(CONFIG_TOUCHSCREEN_ATMEL_MXT1188S)
+	mxt_tsp_charger_infom(attached);
+#endif
 
-	if (cable_type == CABLE_TYPE_INCOMPATIBLE)
-		cable_type = CABLE_TYPE_AC;
 	set_cable_status = attached ? cable_type : CABLE_TYPE_NONE;
 
 	switch (cable_type) {
 	case CABLE_TYPE_USB:
-
 #if defined(DEBUG_STATUS)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s USB Cable status attached (%u) \n",__func__, status_count);
+                       pr_err("%s USB Cable status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s USB Cable Status detached (%u) \n", __func__,status_count);
+                       pr_err("%s USB Cable Status detached (%d) \n", __func__,status_count);
                }
 #endif
 		sec_otg_set_vbus_state(attached);
@@ -3158,10 +3387,10 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Charger status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Charger status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s charger status detached (%u) \n", __func__,status_count);
+                       pr_err("%s charger status detached (%d) \n", __func__,status_count);
                }
 #endif
 		break;
@@ -3170,10 +3399,22 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s UART Status attached (%u) \n",__func__, status_count);
+                       pr_err("%s UART Status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s UART status detached (%u) \n", __func__,status_count);
+                       pr_err("%s UART status detached (%d) \n", __func__,status_count);
+               }
+#endif
+		break;
+	case CABLE_TYPE_JIG_UART_OFF_VB:
+#if defined(DEBUG_STATUS)
+               if (attached)
+               {
+                       status_count = status_count+1;
+                       pr_err("%s UART OFF VBUS Status attached (%d) \n",__func__, status_count);
+               } else {
+                       status_count = status_count-1;
+                       pr_err("%s UART OFF VBUS status detached (%d) \n", __func__,status_count);
                }
 #endif
 		break;
@@ -3182,10 +3423,10 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s JIG cable status attached (%u) \n",__func__, status_count);
+                       pr_err("%s JIG cable status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s JIG cable status detached (%u) \n", __func__,status_count);
+                       pr_err("%s JIG cable status detached (%d) \n", __func__,status_count);
                }
 #endif
 		return;
@@ -3194,23 +3435,27 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s CDP status attached (%u) \n",__func__, status_count);
+                       pr_err("%s CDP status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s CDP Status detached (%u) \n", __func__,status_count);
+                       pr_err("%s CDP Status detached (%d) \n", __func__,status_count);
                }
 #endif
+		sec_otg_set_vbus_state(attached);
 		break;
 	case CABLE_TYPE_OTG:
 #if defined(DEBUG_STATUS)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s OTG status attached (%u) \n",__func__, status_count);
+                       pr_err("%s OTG status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s OTG status detached (%u) \n", __func__,status_count);
+                       pr_err("%s OTG status detached (%d) \n", __func__,status_count);
                }
+#endif
+#if defined(CONFIG_USB_HOST_NOTIFY)
+		sec_otg_notify(attached ? HNOTIFY_ID : HNOTIFY_ID_PULL);
 #endif
 	       return;
 	case CABLE_TYPE_AUDIO_DOCK:
@@ -3218,10 +3463,10 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Audiodock status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Audiodock status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s Audiodock status detached (%u) \n", __func__,status_count);
+                       pr_err("%s Audiodock status detached (%d) \n", __func__,status_count);
                }
 #endif
 		return;
@@ -3230,23 +3475,26 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Cardock status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Cardock status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s Cardock status detached (%u) \n", __func__,status_count);
+                       pr_err("%s Cardock status detached (%d) \n", __func__,status_count);
                }
 #endif
 		switch_set_state(&switch_dock, attached ? 2 : 0);
 		break;
 	case CABLE_TYPE_DESK_DOCK:
+	case CABLE_TYPE_DESK_DOCK_NO_VB:
 #if defined(DEBUG_STATUS)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Deskdock status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Deskdock %s status attached (%d) \n",__func__,
+				((cable_type == CABLE_TYPE_DESK_DOCK)? "VBUS" : "NOVBUS"),status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s Deskdock status detached (%u) \n", __func__,status_count);
+                       pr_err("%s Deskdock %s status detached (%d) \n", __func__,
+				((cable_type == CABLE_TYPE_DESK_DOCK)? "VBUS" : "NOVBUS"),status_count);
                }
 #endif
 		switch_set_state(&switch_dock, attached);
@@ -3256,10 +3504,10 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
                if (attached)
                {
                        status_count = status_count+1;
-                       pr_err("%s Incompatible Charger status attached (%u) \n",__func__, status_count);
+                       pr_err("%s Incompatible Charger status attached (%d) \n",__func__, status_count);
                } else {
                        status_count = status_count-1;
-                       pr_err("%s Incomabtible Charger status detached (%u) \n", __func__,status_count);
+                       pr_err("%s Incomabtible Charger status detached (%d) \n", __func__,status_count);
                }
 #endif
 		break;
@@ -3273,20 +3521,28 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
 	}
 	previous_cable_type = set_cable_status;
 
-	for (i = 0; i < BATT_SEARCH_CNT_MAX; i++) {
-		psy = power_supply_get_by_name("battery");
-		if (psy)
-			break;
+#if defined(CONFIG_FUELGAUGE_MAX17050)
+	if(check_sm5502_jig_state())
+	{
+		struct power_supply *fuel_psy = power_supply_get_by_name("sec-fuelgauge");
+		if (!fuel_psy || !fuel_psy->set_property)
+			pr_err("%s: fail to get sec-fuelgauge psy\n", __func__);
+		else {
+			fuel_psy->set_property(fuel_psy, POWER_SUPPLY_PROP_CHARGE_TYPE, &value);
+		}
 	}
-	if (i == BATT_SEARCH_CNT_MAX) {
-		pr_err("%s: fail to get battery ps\n", __func__);
-		return;
+#endif
+#if defined(CONFIG_QPNP_BMS)
+  if(check_sm5502_jig_state())
+  {
+	  struct power_supply *fuel_psy = power_supply_get_by_name("bms");
+	  if (!fuel_psy || !fuel_psy->set_property)
+		pr_err("%s: fail to get BMS psy\n", __func__);
+		else {
+			fuel_psy->set_property(fuel_psy, POWER_SUPPLY_PROP_CHARGE_TYPE, &value);
+		}
 	}
-	if (psy == NULL || psy->set_property == NULL) {
-		pr_err("%s: battery ps doesn't support set_property()\n",
-				__func__);
-		return;
-	}
+#endif
 
 	switch (set_cable_status) {
 	case CABLE_TYPE_MISC:
@@ -3299,9 +3555,6 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
 	case CABLE_TYPE_AUDIO_DOCK:
 		value.intval = POWER_SUPPLY_TYPE_MAINS;
 		break;
-	case CABLE_TYPE_UARTOFF:
-		value.intval = POWER_SUPPLY_TYPE_UARTOFF;
-		break;
 	case CABLE_TYPE_CARDOCK:
 		value.intval = POWER_SUPPLY_TYPE_CARDOCK;
 		break;
@@ -3309,11 +3562,16 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
 		value.intval = POWER_SUPPLY_TYPE_USB_CDP;
 		break;
 	case CABLE_TYPE_INCOMPATIBLE:
-		value.intval = POWER_SUPPLY_TYPE_MAINS;
+		value.intval = POWER_SUPPLY_TYPE_UNKNOWN;
 		break;
 	case CABLE_TYPE_DESK_DOCK:
-		value.intval = POWER_SUPPLY_TYPE_MISC;
+		value.intval = POWER_SUPPLY_TYPE_MAINS;
 		break;
+        case CABLE_TYPE_JIG_UART_OFF_VB:
+                value.intval = POWER_SUPPLY_TYPE_UARTOFF;
+                break;
+	case CABLE_TYPE_DESK_DOCK_NO_VB:
+	case CABLE_TYPE_UARTOFF:
 	case CABLE_TYPE_NONE:
 		value.intval = POWER_SUPPLY_TYPE_BATTERY;
 		break;
@@ -3321,19 +3579,20 @@ void sm5502_callback(enum cable_type_t cable_type, int attached)
 		pr_err("%s: invalid cable :%d\n", __func__, set_cable_status);
 		return;
 	}
-#if defined(CONFIG_MACH_CRATERTD_CHN_3G)
 	current_cable_type = value.intval;
-#endif
 
-	ret = psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
-	if (ret) {
-                pr_err("%s: fail to set power_suppy ONLINE property(%d)\n",
-                        __func__, ret);
-        }
+	if (!psy || !psy->set_property)
+		pr_err("%s: fail to get battery psy\n", __func__);
+	else {
+		psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
+	}
 }
 
 struct sm5502_platform_data sm5502_pdata = {
 	.callback = sm5502_callback,
+#if defined(CONFIG_MUIC_SM5502_SUPPORT_LANHUB_TA)
+	.lanhub_cb = sm5502_lanhub_callback,
+#endif
 	.dock_init = sm5502_dock_init,
 	.oxp_callback = sm5502_oxp_callback,
 	.mhl_sel = NULL,

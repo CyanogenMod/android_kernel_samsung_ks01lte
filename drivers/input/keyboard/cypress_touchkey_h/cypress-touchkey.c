@@ -82,8 +82,7 @@
 #define TOUCHKEY_LOG(k, v) dev_notice(&info->client->dev, "key[%d] %d\n", k, v);
 #define FUNC_CALLED dev_notice(&info->client->dev, "%s: called.\n", __func__);
 */
-#define NUM_OF_RETRY_UPDATE	3
-/*#define NUM_OF_KEY		4*/
+
 #ifdef USE_OPEN_CLOSE
 static int cypress_input_open(struct input_dev *dev);
 static void cypress_input_close(struct input_dev *dev);

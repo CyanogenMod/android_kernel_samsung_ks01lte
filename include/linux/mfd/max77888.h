@@ -107,6 +107,9 @@ struct max77888_platform_data {
 	u32 irq_base;
 	u32 irq_base_flags;
 	int irq_gpio;
+#ifdef CONFIG_MUIC_RESET_PIN_ENABLE
+	int irq_reset_gpio;
+#endif
 	u32 irq_gpio_flags;
 	unsigned int wc_irq_gpio;
 	bool wakeup;

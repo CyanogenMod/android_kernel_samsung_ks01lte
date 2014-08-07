@@ -42,9 +42,14 @@ extern struct vibrator_platform_data vibrator_drvdata;
 #define MODULE_NAME                         "tspdrv"
 #define TSPDRV                              "/dev/"MODULE_NAME
 #define TSPDRV_MAGIC_NUMBER                 0x494D4D52
+
+#ifdef CONFIG_TACTILE_ASSIST
 #define TSPDRV_IOCTL_GROUP                  0x52
 #define TSPDRV_SET_MAGIC_NUMBER             _IO(TSPDRV_IOCTL_GROUP, 2)
+#endif
+
 #define TSPDRV_STOP_KERNEL_TIMER            _IO(TSPDRV_MAGIC_NUMBER & 0xFF, 1)
+
 /*
 ** Obsolete IOCTL command
 ** #define TSPDRV_IDENTIFY_CALLER           _IO(TSPDRV_MAGIC_NUMBER & 0xFF, 2)
@@ -96,14 +101,16 @@ int32_t g_nforce_32;
 	   || defined(CONFIG_MACH_JACTIVESKT) || defined(CONFIG_MACH_HLTEDCM)
 #define MOTOR_STRENGTH			94/*MOTOR_STRENGTH 94 %*/
 #elif defined(CONFIG_MACH_LT03EUR) || defined(CONFIG_MACH_LT03SKT)\
-	|| defined(CONFIG_MACH_LT03KTT)	|| defined(CONFIG_MACH_LT03LGT) || defined(CONFIG_MACH_PICASSO_LTE)
+	|| defined(CONFIG_MACH_LT03KTT)	|| defined(CONFIG_MACH_LT03LGT)
 #define MOTOR_STRENGTH			98/*MOTOR_STRENGTH 98 %*/
+#elif defined(CONFIG_MACH_PICASSO_LTE)
+#define MOTOR_STRENGTH			91
 #elif defined(CONFIG_MACH_JS01LTEDCM)
 #define MOTOR_STRENGTH			93/*MOTOR_STRENGTH 93 %*/
 #elif defined(CONFIG_MACH_HLTEUSC) || defined(CONFIG_MACH_HLTEVZW)
 #define MOTOR_STRENGTH			99/*MOTOR_STRENGTH 99 %*/
-#elif defined(CONFIG_SEC_K_PROJECT)
-#define MOTOR_STRENGTH			90/*MOTOR_STRENGTH 90 %*/
+#elif defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_SEC_KSPORTS_PROJECT)
+#define MOTOR_STRENGTH			98/*MOTOR_STRENGTH 98 %*/
 #else
 #define MOTOR_STRENGTH			98/*MOTOR_STRENGTH 98 %*/
 #endif
@@ -129,11 +136,28 @@ int32_t g_nforce_32;
 	#define GP_CLK_N_DEFAULT                        92
 	#define GP_CLK_D_DEFAULT			46  /* 50% duty cycle */
 	#define IMM_PWM_MULTIPLIER			92
-#elif defined(CONFIG_SEC_K_PROJECT)
+#elif defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_MACH_KLTE_MAX77828_JPN)
+	#define GP_CLK_M_DEFAULT			1
+	#define GP_CLK_N_DEFAULT                        20
+	#define GP_CLK_D_DEFAULT			10  /* 50% duty cycle */
+	#define IMM_PWM_MULTIPLIER			20
+#else
+	#define GP_CLK_M_DEFAULT			3
+	#define GP_CLK_N_DEFAULT                        121
+	#define GP_CLK_D_DEFAULT			61  /* 50% duty cycle */
+	#define IMM_PWM_MULTIPLIER			121
+#endif
+#elif defined(CONFIG_SEC_LOCALE_KOR_FRESCO)
 	#define GP_CLK_M_DEFAULT			3
 	#define GP_CLK_N_DEFAULT                        120
 	#define GP_CLK_D_DEFAULT			60  /* 50% duty cycle */
 	#define IMM_PWM_MULTIPLIER			120
+#elif defined(CONFIG_SEC_BERLUTI_PROJECT) || defined(CONFIG_MACH_S3VE3G_EUR)
+	#define GP_CLK_M_DEFAULT			1
+	#define GP_CLK_N_DEFAULT			61
+	#define GP_CLK_D_DEFAULT			31  /* 50% duty cycle */
+	#define IMM_PWM_MULTIPLIER			61
 #else
 	#define GP_CLK_M_DEFAULT			2
 	#define GP_CLK_N_DEFAULT                        91
@@ -284,6 +308,8 @@ int32_t vibe_set_pwm_freq(int nForce);
 extern void max77803_vibtonz_en(bool en);
 #elif defined(CONFIG_MOTOR_DRV_MAX77804K)
 extern void max77804k_vibtonz_en(bool en);
+#elif defined(CONFIG_MOTOR_DRV_MAX77828)
+extern void max77828_vibtonz_en(bool en);
 #elif defined(CONFIG_MOTOR_DRV_DRV2603)
 void drv2603_gpio_en(bool);
 static int32_t drv2603_gpio_init(void);

@@ -158,6 +158,7 @@ static int accel_do_calibrate(struct ssp_data *data, int iEnable)
 		data->accelcal.x = 0;
 		data->accelcal.y = 0;
 		data->accelcal.z = 0;
+		set_accel_cal(data);
 
 		iRet = enable_accel_for_cal(data);
 		msleep(300);

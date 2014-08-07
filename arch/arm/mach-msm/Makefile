@@ -475,5 +475,9 @@ obj-$(CONFIG_PERFMAP) += perfmap.o
 obj-$(CONFIG_SEC_VIENNA_PROJECT) += board-vienna-motor.o
 obj-$(CONFIG_SEC_V2_PROJECT) += board-vienna-motor.o
 
+ifdef CONFIG_ARCH_MSM8226
+obj-$(CONFIG_SEC_THERMISTOR) += sec_thermistor_8226.o msm8226-thermistor.o
+else
 obj-$(CONFIG_SEC_THERMISTOR) += sec_thermistor.o msm8974-thermistor.o
+endif
 obj-$(CONFIG_GSM_MODEM_SPRD6500) += board-sprd6500-spi.o board-sprd6500-modems.o

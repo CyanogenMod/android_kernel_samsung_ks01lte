@@ -21,13 +21,14 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/regulator/consumer.h>
+#undef CONFIG_HAS_EARLYSUSPEND
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
-#include <linux/sensors_core.h>
 #include <linux/err.h>
 #include <linux/of_gpio.h>
-
+#include "sensors_core.h"
 #define I2C_RETRY_DELAY  5
 #define I2C_RETRIES      5
 
@@ -662,9 +663,11 @@ static int hscd_probe(struct i2c_client *client,
 		}
 		goto err_setup_regulator;
 	}
-
-	sensors_register(magnetic_device, NULL, magnetic_attrs,
-						"magnetic_sensor");
+	err=sensors_register(magnetic_device, NULL, magnetic_attrs, "magnetic_sensor");
+	//sensors_register(magnetic_device, NULL, magnetic_attrs,
+	//					"magnetic_sensor");
+	if (err < 0)
+		return err;
 
 	atomic_set(&flgEna, 0);
 	atomic_set(&delay, 100);
@@ -723,7 +726,9 @@ static int hscd_suspend(struct i2c_client *client, pm_message_t mesg)
 	atomic_set(&flgSuspend, 1);
 	if (atomic_read(&flgEna))
 		hscd_activate(0, 0, atomic_read(&delay));
+#if !(defined(CONFIG_MACH_CRATERQ_CHN_OPEN)||defined(CONFIG_MACH_MS01_CHN_CTC)||defined(CONFIG_MACH_BAFFIN2_CHN_CMCC))
 	hscd_power_on(0);
+#endif
 	return 0;
 }
 
@@ -734,7 +739,9 @@ static int hscd_resume(struct i2c_client *client)
 	atomic_set(&flgSuspend, 0);
 	if (atomic_read(&flgEna))
 		hscd_activate(0, atomic_read(&flgEna), atomic_read(&delay));
+#if !(defined(CONFIG_MACH_CRATERQ_CHN_OPEN)||defined(CONFIG_MACH_MS01_CHN_CTC)||defined(CONFIG_MACH_BAFFIN2_CHN_CMCC)) 
 	hscd_power_on(1);
+#endif
 	return 0;
 }
 

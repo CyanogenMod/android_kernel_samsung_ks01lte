@@ -431,7 +431,9 @@ static enum hrtimer_restart bmg160_timer_func(struct hrtimer *timer)
 	struct bmg160_p *data = container_of(timer,
 					struct bmg160_p, gyro_timer);
 
-	queue_work(data->gyro_wq, &data->work);
+	if (!work_pending(&data->work))
+		queue_work(data->gyro_wq, &data->work);
+
 	hrtimer_forward_now(&data->gyro_timer, data->poll_delay);
 
 	return HRTIMER_RESTART;
@@ -538,7 +540,9 @@ static ssize_t bmg160_delay_store(struct device *dev,
 	pr_info("[SENSOR]: %s - poll_delay = %lld\n", __func__, delay);
 
 	if (atomic_read(&data->enable) == ON) {
+		bmg160_set_mode(data, BMG160_MODE_SUSPEND);
 		bmg160_set_enable(data, OFF);
+		bmg160_set_mode(data, BMG160_MODE_NORMAL);
 		bmg160_set_enable(data, ON);
 	}
 

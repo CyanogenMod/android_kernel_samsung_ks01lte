@@ -248,6 +248,7 @@ static void sensor_power_on_vdd(struct taos_data *info, int onoff)
 		info->lvs1_1p8 = regulator_get(&info->i2c_client->dev, "8226_lvs1");
 		if(!info->lvs1_1p8){
 			pr_err("%s: regulator_get for 8226_lvs1 failed\n", __func__);
+			return ;
 		}
 	}
 	if (onoff == 1) {
@@ -1583,7 +1584,8 @@ static int taos_i2c_probe(struct i2c_client *client,
 	if (!taos) {
 		pr_err("%s: failed to alloc memory for module data\n",
 		       __func__);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto done;
 	}
 
 
@@ -1591,17 +1593,18 @@ static int taos_i2c_probe(struct i2c_client *client,
 		pdata = devm_kzalloc (&client->dev ,
 			sizeof(struct taos_platform_data ), GFP_KERNEL);
 		if(!pdata) {
-		dev_err(&client->dev, "Failed to allocate memory\n");
-		return -ENOMEM;
+			dev_err(&client->dev, "Failed to allocate memory\n");
+			ret = -ENOMEM;
+			goto err_taos_data_free;
 		}
 		err = taos_parse_dt(&client->dev, pdata);
 		if(err)
 			goto err_devicetree;
 	} else
 		pdata = client->dev.platform_data;
-    if (!pdata) {
+	if (!pdata) {
 		pr_err("%s: missing pdata!\n", __func__);
-		return ret;
+		goto err_taos_data_free;
 	}
 
 
@@ -1652,19 +1655,19 @@ static int taos_i2c_probe(struct i2c_client *client,
 	 ret=sensors_register(taos->proximity_dev, taos, prox_sensor_attrs,MODULE_NAME_PROX); //factory attributs
 	 if (ret < 0) {
 		pr_err("%s: could not registersensors_register\n", __func__);
-		input_free_device(input_dev);
+		input_unregister_device(input_dev);
 		goto err_input_register_device_proximity;
 	}
 	ret = sensors_create_symlink(&input_dev->dev.kobj, input_dev->name);
 	if (ret < 0) {
-		input_free_device(input_dev);
-			sensors_unregister(taos->proximity_dev, prox_sensor_attrs);
+		input_unregister_device(input_dev);
+		sensors_unregister(taos->proximity_dev, prox_sensor_attrs);
 		goto err_input_register_device_proximity;
 	}
 	ret = sysfs_create_group(&input_dev->dev.kobj, &proximity_attribute_group);
 	if (ret < 0) {
 		pr_err("%s: could not create sysfs group\n", __func__);
-		input_free_device(input_dev);
+		input_unregister_device(input_dev);
 		sensors_unregister(taos->proximity_dev, prox_sensor_attrs);
 		sensors_remove_symlink(&input_dev->dev.kobj,taos->proximity_input_dev->name);
 		goto err_input_register_device_proximity;
@@ -1725,19 +1728,19 @@ static int taos_i2c_probe(struct i2c_client *client,
 	if (ret < 0) {
 		pr_err("%s: cound not register light sensor device(%d).\n",
 			__func__, ret);
-		input_free_device(input_dev);
+		input_unregister_device(input_dev);
 		goto err_input_register_device_light;
 	}
 	ret = sensors_create_symlink(&input_dev->dev.kobj, input_dev->name);
 	if (ret < 0) {
-		input_free_device(input_dev);
+		input_unregister_device(input_dev);
 		sensors_unregister(taos->light_dev, lightsensor_additional_attributes);
 		goto out_sensor_register_failed1;
 	}
 	ret = sysfs_create_group(&input_dev->dev.kobj, &light_attribute_group);
 	if (ret < 0) {
 		pr_err("%s: could not create sysfs group\n", __func__);
-		input_free_device(input_dev);
+		input_unregister_device(input_dev);
 		sensors_unregister(taos->light_dev, lightsensor_additional_attributes);
 		sensors_remove_symlink(&taos->light_input_dev->dev.kobj,taos->proximity_input_dev->name);
 		goto out_sensor_register_failed1;
@@ -1765,12 +1768,12 @@ err_create_workqueue:
 	sysfs_remove_group(&taos->proximity_input_dev->dev.kobj,
 			   &proximity_attribute_group);
 err_input_register_device_proximity:
-	input_unregister_device(input_dev);
 err_input_allocate_device_proximity:
 	free_irq(taos->irq, 0);
 	gpio_free(taos->pdata->als_int);
 	mutex_destroy(&taos->power_lock);
 	wake_lock_destroy(&taos->prx_wake_lock);
+err_taos_data_free:
 err_chip_id_or_i2c_error:
 	kfree(taos);
 done:

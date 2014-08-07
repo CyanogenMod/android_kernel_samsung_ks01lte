@@ -102,7 +102,6 @@ struct bma255_p {
 	int irq1;
 	int irq_state;
 	int acc_int1;
-	int acc_int2;
 	int sda_gpio;
 	int scl_gpio;
 	int time_count;
@@ -206,7 +205,7 @@ exit:
 }
 
 static int bma255_i2c_read(struct bma255_p *data,
-		unsigned char reg_addr, unsigned char *buf)
+		unsigned char reg_addr, unsigned char *buf, unsigned int len)
 {
 	int ret, retries = 0;
 	struct i2c_msg msg[2];
@@ -218,7 +217,7 @@ static int bma255_i2c_read(struct bma255_p *data,
 
 	msg[1].addr = data->client->addr;
 	msg[1].flags = I2C_M_RD;
-	msg[1].len = 1;
+	msg[1].len = len;
 	msg[1].buf = buf;
 
 	do {
@@ -275,8 +274,8 @@ static int bma255_set_mode(struct bma255_p *data, unsigned char mode)
 
 	mutex_lock(&data->mode_mutex);
 
-	ret = bma255_i2c_read(data, BMA255_MODE_CTRL_REG, &buf1);
-	ret += bma255_i2c_read(data, BMA255_LOW_NOISE_CTRL_REG, &buf2);
+	ret = bma255_i2c_read(data, BMA255_MODE_CTRL_REG, &buf1, 1);
+	ret += bma255_i2c_read(data, BMA255_LOW_NOISE_CTRL_REG, &buf2, 1);
 
 	switch (mode) {
 	case BMA255_MODE_NORMAL:
@@ -337,7 +336,7 @@ static int bma255_set_range(struct bma255_p *data, unsigned char range)
 	int ret = 0 ;
 	unsigned char buf;
 
-	ret = bma255_i2c_read(data, BMA255_RANGE_SEL_REG, &buf);
+	ret = bma255_i2c_read(data, BMA255_RANGE_SEL_REG, &buf, 1);
 
 	switch (range) {
 	case BMA255_RANGE_2G:
@@ -371,7 +370,7 @@ static int bma255_set_bandwidth(struct bma255_p *data,
 	if (bandwidth <= 7 || bandwidth >= 16)
 		bandwidth = BMA255_BW_250HZ;
 
-	ret = bma255_i2c_read(data, BMA255_BANDWIDTH__REG, &buf);
+	ret = bma255_i2c_read(data, BMA255_BANDWIDTH__REG, &buf, 1);
 	buf = BMA255_SET_BITSLICE(buf, BMA255_BANDWIDTH, bandwidth);
 	ret += bma255_i2c_write(data, BMA255_BANDWIDTH__REG, buf);
 
@@ -381,14 +380,10 @@ static int bma255_set_bandwidth(struct bma255_p *data,
 
 static int bma255_read_accel_xyz(struct bma255_p *data,	struct bma255_v *acc)
 {
-	int ret = 0, i;
+	int ret = 0;
 	unsigned char buf[READ_DATA_LENTH];
 
-	for (i = 0; i < READ_DATA_LENTH; i++) {
-		ret += bma255_i2c_read(data,
-				BMA255_ACC_X12_LSB__REG + i, &buf[i]);
-	}
-
+	ret = bma255_i2c_read(data,	BMA255_ACC_X12_LSB__REG, buf, READ_DATA_LENTH);
 	if (ret < 0)
 		goto exit;
 
@@ -427,7 +422,9 @@ static enum hrtimer_restart bma255_timer_func(struct hrtimer *timer)
 	struct bma255_p *data = container_of(timer,
 					struct bma255_p, accel_timer);
 
-	queue_work(data->accel_wq, &data->work);
+	if (!work_pending(&data->work))
+		queue_work(data->accel_wq, &data->work);
+
 	hrtimer_forward_now(&data->accel_timer, data->poll_delay);
 
 	return HRTIMER_RESTART;
@@ -557,7 +554,9 @@ static ssize_t bma255_delay_store(struct device *dev,
 	pr_info("[SENSOR]: %s - poll_delay = %lld\n", __func__, delay);
 
 	if (atomic_read(&data->enable) == ON) {
+		bma255_set_mode(data, BMA255_MODE_SUSPEND);
 		bma255_set_enable(data, OFF);
+		bma255_set_mode(data, BMA255_MODE_NORMAL);
 		bma255_set_enable(data, ON);
 	}
 
@@ -776,7 +775,7 @@ static void bma255_set_int_enable(struct bma255_p *data,
 {
 	unsigned char reg;
 
-	bma255_i2c_read(data, BMA255_INT_ENABLE1_REG, &reg);
+	bma255_i2c_read(data, BMA255_INT_ENABLE1_REG, &reg, 1);
 
 	switch (InterruptType) {
 	case SLOPE_X_INT:
@@ -804,16 +803,16 @@ static void bma255_slope_enable(struct bma255_p *data,
 	unsigned char reg;
 
 	if (enable == ON) {
-		bma255_i2c_read(data, BMA255_EN_INT1_PAD_SLOPE__REG, &reg);
+		bma255_i2c_read(data, BMA255_EN_INT1_PAD_SLOPE__REG, &reg, 1);
 		reg = BMA255_SET_BITSLICE(reg, BMA255_EN_INT1_PAD_SLOPE, ON);
 		bma255_i2c_write(data, BMA255_EN_INT1_PAD_SLOPE__REG, reg);
 
-		bma255_i2c_read(data, BMA255_INT_MODE_SEL__REG, &reg);
+		bma255_i2c_read(data, BMA255_INT_MODE_SEL__REG, &reg, 1);
 		reg = BMA255_SET_BITSLICE(reg, BMA255_INT_MODE_SEL, 0x01);
 		bma255_i2c_write(data, BMA255_INT_MODE_SEL__REG, reg);
 
 		if (factory_mode == OFF) {
-			bma255_i2c_read(data, BMA255_SLOPE_DUR__REG, &reg);
+			bma255_i2c_read(data, BMA255_SLOPE_DUR__REG, &reg, 1);
 			reg = BMA255_SET_BITSLICE(reg, BMA255_SLOPE_DUR,
 					SLOPE_DURATION_VALUE);
 			bma255_i2c_write(data, BMA255_SLOPE_DUR__REG, reg);
@@ -825,7 +824,7 @@ static void bma255_slope_enable(struct bma255_p *data,
 			bma255_set_int_enable(data, SLOPE_Y_INT, ON);
 			bma255_set_int_enable(data, SLOPE_Z_INT, ON);
 		} else {
-			bma255_i2c_read(data, BMA255_SLOPE_DUR__REG, &reg);
+			bma255_i2c_read(data, BMA255_SLOPE_DUR__REG, &reg, 1);
 			reg = BMA255_SET_BITSLICE(reg, BMA255_SLOPE_DUR, 0x01);
 			bma255_i2c_write(data, BMA255_SLOPE_DUR__REG, reg);
 
@@ -836,7 +835,7 @@ static void bma255_slope_enable(struct bma255_p *data,
 			bma255_set_bandwidth(data, BMA255_BW_250HZ);
 		}
 	} else if (enable == OFF) {
-		bma255_i2c_read(data, BMA255_EN_INT1_PAD_SLOPE__REG, &reg);
+		bma255_i2c_read(data, BMA255_EN_INT1_PAD_SLOPE__REG, &reg, 1);
 		reg = BMA255_SET_BITSLICE(reg, BMA255_EN_INT1_PAD_SLOPE, OFF);
 		bma255_i2c_write(data, BMA255_EN_INT1_PAD_SLOPE__REG, reg);
 
@@ -964,34 +963,8 @@ static int bma255_setup_pin(struct bma255_p *data)
 		goto exit_acc_int1;
 	}
 
-	ret = gpio_request(data->acc_int2, "ACC_INT2");
-	if (ret < 0) {
-		pr_err("[SENSOR]: %s - gpio %d request failed (%d)\n",
-			__func__, data->acc_int2, ret);
-	} else {
-		ret = gpio_direction_input(data->acc_int2);
-		if (ret < 0)
-			pr_err("[SENSOR]: %s - failed to set gpio %d as input"
-				" (%d)\n", __func__, data->acc_int2, ret);
-		gpio_free(data->acc_int2);
-	}
-
-	wake_lock_init(&data->reactive_wake_lock, WAKE_LOCK_SUSPEND,
-		       "reactive_wake_lock");
-
-	data->irq1 = gpio_to_irq(data->acc_int1);
-	ret = request_threaded_irq(data->irq1, NULL, bma255_irq_thread,
-		IRQF_TRIGGER_RISING | IRQF_ONESHOT, "bma255_accel", data);
-	if (ret < 0) {
-		pr_err("[SENSOR]: %s - can't allocate irq.\n", __func__);
-		goto exit_reactive_irq;
-	}
-
-	disable_irq(data->irq1);
 	goto exit;
 
-exit_reactive_irq:
-	wake_lock_destroy(&data->reactive_wake_lock);
 exit_acc_int1:
 	gpio_free(data->acc_int1);
 exit:
@@ -1054,12 +1027,6 @@ static int bma255_parse_dt(struct bma255_p *data, struct device *dev)
 		pr_err("[SENSOR]: %s - get acc_int1 error\n", __func__);
 		return -ENODEV;
 	}
-
-	data->acc_int2 = of_get_named_gpio_flags(dNode,
-		"bma255-i2c,acc_int2-gpio", 0, &flags);
-	if (data->acc_int2 < 0)
-		pr_err("[SENSOR]: %s - acc_int2 error\n", __func__);
-
 	data->sda_gpio = of_get_named_gpio_flags(dNode,
 		"bma255-i2c,sda", 0, &flags);
 	if (data->sda_gpio < 0)
@@ -1104,6 +1071,7 @@ static int sensor_regulator_onoff(struct device *dev, bool onoff)
 
 	devm_regulator_put(sensor_vcc);
 	devm_regulator_put(sensor_lvs1);
+	mdelay(5);
 
 	return 0;
 }
@@ -1149,6 +1117,8 @@ static int bma255_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, data);
 	data->client = client;
 	mutex_init(&data->mode_mutex);
+	wake_lock_init(&data->reactive_wake_lock, WAKE_LOCK_SUSPEND,
+		       "reactive_wake_lock");
 
 	/* read chip id */
 	bma255_set_mode(data, BMA255_MODE_NORMAL);
@@ -1195,6 +1165,17 @@ static int bma255_probe(struct i2c_client *client,
 	INIT_WORK(&data->work, bma255_work_func);
 	INIT_DELAYED_WORK(&data->irq_work, bma255_irq_work_func);
 
+	data->irq1 = gpio_to_irq(data->acc_int1);
+
+	ret = request_threaded_irq(data->irq1, NULL, bma255_irq_thread,
+		IRQF_TRIGGER_RISING | IRQF_ONESHOT, "bma255_accel", data);
+	if (ret < 0) {
+		pr_err("[SENSOR]: %s - can't allocate irq.\n", __func__);
+		goto exit_request_threaded_irq;
+	}
+
+	disable_irq(data->irq1);
+
 	atomic_set(&data->enable, OFF);
 	data->time_count = 0;
 	data->irq_state = 0;
@@ -1209,6 +1190,7 @@ static int bma255_probe(struct i2c_client *client,
 
 	return 0;
 
+exit_request_threaded_irq:
 exit_create_workqueue:
 	sensors_unregister(data->factory_device, sensor_attrs);
 	sensors_remove_symlink(&data->input->dev.kobj, data->input->name);
@@ -1217,7 +1199,6 @@ exit_create_workqueue:
 exit_input_init:
 exit_read_chipid:
 	mutex_destroy(&data->mode_mutex);
-	free_irq(data->irq1, data);
 	wake_lock_destroy(&data->reactive_wake_lock);
 	gpio_free(data->acc_int1);
 exit_setup_pin:

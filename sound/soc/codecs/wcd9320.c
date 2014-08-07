@@ -1018,7 +1018,7 @@ static int taiko_config_compander(struct snd_soc_dapm_widget *w,
 				    0x07, rate);
 		/* Set the static gain offset for HPH Path */
 		if (comp == COMPANDER_1) {
-			if (buck_mv == WCD9XXX_CDC_BUCK_MV_2P15) {
+			if (buck_mv == WCD9XXX_CDC_BUCK_MV_1P8) {
 				snd_soc_update_bits(codec,
 					TAIKO_A_CDC_COMP0_B4_CTL + (comp * 8),
 					0x80, 0x00);
@@ -4403,6 +4403,90 @@ static void taiko_shutdown(struct snd_pcm_substream *substream,
 	}
 }
 
+static int taiko_prepare(struct snd_pcm_substream *substream,
+		struct snd_soc_dai *dai)
+{
+	int paths, i;
+	struct snd_soc_dapm_widget_list *wlist;
+	struct snd_soc_codec *codec = dai->codec;
+	struct taiko_priv *taiko_p = snd_soc_codec_get_drvdata(codec);
+	int found_hs_pa = 0;
+
+	if (substream->stream)
+		return 0;
+
+	pr_debug("%s(): substream = %s. stream = %d. dai->name = %s."
+		" dai->driver->name = %s. dai stream_name = %s\n",
+		__func__, substream->name, substream->stream,
+		dai->name, dai->driver->name,
+		substream->stream ? dai->driver->capture.stream_name :
+		dai->driver->playback.stream_name);
+
+	pr_debug("%s(): dai AIF widget = %s. dai playback stream_name = %s.\n"
+		"  rate = %u. bit_width = %u.  hs compander_enabled = %u\n",
+		__func__, dai->playback_aif ? dai->playback_aif->name : "NULL",
+		dai->driver->playback.stream_name, taiko_p->dai[dai->id].rate,
+			taiko_p->dai[dai->id].bit_width,
+			taiko_p->comp_enabled[COMPANDER_1]);
+
+	if ((!(taiko_p->dai[dai->id].rate == 192000 ||
+		 taiko_p->dai[dai->id].rate == 96000)) ||
+	    !(taiko_p->dai[dai->id].bit_width == 24) ||
+	    !(taiko_p->comp_enabled[COMPANDER_1])) {
+
+		taiko_p->clsh_d.hs_perf_mode_enabled = false;
+		snd_soc_update_bits(codec, TAIKO_A_RX_HPH_CHOP_CTL, 0x20, 0x20);
+
+		dev_dbg(dai->dev ,"%s(): high performnce mode not needed\n",
+				__func__);
+		return 0;
+	}
+
+	paths = snd_soc_dapm_codec_dai_get_playback_connected_widgets(dai, &wlist);
+
+	if (!paths) {
+		dev_err(dai->dev, "%s(): found no audio playback paths\n",
+			__func__);
+		return 0;
+	}
+
+	for (i = 0; i < wlist->num_widgets; i++) {
+		dev_dbg(dai->dev, " dai stream_name = %s, widget name = %s\n",
+			dai->driver->playback.stream_name, wlist->widgets[i]->name);
+
+		if (!strcmp(wlist->widgets[i]->name, "HPHL") ||
+		    !strcmp(wlist->widgets[i]->name, "HPHR")) {
+			found_hs_pa = 1;
+			break;
+		}
+	}
+
+	kfree(wlist);
+
+	if (!found_hs_pa)
+		return 0;
+
+	pr_debug("%s(): rate = %u. bit_width = %u.  hs compander_enabled = %u",
+			__func__, taiko_p->dai[dai->id].rate,
+			taiko_p->dai[dai->id].bit_width,
+			taiko_p->comp_enabled[COMPANDER_1]);
+
+	if ((taiko_p->dai[dai->id].rate == 192000 ||
+		taiko_p->dai[dai->id].rate == 96000) &&
+	    (taiko_p->dai[dai->id].bit_width == 24) &&
+	    (taiko_p->comp_enabled[COMPANDER_1])) {
+
+		pr_debug("%s(): HS peformance mode enabled", __func__);
+		taiko_p->clsh_d.hs_perf_mode_enabled = true;
+		snd_soc_update_bits(codec, TAIKO_A_RX_HPH_CHOP_CTL, 0x20, 0x00);
+	} else {
+		taiko_p->clsh_d.hs_perf_mode_enabled = false;
+		snd_soc_update_bits(codec, TAIKO_A_RX_HPH_CHOP_CTL, 0x20, 0x20);
+	}
+
+	return 0;
+}
+
 int taiko_mclk_enable(struct snd_soc_codec *codec, int mclk_enable, bool dapm)
 {
 	struct taiko_priv *taiko = snd_soc_codec_get_drvdata(codec);
@@ -5002,6 +5086,7 @@ static int taiko_esxxx_get_channel_map(struct snd_soc_dai *dai,
 static struct snd_soc_dai_ops taiko_dai_ops = {
 	.startup = taiko_esxxx_startup, /* taiko_startup, */
 	.shutdown = taiko_esxxx_shutdown, /* taiko_shutdown, */
+	.prepare = taiko_prepare,
 	.hw_params = taiko_esxxx_hw_params, /* taiko_hw_params, */
 	.set_sysclk = taiko_set_dai_sysclk,
 	.set_fmt = taiko_set_dai_fmt,
@@ -5084,6 +5169,7 @@ static int taiko_es325_get_channel_map(struct snd_soc_dai *dai,
 static struct snd_soc_dai_ops taiko_dai_ops = {
 	.startup = taiko_startup,
 	.shutdown = taiko_shutdown,
+	.prepare = taiko_prepare,
 	.hw_params = taiko_es325_hw_params, /* tabla_hw_params, */
 	.set_sysclk = taiko_set_dai_sysclk,
 	.set_fmt = taiko_set_dai_fmt,
@@ -5101,6 +5187,7 @@ static struct snd_soc_dai_ops taiko_es325_dai_ops = {
 static struct snd_soc_dai_ops taiko_dai_ops = {
 	.startup = taiko_startup,
 	.shutdown = taiko_shutdown,
+	.prepare = taiko_prepare,
 	.hw_params = taiko_hw_params,
 	.set_sysclk = taiko_set_dai_sysclk,
 	.set_fmt = taiko_set_dai_fmt,
@@ -6564,7 +6651,7 @@ static const struct wcd9xxx_reg_mask_val taiko_reg_defaults[] = {
 	TAIKO_REG_VAL(TAIKO_A_CDC_CLK_OTHR_RESET_B1_CTL, 0x00),
 	TAIKO_REG_VAL(TAIKO_A_CDC_CLK_OTHR_CTL, 0x00),
 	TAIKO_REG_VAL(TAIKO_A_CDC_CONN_MAD, 0x01),
-#if !defined(CONFIG_MACH_VIENNA_LTE) && !defined(CONFIG_MACH_LT03_LTE) && !defined(CONFIG_MACH_PICASSO_LTE) && !defined(CONFIG_SEC_H_PROJECT)
+#if !defined(CONFIG_MACH_VIENNA_LTE) && !defined(CONFIG_MACH_LT03_LTE) && !defined(CONFIG_MACH_PICASSO_LTE) && !defined(CONFIG_SEC_H_PROJECT) && !defined(CONFIG_SEC_FRESCO_PROJECT) && !defined(CONFIG_MACH_KS01EUR)
 	/* Set HPH Path to low power mode */
 	TAIKO_REG_VAL(TAIKO_A_RX_HPH_BIAS_PA, 0x55),
 #endif
@@ -6597,7 +6684,7 @@ static const struct wcd9xxx_reg_mask_val taiko_1_0_reg_defaults[] = {
 	/*Reduce EAR DAC bias to 70% */
 	TAIKO_REG_VAL(TAIKO_A_RX_EAR_BIAS_PA, 0x76),
 	/* Reduce LINE DAC bias to 70% */
-#if !defined(CONFIG_MACH_VIENNA_LTE) && !defined(CONFIG_MACH_LT03_LTE) && !defined(CONFIG_MACH_PICASSO_LTE) && !defined(CONFIG_SEC_H_PROJECT)
+#if !defined(CONFIG_MACH_VIENNA_LTE) && !defined(CONFIG_MACH_LT03_LTE) && !defined(CONFIG_MACH_PICASSO_LTE) && !defined(CONFIG_SEC_H_PROJECT) && !defined(CONFIG_SEC_FRESCO_PROJECT) && !defined(CONFIG_MACH_KS01EUR)
 	TAIKO_REG_VAL(TAIKO_A_RX_LINE_BIAS_PA, 0x78),
 #else	
 	TAIKO_REG_VAL(TAIKO_A_RX_LINE_BIAS_PA, 0x7A),
@@ -6641,7 +6728,7 @@ static const struct wcd9xxx_reg_mask_val taiko_2_0_reg_defaults[] = {
 	TAIKO_REG_VAL(TAIKO_A_BUCK_CTRL_CCL_4, 0x51),
 	TAIKO_REG_VAL(TAIKO_A_NCP_DTEST, 0x10),
 	TAIKO_REG_VAL(TAIKO_A_RX_HPH_CHOP_CTL, 0xA4),
-#if !defined(CONFIG_MACH_VIENNA_LTE) && !defined(CONFIG_MACH_LT03_LTE) && !defined(CONFIG_MACH_PICASSO_LTE) && !defined(CONFIG_SEC_H_PROJECT)
+#if !defined(CONFIG_MACH_VIENNA_LTE) && !defined(CONFIG_MACH_LT03_LTE) && !defined(CONFIG_MACH_PICASSO_LTE) && !defined(CONFIG_SEC_H_PROJECT) && !defined(CONFIG_SEC_FRESCO_PROJECT) && !defined(CONFIG_MACH_KS01EUR)
 	TAIKO_REG_VAL(TAIKO_A_RX_HPH_OCP_CTL, 0x6B),
 #else
 	TAIKO_REG_VAL(TAIKO_A_RX_HPH_BIAS_PA, 0x7A),
@@ -6651,7 +6738,7 @@ static const struct wcd9xxx_reg_mask_val taiko_2_0_reg_defaults[] = {
 	TAIKO_REG_VAL(TAIKO_A_RX_HPH_CNP_WG_TIME, 0x15),
 	TAIKO_REG_VAL(TAIKO_A_RX_EAR_BIAS_PA, 0x76),
 	TAIKO_REG_VAL(TAIKO_A_RX_EAR_CNP, 0xC0),
-#if !defined(CONFIG_MACH_VIENNA_LTE) && !defined(CONFIG_MACH_LT03_LTE) && !defined(CONFIG_MACH_PICASSO_LTE) && !defined(CONFIG_SEC_H_PROJECT)
+#if !defined(CONFIG_MACH_VIENNA_LTE) && !defined(CONFIG_MACH_LT03_LTE) && !defined(CONFIG_MACH_PICASSO_LTE) && !defined(CONFIG_SEC_H_PROJECT) && !defined(CONFIG_SEC_FRESCO_PROJECT) && !defined(CONFIG_MACH_KS01EUR)
 	TAIKO_REG_VAL(TAIKO_A_RX_LINE_BIAS_PA, 0x78),
 #else
 	TAIKO_REG_VAL(TAIKO_A_RX_LINE_BIAS_PA, 0x7A),
@@ -7010,7 +7097,7 @@ static int taiko_setup_zdet(struct wcd9xxx_mbhc *mbhc,
 		__wr(WCD9XXX_A_CDC_MBHC_TIMER_B5_CTL, 0xFF, 0x10);
 		/* Reset MBHC and set it up for STA */
 		__wr(WCD9XXX_A_CDC_MBHC_CLK_CTL, 0xFF, 0x0A);
-		__wr(WCD9XXX_A_CDC_MBHC_EN_CTL, 0xFF, 0x2);
+		__wr(WCD9XXX_A_CDC_MBHC_EN_CTL, 0xFF, 0x02);
 		__wr(WCD9XXX_A_CDC_MBHC_CLK_CTL, 0xFF, 0x02);
 
 		/* Set HPH_MBHC for zdet */

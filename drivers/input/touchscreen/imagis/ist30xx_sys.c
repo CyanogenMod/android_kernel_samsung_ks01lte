@@ -207,7 +207,46 @@ int ist30xx_write_cmd(struct i2c_client *client, u32 cmd, u32 val)
 
 	return 0;
 }
+#if defined(CONFIG_MACH_KANAS3G_CTC)
+int ts_power_enable(int en)
+{
+	static struct regulator* ldo22;
+	int rc = 0;
 
+	printk(KERN_ERR "%s: (%d)\n", __func__, en);
+
+	if(!ldo22){
+		ldo22 = regulator_get(NULL,"vdd_l22");
+		rc = regulator_set_voltage(ldo22,3000000,3000000);
+		if (rc){
+			printk(KERN_ERR "%s: TSP set_level failed (%d)\n",__func__, rc);
+			return rc;
+		}
+	}
+
+	if(en){
+		if(regulator_is_enabled(ldo22))
+		{
+			printk(KERN_INFO "%s TSP power already enable", __func__);
+			return rc;
+		}
+		rc = regulator_enable(ldo22);
+		if(rc)
+			printk(KERN_ERR "%s: TSP power enable failed (%d)\n", __func__, rc);
+	} else {
+		if(!regulator_is_enabled(ldo22))
+		{
+			printk(KERN_INFO "%s TSP power already disable", __func__);
+			return rc;
+		}
+		rc = regulator_disable(ldo22);
+		if(rc)
+			printk(KERN_ERR "%s: TSP power disable failed (%d)\n", __func__, rc);
+	}
+	
+	return rc;
+}
+#else
 int ts_power_enable(int en)
 {
 	int rc = 0;
@@ -215,7 +254,11 @@ int ts_power_enable(int en)
 	tsp_err("%s: %s\n", __func__, (en) ? "on" : "off");
 
 	if(!ldo6){
+#if defined(CONFIG_MACH_KANAS3G_CU)
+		ldo6 = regulator_get(NULL, "vdd_l14");
+#else
 		ldo6 = regulator_get(NULL, "vdd_l6");
+#endif
 		rc = regulator_set_voltage(ldo6, 1800000, 1800000);
 		if (rc){
 			printk(KERN_ERR "%s: TSP set_level failed (%d)\n", __func__, rc);
@@ -253,6 +296,7 @@ int ts_power_enable(int en)
 		gpio_get_value(ts_data->dt_data->touch_en_gpio), regulator_is_enabled(ldo6));
 	return rc;
 }
+#endif
 
 #if 0
 #define TSP_PWR_LDO_GPIO        41
@@ -374,6 +418,14 @@ int ist30xx_init_system(void)
 		tsp_err("%s: ist30xx_power_on failed (%d)\n", __func__, ret);
 		return -EIO;
 	}
+
+#if defined(CONFIG_MACH_KANAS3G_CTC)
+	ret = ist30xx_cmd_run_device(ts_data->client, false);
+	if (ret) {
+		tsp_err("%s: it is not imagis IC (%d)\n", __func__, ret);
+		return -EIO;
+	}
+#endif
 #endif
 
 #if 0

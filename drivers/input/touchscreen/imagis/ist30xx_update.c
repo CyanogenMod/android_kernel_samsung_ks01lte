@@ -29,7 +29,11 @@
 #endif
 
 #if IST30XX_INTERNAL_BIN
-#include "HEAT3G_TSP_FW_v0006.h"
+#if defined(CONFIG_MACH_KANAS3G_CU)
+#include "kanas_fw.h"
+#else
+#include "HEAT_TracFone_TSP_FW_v0015.h"
+#endif
 #endif // IST30XX_INTERNAL_BIN
 
 struct ist30xx_tags *ts_tags;
@@ -944,8 +948,9 @@ void ist30xx_set_tsp_fw(struct ist30xx_data *data)
 	struct ist30xx_fw *fw = &data->fw;
 
 	switch (data->tsp_type) {
+	case TSP_TYPE_ALPS:
 	case TSP_TYPE_ILJIN:
-		str = "ILJIN";
+		str = "ALPS/ILJIN";
 		fw->buf = (u8 *)ist30xxb_fw;
 		fw->buf_size = sizeof(ist30xxb_fw);
 		break;

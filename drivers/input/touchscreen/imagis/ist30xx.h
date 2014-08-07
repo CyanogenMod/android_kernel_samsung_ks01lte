@@ -18,11 +18,37 @@
 
 /*
  * Support F/W ver : IST30xxB v3.3 (included tag)
- * Support IC : IST30xxB
- * Release : 2013.11.06 by Ian Bae
+ * Support IC : IST3026B, IST3032B, IST3038
+ * Release : 2014.01.07 by Ian Bae
  */
-
 #include "ist30xx_sec.h"
+
+#define IMAGIS_IST30XX          (1)
+#define IMAGIS_IST30XXB         (2)
+#define IMAGIS_IST3038          (3)
+#define IMAGIS_IST3044          (4)
+
+#if defined(CONFIG_SEC_KANAS_PROJECT)
+#define IMAGIS_TSP_IC           IMAGIS_IST3038
+#else
+#define IMAGIS_TSP_IC           IMAGIS_IST30XXB
+#endif
+
+#if ((IMAGIS_TSP_IC == IMAGIS_IST30XX) || (IMAGIS_TSP_IC == IMAGIS_IST30XXB))
+#define IST30XX_EXTEND_COORD    (0)     /* IST3026, IST3032, IST3038 */
+#elif ((IMAGIS_TSP_IC == IMAGIS_IST3038) || (IMAGIS_TSP_IC == IMAGIS_IST3044))
+#define IST30XX_EXTEND_COORD    (1)     /* IST3038, IST3044 */
+#endif
+
+#define TSP_CHIP_VENDOR     ("IMAGIS")
+
+#if ((IMAGIS_TSP_IC == IMAGIS_IST30XX) || (IMAGIS_TSP_IC == IMAGIS_IST30XXB))
+#define TSP_CHIP_NAME       ("IST3032B")
+#elif (IMAGIS_TSP_IC == IMAGIS_IST3038)
+#define TSP_CHIP_NAME       ("IST3038")
+#elif (IMAGIS_TSP_IC== IMAGIS_IST3044)
+#define TSP_CHIP_NAME       ("IST3044")
+#endif
 
 #define I2C_BURST_MODE          (1)
 #define I2C_MONOPOLY_MODE       (0)
@@ -59,7 +85,7 @@
 #define IST30XX_ISP_CMD_LEN     (3)
 
 #define IST30XX_MAX_MT_FINGERS  (10)
-#define IST30XX_MAX_KEYS_NUM  (2)
+#define IST30XX_MAX_KEYS        (2)
 
 #define IST30XX_MAX_X           (480)
 #define IST30XX_MAX_Y           (800)
@@ -161,6 +187,31 @@ typedef struct _ALGR_INFO {
 	u16	key_raw_data[6];
 } ALGR_INFO;
 
+#if IST30XX_EXTEND_COORD
+
+#define IST30XX_INTR_STATUS1    (0x71000000)
+#define IST30XX_INTR_STATUS2    (0x00000C00)
+#define CHECK_INTR_STATUS1(n)   (((n & IST30XX_INTR_STATUS1) == IST30XX_INTR_STATUS1) ? 1 : 0)
+#define CHECK_INTR_STATUS2(n)   (((n & IST30XX_INTR_STATUS2) > 0) ? 0 : 1)
+
+#define PARSE_FINGER_CNT(n)     ((n >> 12) & 0xF)
+#define PARSE_KEY_CNT(n)        ((n >> 21) & 0x7)
+#define PARSE_FINGER_STATUS(n)  (n & 0x3FF)         /* Finger status: [9:0] */
+#define PARSE_KEY_STATUS(n)     ((n >> 16) & 0x1F)  /* Key status: [20:16] */
+
+#define PRESSED_FINGER(s, id)    ((s & (1 << (id - 1))) ? true : false)
+#define PRESSED_KEY(s, id)       ((s & (1 << (16 + id - 1))) ? true : false)
+typedef union {
+	struct {
+		u32	y       : 12;
+		u32	x       : 12;
+		u32	area    : 4;
+		u32	id      : 4;
+	} bit_field;
+	u32 full_field;
+} finger_info;
+#else  // IST30XX_EXTEND_COORD
+
 typedef union {
 	struct {
 		u32	y       : 10;
@@ -171,6 +222,7 @@ typedef union {
 	} bit_field;
 	u32 full_field;
 } finger_info;
+#endif  // IST30XX_EXTEND_COORD
 
 
 struct ist30xx_status {
@@ -255,9 +307,13 @@ struct ist30xx_data {
 	u32			max_fingers;
 	u32			max_keys;
 	u32			irq_enabled;
-	finger_info		fingers[IST30XX_MAX_MT_FINGERS];
+#if IST30XX_EXTEND_COORD
+	u32			t_status;
+#else
 	finger_info		prev_fingers[IST30XX_MAX_MT_FINGERS];
 	finger_info		prev_keys[IST30XX_MAX_MT_FINGERS];
+#endif
+	finger_info		fingers[IST30XX_MAX_MT_FINGERS];
 	bool i2cPower_flag;
 };
 

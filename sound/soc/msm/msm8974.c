@@ -171,21 +171,12 @@ static char *msm_prim_auxpcm_gpio_name[][2] = {
 	{"PRIM_AUXPCM_DOUT",      "qcom,prim-auxpcm-gpio-dout"},
 };
 
-#ifdef CONFIG_PCM_ROUTE_VOICE_STUB
-static char *msm_sec_auxpcm_gpio_name[][2] = {
-	{"SEC_AUXPCM_CLK",       "qcom,sec-auxpcm-gpio-clk_duos"},
-	{"SEC_AUXPCM_SYNC",      "qcom,sec-auxpcm-gpio-sync_duos"},
-	{"SEC_AUXPCM_DIN",       "qcom,sec-auxpcm-gpio-din_duos"},
-	{"SEC_AUXPCM_DOUT",      "qcom,sec-auxpcm-gpio-dout_duos"},
-};
-#else
 static char *msm_sec_auxpcm_gpio_name[][2] = {
 	{"SEC_AUXPCM_CLK",       "qcom,sec-auxpcm-gpio-clk"},
 	{"SEC_AUXPCM_SYNC",      "qcom,sec-auxpcm-gpio-sync"},
 	{"SEC_AUXPCM_DIN",       "qcom,sec-auxpcm-gpio-din"},
 	{"SEC_AUXPCM_DOUT",      "qcom,sec-auxpcm-gpio-dout"},
 };
-#endif /* CONFIG_PCM_ROUTE_VOICE_STUB */
 
 struct msm8974_liquid_dock_dev {
 	int dock_plug_gpio;
@@ -2576,7 +2567,7 @@ static struct snd_soc_dai_link msm8974_common_dai_links[] = {
 		.ignore_suspend = 1,
 	},
 #ifdef CONFIG_PCM_ROUTE_VOICE_STUB
-	{ // 25
+	{
 		.name = "Voice Stub", 
 		.stream_name = "Voice Stub", 
 		.cpu_dai_name = "VOICE_STUB", 
@@ -2595,7 +2586,7 @@ static struct snd_soc_dai_link msm8974_common_dai_links[] = {
 		.name = "MSM8974 JACK LowLatency",
 		.stream_name = "MultiMedia10",
 		.cpu_dai_name   = "MultiMedia10",
-		.platform_name  = "msm-pcm-dsp.2",
+		.platform_name  = "msm-pcm-dsp.1",
 		.dynamic = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",

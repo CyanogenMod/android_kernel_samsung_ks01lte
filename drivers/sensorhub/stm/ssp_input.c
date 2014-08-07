@@ -41,7 +41,9 @@ static int ssp_push_17bytes_buffer(struct iio_dev *indio_dev,
 		memcpy(buf + 4 * i, &q[i], sizeof(q[i]));
 	buf[16] = (u8)q[5];
 	memcpy(buf + 17, &t, sizeof(t));
+	mutex_lock(&indio_dev->mlock);
 	iio_push_to_buffer(indio_dev->buffer, buf, 0);
+	mutex_unlock(&indio_dev->mlock);
 
 	return 0;
 }
@@ -55,7 +57,9 @@ static int ssp_push_12bytes_buffer(struct iio_dev *indio_dev, u64 t,
 	for (i = 0; i < 3; i++)
 		memcpy(buf + 4 * i, &q[i], sizeof(q[i]));
 	memcpy(buf + 12, &t, sizeof(t));
+	mutex_lock(&indio_dev->mlock);
 	iio_push_to_buffer(indio_dev->buffer, buf, 0);
+	mutex_unlock(&indio_dev->mlock);
 
 	return 0;
 }
@@ -70,7 +74,9 @@ static int ssp_push_6bytes_buffer(struct iio_dev *indio_dev,
 		memcpy(buf + i * 2, &d[i], sizeof(d[i]));
 
 	memcpy(buf + 6, &t, sizeof(t));
+	mutex_lock(&indio_dev->mlock);
 	iio_push_to_buffer(indio_dev->buffer, buf, 0);
+	mutex_unlock(&indio_dev->mlock);
 
 	return 0;
 }
@@ -82,7 +88,9 @@ static int ssp_push_1bytes_buffer(struct iio_dev *indio_dev,
 
 	memcpy(buf, d, sizeof(u8));
 	memcpy(buf + 1, &t, sizeof(t));
+	mutex_lock(&indio_dev->mlock);
 	iio_push_to_buffer(indio_dev->buffer, buf, 0);
+	mutex_unlock(&indio_dev->mlock);
 
 	return 0;
 }
@@ -180,7 +188,7 @@ void report_mag_data(struct ssp_data *data, struct sensor_value *magdata)
 		input_report_rel(data->mag_input_dev, REL_RZ, arrTemp[5]);
 		input_report_rel(data->mag_input_dev, REL_HWHEEL, arrTemp[6]);
 		input_report_rel(data->mag_input_dev, REL_DIAL, arrTemp[7]);
-
+		mdelay(5);
 		input_sync(data->mag_input_dev);
 	} else {
 		pr_info("[SSP] %s, not initialised, val = %d", __func__, arrTemp[0]);
@@ -349,17 +357,17 @@ void report_gesture_data(struct ssp_data *data, struct sensor_value *gesdata)
 
 void report_pressure_data(struct ssp_data *data, struct sensor_value *predata)
 {
+	int temp[3] = {0, };
 	data->buf[PRESSURE_SENSOR].pressure[0] =
 		predata->pressure[0] - data->iPressureCal;
 	data->buf[PRESSURE_SENSOR].pressure[1] = predata->pressure[1];
 
-	/* pressure */
-	input_report_rel(data->pressure_input_dev, REL_HWHEEL,
-		data->buf[PRESSURE_SENSOR].pressure[0]);
-	/* temperature */
-	input_report_rel(data->pressure_input_dev, REL_WHEEL,
-		data->buf[PRESSURE_SENSOR].pressure[1]);
-	input_sync(data->pressure_input_dev);
+	temp[0] = data->buf[PRESSURE_SENSOR].pressure[0];
+	temp[1] = data->buf[PRESSURE_SENSOR].pressure[1];
+	temp[2] = data->sealevelpressure;
+
+	ssp_push_12bytes_buffer(data->pressure_indio_dev, predata->timestamp,
+		temp);
 }
 
 void report_light_data(struct ssp_data *data, struct sensor_value *lightdata)
@@ -393,8 +401,9 @@ void report_light_data(struct ssp_data *data, struct sensor_value *lightdata)
 
 void report_prox_data(struct ssp_data *data, struct sensor_value *proxdata)
 {
-	ssp_dbg("[SSP] Proximity Sensor Detect : %u, raw : %u\n",
-		proxdata->prox[0], proxdata->prox[1]);
+	ssp_dbg("[SSP] Proximity Sensor Detect : %u, raw : %u, thd(%u, %u)\n",
+		proxdata->prox[0], proxdata->prox[1],
+		data->uProxHiThresh, data->uProxLoThresh);
 
 	data->buf[PROXIMITY_SENSOR].prox[0] = proxdata->prox[0];
 	data->buf[PROXIMITY_SENSOR].prox[1] = proxdata->prox[1];
@@ -403,12 +412,6 @@ void report_prox_data(struct ssp_data *data, struct sensor_value *proxdata)
 		(!proxdata->prox[0]));
 	input_sync(data->prox_input_dev);
 
-#if defined(CONFIG_MACH_KLTE_VZW)
-	if (proxdata->prox[0] == 1)
-		gpio_set_value_cansleep(data->vzw_prox_gpio, 1);
-	else
-		gpio_set_value_cansleep(data->vzw_prox_gpio, 0);
-#endif
 	wake_lock_timeout(&data->ssp_wake_lock, 3 * HZ);
 }
 
@@ -493,12 +496,6 @@ int initialize_event_symlink(struct ssp_data *data)
 
 	data->sen_dev = device_create(sensors_event_class, NULL, 0, NULL,
 		"%s", "symlink");
-
-	iRet = sysfs_create_link(&data->sen_dev->kobj,
-		&data->pressure_input_dev->dev.kobj,
-		data->pressure_input_dev->name);
-	if (iRet < 0)
-		goto iRet_prs_sysfs_create_link;
 
 	iRet = sysfs_create_link(&data->sen_dev->kobj,
 		&data->gesture_input_dev->dev.kobj,
@@ -595,13 +592,9 @@ iRet_prox_sysfs_create_link:
 		data->light_input_dev->name);
 iRet_light_sysfs_create_link:
 	sysfs_delete_link(&data->sen_dev->kobj,
-		&data->pressure_input_dev->dev.kobj,
-		data->pressure_input_dev->name);
-iRet_gesture_sysfs_create_link:
-	sysfs_delete_link(&data->sen_dev->kobj,
 		&data->gesture_input_dev->dev.kobj,
 		data->gesture_input_dev->name);
-iRet_prs_sysfs_create_link:
+iRet_gesture_sysfs_create_link:
 	pr_err("[SSP]: %s - could not create event symlink\n", __func__);
 
 	return FAIL;
@@ -609,9 +602,6 @@ iRet_prs_sysfs_create_link:
 
 void remove_event_symlink(struct ssp_data *data)
 {
-	sysfs_delete_link(&data->sen_dev->kobj,
-		&data->pressure_input_dev->dev.kobj,
-		data->pressure_input_dev->name);
 	sysfs_delete_link(&data->sen_dev->kobj,
 		&data->gesture_input_dev->dev.kobj,
 		data->gesture_input_dev->name);
@@ -653,7 +643,8 @@ static const struct iio_chan_spec accel_channels[] = {
 		.type = IIO_TIMESTAMP,
 		.channel = -1,
 		.scan_index = 3,
-		.scan_type = IIO_ST('s', IIO_BUFFER_6_BYTES*8, IIO_BUFFER_6_BYTES*8, 0)
+		.scan_type = IIO_ST('s', IIO_BUFFER_6_BYTES * 8,
+			IIO_BUFFER_6_BYTES * 8, 0)
 	}
 };
 
@@ -666,7 +657,8 @@ static const struct iio_chan_spec gyro_channels[] = {
 		.type = IIO_TIMESTAMP,
 		.channel = -1,
 		.scan_index = 3,
-		.scan_type = IIO_ST('s', IIO_BUFFER_12_BYTES*8, IIO_BUFFER_12_BYTES*8, 0)
+		.scan_type = IIO_ST('s', IIO_BUFFER_12_BYTES * 8,
+			IIO_BUFFER_12_BYTES * 8, 0)
 	}
 };
 
@@ -679,7 +671,8 @@ static const struct iio_chan_spec game_rot_channels[] = {
 		.type = IIO_TIMESTAMP,
 		.channel = -1,
 		.scan_index = 3,
-		.scan_type = IIO_ST('s', IIO_BUFFER_17_BYTES*8, IIO_BUFFER_17_BYTES*8, 0)
+		.scan_type = IIO_ST('s', IIO_BUFFER_17_BYTES * 8,
+			IIO_BUFFER_17_BYTES * 8, 0)
 	}
 };
 
@@ -692,7 +685,8 @@ static const struct iio_chan_spec rot_channels[] = {
 		.type = IIO_TIMESTAMP,
 		.channel = -1,
 		.scan_index = 3,
-		.scan_type = IIO_ST('s', IIO_BUFFER_17_BYTES*8, IIO_BUFFER_17_BYTES*8, 0)
+		.scan_type = IIO_ST('s', IIO_BUFFER_17_BYTES * 8,
+			IIO_BUFFER_17_BYTES * 8, 0)
 	}
 };
 
@@ -706,15 +700,29 @@ static const struct iio_chan_spec step_det_channels[] = {
 		.type = IIO_TIMESTAMP,
 		.channel = -1,
 		.scan_index = 3,
-		.scan_type = IIO_ST('s', IIO_BUFFER_1_BYTES*8, IIO_BUFFER_1_BYTES*8, 0)
+		.scan_type = IIO_ST('s', IIO_BUFFER_1_BYTES * 8,
+			IIO_BUFFER_1_BYTES * 8, 0)
+	}
+};
+
+static const struct iio_info pressure_info = {
+	.driver_module = THIS_MODULE,
+};
+
+static const struct iio_chan_spec pressure_channels[] = {
+	{
+		.type = IIO_TIMESTAMP,
+		.channel = -1,
+		.scan_index = 3,
+		.scan_type = IIO_ST('s', IIO_BUFFER_12_BYTES * 8,
+			IIO_BUFFER_12_BYTES * 8, 0)
 	}
 };
 
 int initialize_input_dev(struct ssp_data *data)
 {
 	int iRet = 0;
-	struct input_dev *pressure_input_dev,
-		*light_input_dev, *prox_input_dev, *temp_humi_input_dev,
+	struct input_dev *light_input_dev, *prox_input_dev, *temp_humi_input_dev,
 		*mag_input_dev, *gesture_input_dev, *uncal_mag_input_dev,
 		*sig_motion_input_dev, *uncalib_gyro_input_dev, *step_cnt_input_dev,
 		*meta_input_dev;
@@ -864,13 +872,36 @@ int initialize_input_dev(struct ssp_data *data)
 	if (iRet)
 		goto out_remove_trigger_step_det;
 
+	data->pressure_indio_dev = iio_allocate_device(0);
+	if (!data->pressure_indio_dev) {
+		pr_err("[SSP]: %s failed to allocate memory for iio gyro device\n", __func__);
+		goto out_alloc_fail_pressure;
+	}
+
+	data->pressure_indio_dev->name = "pressure_sensor";
+	data->pressure_indio_dev->dev.parent = &data->spi->dev;
+	data->pressure_indio_dev->info = &pressure_info;
+	data->pressure_indio_dev->channels = pressure_channels;
+	data->pressure_indio_dev->num_channels = ARRAY_SIZE(pressure_channels);
+	data->pressure_indio_dev->modes = INDIO_DIRECT_MODE;
+	data->pressure_indio_dev->currentmode = INDIO_DIRECT_MODE;
+
+	iRet = ssp_iio_configure_ring(data->pressure_indio_dev);
+	if (iRet) {
+		pr_err("[SSP]: %s configure ring buffer fail\n", __func__);
+		goto out_free_pressure;
+	}
+
+	iRet = iio_buffer_register(data->pressure_indio_dev, data->pressure_indio_dev->channels,
+					data->pressure_indio_dev->num_channels);
+	if (iRet)
+		goto out_unreg_ring_pressure;
+
+	iRet = iio_device_register(data->pressure_indio_dev);
+	if (iRet)
+		goto out_remove_trigger_pressure;
 
 	/* allocate input_device */
-
-	pressure_input_dev = input_allocate_device();
-	if (pressure_input_dev == NULL)
-		goto iRet_pressure_input_free_device;
-
 	gesture_input_dev = input_allocate_device();
 	if (gesture_input_dev == NULL)
 		goto iRet_gesture_input_free_device;
@@ -911,7 +942,6 @@ int initialize_input_dev(struct ssp_data *data)
 	if (meta_input_dev == NULL)
 		goto iRet_meta_input_free_device;
 
-	input_set_drvdata(pressure_input_dev, data);
 	input_set_drvdata(gesture_input_dev, data);
 	input_set_drvdata(light_input_dev, data);
 	input_set_drvdata(prox_input_dev, data);
@@ -923,7 +953,6 @@ int initialize_input_dev(struct ssp_data *data)
 	input_set_drvdata(step_cnt_input_dev, data);
 	input_set_drvdata(meta_input_dev, data);
 
-	pressure_input_dev->name = "pressure_sensor";
 	gesture_input_dev->name = "gesture_sensor";
 	light_input_dev->name = "light_sensor";
 	prox_input_dev->name = "proximity_sensor";
@@ -934,10 +963,6 @@ int initialize_input_dev(struct ssp_data *data)
 	uncalib_gyro_input_dev->name = "uncalibrated_gyro_sensor";
 	step_cnt_input_dev->name = "step_cnt_sensor";
 	meta_input_dev->name = "meta_event";
-
-	input_set_capability(pressure_input_dev, EV_REL, REL_HWHEEL);
-	input_set_capability(pressure_input_dev, EV_REL, REL_DIAL);
-	input_set_capability(pressure_input_dev, EV_REL, REL_WHEEL);
 
 	input_set_capability(gesture_input_dev, EV_ABS, ABS_X);
 	input_set_abs_params(gesture_input_dev, ABS_X, 0, 1024, 0, 0);
@@ -1033,24 +1058,9 @@ int initialize_input_dev(struct ssp_data *data)
 	input_set_capability(meta_input_dev, EV_REL, REL_DIAL);
 
 	/* register input_device */
-	iRet = input_register_device(pressure_input_dev);
-	if (iRet < 0)
-		goto iRet_pressure_input_unreg_device;
-
 	iRet = input_register_device(gesture_input_dev);
-	if (iRet < 0) {
-		input_free_device(gesture_input_dev);
-		input_free_device(light_input_dev);
-		input_free_device(prox_input_dev);
-		input_free_device(temp_humi_input_dev);
-		input_free_device(mag_input_dev);
-		input_free_device(uncal_mag_input_dev);
-		input_free_device(sig_motion_input_dev);
-		input_free_device(uncalib_gyro_input_dev);
-		input_free_device(step_cnt_input_dev);
-		input_free_device(meta_input_dev);
+	if (iRet < 0)
 		goto iRet_gesture_input_unreg_device;
-	}
 
 	iRet = input_register_device(light_input_dev);
 	if (iRet < 0) {
@@ -1142,7 +1152,6 @@ int initialize_input_dev(struct ssp_data *data)
 		goto iRet_meta_input_unreg_device;
 	}
 
-	data->pressure_input_dev = pressure_input_dev;
 	data->gesture_input_dev = gesture_input_dev;
 	data->light_input_dev = light_input_dev;
 	data->prox_input_dev = prox_input_dev;
@@ -1173,10 +1182,8 @@ iRet_proximity_input_unreg_device:
 	input_unregister_device(light_input_dev);
 iRet_light_input_unreg_device:
 	input_unregister_device(gesture_input_dev);
-iRet_gesture_input_unreg_device:
-	input_unregister_device(pressure_input_dev);
 	return ERROR;
-iRet_pressure_input_unreg_device:
+iRet_gesture_input_unreg_device:
 	input_free_device(meta_input_dev);
 iRet_meta_input_free_device:
 	input_free_device(step_cnt_input_dev);
@@ -1197,8 +1204,14 @@ iRet_proximity_input_free_device:
 iRet_light_input_free_device:
 	input_free_device(gesture_input_dev);
 iRet_gesture_input_free_device:
-	input_free_device(pressure_input_dev);
-iRet_pressure_input_free_device:
+	iio_device_unregister(data->pressure_indio_dev);
+out_remove_trigger_pressure:
+	iio_buffer_unregister(data->pressure_indio_dev);
+out_unreg_ring_pressure:
+	ssp_iio_unconfigure_ring(data->pressure_indio_dev);
+out_free_pressure:
+	iio_free_device(data->pressure_indio_dev);
+out_alloc_fail_pressure:
 	iio_device_unregister(data->step_det_indio_dev);
 out_remove_trigger_step_det:
 	iio_buffer_unregister(data->step_det_indio_dev);
@@ -1244,7 +1257,6 @@ out_free_accel:
 
 void remove_input_dev(struct ssp_data *data)
 {
-	input_unregister_device(data->pressure_input_dev);
 	input_unregister_device(data->gesture_input_dev);
 	input_unregister_device(data->light_input_dev);
 	input_unregister_device(data->prox_input_dev);

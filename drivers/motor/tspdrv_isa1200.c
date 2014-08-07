@@ -117,7 +117,7 @@ static void _set_vibetonz_work(struct work_struct *unused);
 static DECLARE_WORK(vibetonz_work, _set_vibetonz_work);
 struct vibrator_platform_data_isa1200 vibrator_drvdata;
 
-#if defined CONFIG_MACH_MATISSE3G_OPEN
+#if defined CONFIG_MACH_MATISSE3G_OPEN || defined CONFIG_SEC_MATISSELTE_COMMON
 static void haptic_power_onoff(int onoff)
 {
 	int ret;
@@ -193,7 +193,7 @@ static int get_time_for_vibetonz(struct timed_output_dev *dev)
 
 	if (hrtimer_active(&timer)) {
 		ktime_t r = hrtimer_get_remaining(&timer);
-		ktime_to_ms(r);
+		remaining = (int)ktime_to_ms(r);
 	} else
 		remaining = 0;
 
@@ -318,7 +318,7 @@ static int __devinit isa1200_vibrator_i2c_probe(struct i2c_client *client,
 	if (!virt_mmss_gp1_base)
                 panic("tspdrv : Unable to ioremap MSM_MMSS_GP1 memory!");
 
-#if defined(CONFIG_MACH_MATISSE3G_OPEN)
+#if defined(CONFIG_MACH_MATISSE3G_OPEN) || defined CONFIG_SEC_MATISSELTE_COMMON
 	vibrator_drvdata.power_onoff = haptic_power_onoff;
 #endif
 	nRet = misc_register(&miscdev);

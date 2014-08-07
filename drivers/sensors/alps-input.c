@@ -3,27 +3,26 @@
 #include <linux/moduleparam.h>
 #include <linux/platform_device.h>
 #include <linux/input.h>
-#include <linux/input-polldev.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <linux/ioctl.h>
-#include <linux/sensors_core.h>
-
+#include "sensors_core.h"
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
 #include <linux/alps_compass_io.h>
+#include <linux/input-polldev.h>
 
 #define EVENT_TYPE_ACCEL_X          ABS_X
 #define EVENT_TYPE_ACCEL_Y          ABS_Y
 #define EVENT_TYPE_ACCEL_Z          ABS_Z
 
-#define EVENT_TYPE_MAG_X           ABS_HAT0X
-#define EVENT_TYPE_MAG_Y           ABS_HAT0Y
-#define EVENT_TYPE_MAG_Z           ABS_BRAKE
+#define EVENT_TYPE_MAG_X           ABS_X
+#define EVENT_TYPE_MAG_Y           ABS_Y
+#define EVENT_TYPE_MAG_Z           ABS_Z
 
 #define ALPS_POLL_INTERVAL   200    /* msecs */
 #define ALPS_INPUT_FUZZ        0    /* input event threshold */
@@ -267,7 +266,7 @@ static int alps_probe(struct platform_device *dev)
 
 	/* initialize the input class */
 	idev = data->alps_idev->input;
-	idev->name = "alps";
+	idev->name = "magnetic_sensor";
 	idev->phys = "alps/input0";
 	idev->id.bustype = BUS_HOST;
 	idev->dev.parent = &data->pdev->dev;
@@ -305,6 +304,11 @@ static int alps_probe(struct platform_device *dev)
 	data->alps_early_suspend_handler.resume = alps_early_resume;
 	register_early_suspend(&data->alps_early_suspend_handler);
 #endif
+	ret = sensors_create_symlink(&idev->dev.kobj, idev->name);
+	if (ret < 0) {
+		printk("failed to create symlink\n");
+		return ret;
+	}
 #ifdef CONFIG_SENSOR_USE_SYMLINK
 	error =  sensors_initialize_symlink(idev);
 	if (error < 0) {

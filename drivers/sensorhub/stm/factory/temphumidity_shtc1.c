@@ -52,12 +52,18 @@
 #define MODEL_NAME	"SM-G900Z"
 #elif defined(CONFIG_MACH_KLTE_CMCC)
 #define MODEL_NAME	"SM-G9008V"
+#elif defined(CONFIG_MACH_KLTE_CMCCDUOS)
+#define MODEL_NAME	"SM-G9008W"
+#elif defined(CONFIG_MACH_KLTE_CU)
+#define MODEL_NAME	"SM-G9006V"
+#elif defined(CONFIG_MACH_KLTE_CUDUOS)
+#define MODEL_NAME	"SM-G9006W"
 #elif defined(CONFIG_MACH_KLTE_CTC)
 #define MODEL_NAME	"SM-G9009W"
-#elif defined(CONFIG_MACH_KLTE_CAN)
-#define MODEL_NAME	"SM-G900W8"
 #elif defined(CONFIG_MACH_K3GDUOS_CTC)
 #define MODEL_NAME	"SM-G9009D"
+#elif defined(CONFIG_MACH_KLTE_CAN)
+#define MODEL_NAME	"SM-G900W8"
 #elif defined(CONFIG_MACH_KLTE_SKT)
 #define MODEL_NAME	"SM-G900S"
 #elif defined(CONFIG_MACH_KLTE_KTT)

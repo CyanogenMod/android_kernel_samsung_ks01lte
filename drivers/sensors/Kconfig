@@ -86,6 +86,14 @@ config SENSORS_GP2A030A_PROX
 
 	  Say N here if you do not use GP2A030A.
 
+config SENSORS_ADPD142
+	depends on I2C
+	tristate "ADI hrm sensor driver"
+	default n
+	help
+	  This option enables hrm sensors using adpd142 driver.
+
+
 config SENSORS_TMD3782S
 	depends on I2C
 	tristate "SENSORS_TMD3782S"
@@ -115,6 +123,13 @@ config SENSORS_SX9500
 
 	  Say N here if you do not use sx9500.
 
+config SENSORS_GRIP_ADJDET
+	depends on I2C
+	tristate "GRIP sensor adj cable detect"
+	default n
+	help
+	  GRIP sensor adj cable detect
+
 config SENSORS_SX9500_INIT_TOUCH_THRESHOLD
 	int "SX9500 Grip sensor threshold for init touch"
 	depends on SENSORS_SX9500
@@ -131,6 +146,133 @@ config SENSORS_SX9500_NORMAL_TOUCH_THRESHOLD
 	  This value is the standard of normal touch using
 	  SemTech sx9500 device driver.
 
-source "drivers/sensors/mpu6500/Kconfig"
-source "drivers/sensors/accelerometer_k2dh/Kconfig"
+config SENSORS_BMA254
+	tristate "BMA254 acceleration sensor support"
+	depends on I2C
+	default n
+	help
+	  If you say yes here you get support for Bosch Sensortec's
+	  acceleration sensors BMA254.
+
+config SENSORS_POWERCONTROL
+	tristate "Sensors power control"
+	default n
+	help
+	  Say Y here to control power supply for drivers.
+
+config SENSORS_GP2A_VDDCONTROL
+	tristate "Sensors GP2A VDD control"
+	default n
+	help
+	  Say Y here to control power vdd supply for drivers.
+
+config BMA254_SMART_ALERT
+	depends on I2C
+	tristate "bma254 smart alert"
+	default n
+	help
+	  This option enables bma254 smart alert function.
+
+config SENSORS_GP2A002
+	tristate "GP2A002 proximity sensor support"
+	depends on I2C
+	default n
+	help
+	  If you say yes here you get support for sharp Sensortec's
+	  proximity sensors GP2A002.
+
+config SENSORS_POWER_EN
+	tristate "Sensors power control"
+	default n
+	help
+	  Say Y here to enable power supply for drivers.
+
+config SENSORS_K3DH
+	tristate "K3DH acceleration sensor support"
+	depends on I2C
+        default n
+	help
+	  Driver for STMicroelectronic K3DH accelerometer.
+
+config SENSOR_K3DH_INPUTDEV
+	bool "K3DH acceleration sensor input dev support"
+	depends on SENSORS_K3DH
+        default n
+	help
+	  Say Y here if you use K3DH.
+	  This option enables accelerometer sensor using
+	  K3DH device driver.
+
+	  Say N here if you do not use K3DH.
+
+config INPUT_MPU6500
+	bool "Invensense MPU-6500 sensor"
+	default n
+	help
+	  Say Y here if you want support for the MPU-6500 sensor
+	  device.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called MPU6500.
+
+config INPUT_MPU6500_SELFTEST
+	bool "Self-test of Invensense MPU-6500 sensor"
+	default n
+	help
+	  Say Y here if you want support for self-test of the MPU-6500 sensor
+	  device.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called MPU6500.
+
+config INPUT_MPU6500_POLLING
+	bool "Polling-mode of Invensense MPU-6500 sensor"
+	default n
+	help
+	  Say Y here if you want support for polling-mode of the MPU-6500 sensor
+	  device.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called MPU6500.
+
+config SENSORS_TMD27723
+	depends on I2C
+	tristate "TMD27723 driver"
+	default n
+	help
+	   This option enables proximity & light sensors using TMD27723 driver.
+
+config INPUT_YAS_SENSORS
+	bool "Sensors Support"
+	default n
+	help
+	  Say Y to enable Sensors support.  This allows control of supported
+	  Sensors.
+config SENSORS_BMA255
+	tristate "YAS Acceleration Sensor- BMA255"
+	depends on I2C
+	default n
+	help
+	  Say Y here if you want support for the BMA255 sensor
+	  device.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called BMA255.
+config SENSORS_CORE
+         bool "sensors_core"
+         depends on I2C
+config SENSORS_HSCDTD008A
+	depends on I2C
+	tristate "hscd alps HSCDTD008A"
+	default n
+	help
+	  This option enables hscd alps HSCDTD008A mag driver
+
+config SENSORS_CM36651
+	depends on I2C && GENERIC_GPIO
+	tristate "Capella CM3663 ambient light and proximity sensor"
+	default n
+	help
+	  This option enables proximity & light sensors using CM3663 driver.
+
 source "drivers/sensors/yas532/Kconfig"

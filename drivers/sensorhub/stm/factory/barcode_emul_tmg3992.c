@@ -89,7 +89,6 @@ void mobeam_write(struct ssp_data *data, int type, u8* u_buf)
 		return;
 	}
 
-	data->uInstFailCnt = 0;
 	pr_info("[SSP] %s command = 0x%X\n", __func__, command);
 }
 
@@ -234,7 +233,7 @@ static ssize_t barcode_emul_test_store(struct device *dev,
 			test_data[3], test_data[4], test_data[5]);
 		mobeam_write(data, registerset, test_data);
 	} else if (buf[0] == DATA_TEST) {
-		memcpy(test_data, &barcode_data[1], 128);
+		memcpy(test_data, &barcode_data[1], 13);
 		pr_info("[SSP] %s, DATA_TEST - 0x%X 0x%X 0x%X 0x%X 0x%X 0x%X\n",
 			__func__, test_data[0], test_data[1], test_data[2],
 			test_data[3], test_data[4], test_data[5]);

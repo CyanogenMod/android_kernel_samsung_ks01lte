@@ -58,6 +58,12 @@
 #define MODEL_NAME	"SM-N900K"
 #elif defined (CONFIG_MACH_HLTELGT)
 #define MODEL_NAME	"SM-N900L"
+#elif defined (CONFIG_MACH_FRESCOLTESKT)
+#define MODEL_NAME	"SM-N750S"
+#elif defined (CONFIG_MACH_FRESCOLTEKTT)
+#define MODEL_NAME	"SM-N750K"
+#elif defined (CONFIG_MACH_FRESCOLTELGT)
+#define MODEL_NAME	"SM-N750L"
 #elif defined (CONFIG_MACH_HLTEDCM)
 #define MODEL_NAME	"SM-N900D"
 #elif defined (CONFIG_MACH_HLTEKDI)

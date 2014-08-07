@@ -346,6 +346,10 @@ struct max77888_dev {
 	int irq;
 	int irq_base;
 	int irq_gpio;
+#ifdef CONFIG_MUIC_RESET_PIN_ENABLE
+	int irq_reset;
+	int irq_reset_gpio;
+#endif
 	bool wakeup;
 	struct mutex irqlock;
 	int irq_masks_cur[MAX77888_IRQ_GROUP_NR];
@@ -403,6 +407,8 @@ enum usb_cable_status {
 	USB_POWERED_HOST_DETACHED,
 	USB_POWERED_HOST_ATTACHED,
 	USB_CABLE_DETACHED_WITHOUT_NOTI,
+	USB_LANHUB_DETACHED,
+	USB_LANHUB_ATTACHED,
 };
 
 enum cable_type_muic {
@@ -425,10 +431,10 @@ enum cable_type_muic {
 	CABLE_TYPE_AUDIODOCK_MUIC,
 	CABLE_TYPE_INCOMPATIBLE_MUIC,
 	CABLE_TYPE_CDP_MUIC,
+	CABLE_TYPE_LANHUB_MUIC,
 #if defined(CONFIG_MUIC_DET_JACK)
 	CABLE_TYPE_EARJACK_MUIC,
 #endif
-	CABLE_TYPE_CHARGING_CABLE_MUIC,
 	CABLE_TYPE_UNKNOWN_MUIC
 };
 

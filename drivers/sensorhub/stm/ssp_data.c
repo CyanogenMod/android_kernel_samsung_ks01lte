@@ -53,7 +53,6 @@ static void get_uncalib_sensordata(char *pchRcvDataFrame, int *iDataIdx,
 	*iDataIdx += 12;
 }
 
-
 static void get_geomagnetic_uncaldata(char *pchRcvDataFrame, int *iDataIdx,
 	struct sensor_value *sensorsdata)
 {
@@ -79,6 +78,7 @@ static void get_geomagnetic_caldata(char *pchRcvDataFrame, int *iDataIdx,
 	*iDataIdx += 7;
 #endif
 }
+
 static void get_rot_sensordata(char *pchRcvDataFrame, int *iDataIdx,
 	struct sensor_value *sensorsdata)
 {
@@ -170,6 +170,11 @@ int handle_big_data(struct ssp_data *data, char *pchRcvDataFrame, int *pDataIdx)
 	memcpy(&big->addr, pchRcvDataFrame + *pDataIdx, 4);
 	*pDataIdx += 4;
 
+	if (bigType >= BIG_TYPE_MAX) {
+		kfree(big);
+		return FAIL;
+	}
+
 	INIT_WORK(&big->work, data->ssp_big_task[bigType]);
 	queue_work(data->debug_wq, &big->work);
 	return SUCCESS;
@@ -177,9 +182,16 @@ int handle_big_data(struct ssp_data *data, char *pchRcvDataFrame, int *pDataIdx)
 
 void refresh_task(struct work_struct *work) {
 	struct ssp_data *data = container_of((struct delayed_work *)work,
-	struct ssp_data, work_firmware);
+			struct ssp_data, work_refresh);
 
+	if(data->bSspShutdown == true) {
+		pr_err("[SSP]: %s - ssp already shutdown\n", __func__);
+		return;
+	}
+
+	wake_lock(&data->ssp_wake_lock);
 	pr_err("[SSP]: %s\n", __func__);
+	data->uResetCnt++;
 
 	if (initialize_mcu(data) > 0) {
 		sync_sensor_state(data);
@@ -190,11 +202,15 @@ void refresh_task(struct work_struct *work) {
 			ssp_send_cmd(data, data->uLastResumeState, 0);
 		data->uTimeOutCnt = 0;
 	}
+
+	wake_unlock(&data->ssp_wake_lock);
 }
 
 int queue_refresh_task(struct ssp_data *data, int delay) {
-	INIT_DELAYED_WORK(&data->work_firmware, refresh_task);
-	queue_delayed_work(data->debug_wq, &data->work_firmware,
+	cancel_delayed_work_sync(&data->work_refresh);
+
+	INIT_DELAYED_WORK(&data->work_refresh, refresh_task);
+	queue_delayed_work(data->debug_wq, &data->work_refresh,
 			msecs_to_jiffies(delay));
 	return SUCCESS;
 }

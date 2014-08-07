@@ -187,6 +187,9 @@ static void enable_vibetonz_from_user(struct timed_output_dev *dev, int value)
 	hrtimer_cancel(&timer);
 
 	/* set_vibetonz(value); */
+#ifdef CONFIG_TACTILE_ASSIST
+	g_bOutputDataBufferEmpty = 0;
+#endif
 	vibrator_work = value;
 	schedule_work(&vibetonz_work);
 
@@ -368,7 +371,7 @@ static int tspdrv_parse_dt(struct platform_device *pdev)
 	return rc;
 }
 
-#if defined(CONFIG_MOTOR_DRV_MAX77804K)
+#if defined(CONFIG_MOTOR_DRV_MAX77804K) || defined(CONFIG_MOTOR_DRV_MAX77828)
 static void max77803_haptic_power_onoff(int onoff)
 {
 	int ret;
@@ -412,7 +415,7 @@ static void max77803_haptic_power_onoff(int onoff)
 	int ret;
 #if defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_MONTBLANC_PROJECT) || defined(CONFIG_SEC_JS_PROJECT) || \
     defined(CONFIG_MACH_FLTEEUR) || defined(CONFIG_MACH_FLTESKT) || defined(CONFIG_MACH_JVELTEEUR) ||\
-    defined(CONFIG_MACH_VIKALCU)
+    defined(CONFIG_MACH_VIKALCU) || defined(CONFIG_SEC_LOCALE_KOR_FRESCO)
 	static struct regulator *reg_l23;
 
 	if (!reg_l23) {
@@ -421,6 +424,8 @@ static void max77803_haptic_power_onoff(int onoff)
 		ret = regulator_set_voltage(reg_l23, 3000000, 3000000);
 #elif defined(CONFIG_MACH_HLTEVZW)
 		ret = regulator_set_voltage(reg_l23, 3100000, 3100000);
+#elif defined(CONFIG_SEC_LOCALE_KOR_FRESCO)
+		ret = regulator_set_voltage(reg_l23, 2488000,2488000);
 #else
 		ret = regulator_set_voltage(reg_l23, 2825000, 2825000);
 #endif
@@ -524,14 +529,16 @@ static __devinit int tspdrv_probe(struct platform_device *pdev)
 
 #if defined(CONFIG_MACH_HLTEDCM) || defined(CONFIG_MACH_HLTEKDI) || defined(CONFIG_MACH_JS01LTEDCM)
 	virt_mmss_gp1_base = ioremap(MSM_MMSS_GP3_BASE,0x28);
-#else			
+#elif defined(CONFIG_SEC_BERLUTI_PROJECT) || defined(CONFIG_MACH_S3VE3G_EUR)
+	virt_mmss_gp1_base = ioremap(MSM_MMSS_GP0_BASE,0x28);
+#else
 	virt_mmss_gp1_base = ioremap(MSM_MMSS_GP1_BASE,0x28);
 #endif
 
 	if (!virt_mmss_gp1_base)
 		panic("tspdrv : Unable to ioremap MSM_MMSS_GP1 memory!");
 			
-#if defined(CONFIG_MOTOR_DRV_MAX77803) || defined(CONFIG_MOTOR_DRV_MAX77804K)
+#if defined(CONFIG_MOTOR_DRV_MAX77803) || defined(CONFIG_MOTOR_DRV_MAX77804K) || defined(CONFIG_MOTOR_DRV_MAX77828)
 	vibrator_drvdata.power_onoff = max77803_haptic_power_onoff;
 #else
 	vibrator_drvdata.power_onoff = NULL;
@@ -670,12 +677,23 @@ static ssize_t write(struct file *file, const char *buf, size_t count,
 		DbgOut((KERN_ERR "tspdrv: unauthorized write.\n"));
 		return 0;
 	}
-
+#ifdef CONFIG_TACTILE_ASSIST
 	/* Check buffer size */
+	if ((count < SPI_HEADER_SIZE) || (count > SPI_BUFFER_SIZE)) {
+		DbgOut((KERN_ERR "tspdrv: invalid write buffer size.\n"));
+		return 0;
+	}
+	if (count == SPI_HEADER_SIZE)
+		g_bOutputDataBufferEmpty = 1;
+	else
+		g_bOutputDataBufferEmpty = 0;
+
+#else
 	if ((count <= SPI_HEADER_SIZE) || (count > SPI_BUFFER_SIZE)) {
 		DbgOut((KERN_ERR "tspdrv: invalid write buffer size.\n"));
 		return 0;
 	}
+#endif
 
 	/* Copy immediately the input buffer */
 	if (0 != copy_from_user(g_cwrite_buffer, buf, count)) {
@@ -690,7 +708,11 @@ static ssize_t write(struct file *file, const char *buf, size_t count,
 		samples_buffer *pinput_buffer =
 			(samples_buffer *)(&g_cwrite_buffer[i]);
 
+#ifdef CONFIG_TACTILE_ASSIST
+		if ((i + SPI_HEADER_SIZE) > count) {
+#else
 		if ((i + SPI_HEADER_SIZE) >= count) {
+#endif
 			/*
 			** Index is about to go beyond the buffer size.
 			** (Should never happen).
@@ -786,7 +808,7 @@ static long ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #ifdef QA_TEST
 	int i;
 #endif
-
+	printk(KERN_DEBUG "tspdrv: %s %d\n", __func__, cmd);
 	/* DbgOut(KERN_INFO "tspdrv: ioctl cmd[0x%x].\n", cmd); */
 	switch (cmd) {
 	case TSPDRV_STOP_KERNEL_TIMER:
@@ -817,7 +839,9 @@ static long ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case TSPDRV_MAGIC_NUMBER:
+#ifdef CONFIG_TACTILE_ASSIST
 	case TSPDRV_SET_MAGIC_NUMBER:
+#endif
 		filp->private_data = (void *)TSPDRV_MAGIC_NUMBER;
 		break;
 
@@ -837,8 +861,15 @@ static long ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		** If a stop was requested, ignore the request as the amp
 		** will be disabled by the timer proc when it's ready
 		*/
+#ifdef CONFIG_TACTILE_ASSIST
+		g_bstoprequested = true;
+		/* Last data processing to disable amp and stop timer */
+		VibeOSKernelProcessData(NULL);
+		g_bisplaying = false;
+#else
 		if (!g_bstoprequested)
 			ImmVibeSPI_ForceOut_AmpDisable(arg);
+#endif
 		wake_unlock(&vib_wake_lock);
 		break;
 

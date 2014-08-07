@@ -14,7 +14,11 @@
  */
 #include "../ssp.h"
 
+#if defined (CONFIG_SEC_KACTIVE_PROJECT)
+#define LPS25H_REV	0
+#else
 #define LPS25H_REV	3
+#endif
 
 #define	VENDOR		"BOSCH"
 #define	CHIP_ID		"BMP180"
@@ -34,19 +38,16 @@ static ssize_t sea_level_pressure_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct ssp_data *data = dev_get_drvdata(dev);
-	int iNewSeaLevelPressure;
 
-	sscanf(buf, "%d", &iNewSeaLevelPressure);
+	sscanf(buf, "%d", &data->sealevelpressure);
 
-	if (iNewSeaLevelPressure == 0) {
+	if (data->sealevelpressure == 0) {
 		pr_info("%s, our->temperature = 0\n", __func__);
-		iNewSeaLevelPressure = -1;
+		data->sealevelpressure = -1;
 	}
 
-	input_report_rel(data->pressure_input_dev, REL_DIAL,
-		iNewSeaLevelPressure);
-	input_sync(data->pressure_input_dev);
-
+	pr_info("[SSP] %s sea_level_pressure = %d\n",
+		__func__, data->sealevelpressure);
 	return size;
 }
 

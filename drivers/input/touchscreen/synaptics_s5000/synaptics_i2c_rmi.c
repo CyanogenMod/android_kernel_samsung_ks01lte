@@ -3810,7 +3810,7 @@ int synaptics_rmi4_new_function(enum exp_fn fn_type,
 void synaptics_power_ctrl(struct synaptics_rmi4_data *rmi4_data, bool enable)
 {
 	int ret = 0;
-#if defined(CONFIG_SEC_H_PROJECT)  || defined(CONFIG_MACH_JS01LTEDCM) 
+#if defined(CONFIG_SEC_H_PROJECT)
 	static struct regulator *reg_l10;
 
 	if (!reg_l10) {
@@ -3904,21 +3904,16 @@ __setup("lcd_id=0x", sec_tsp_mode);
 
 #ifdef CONFIG_SEC_TSP_FACTORY
  unsigned int bootmode;
-static int __init sec_tsp_reboot_mode(char *mode)
- {
-	int ret;
-
-	ret = strncmp(mode, "1", 1);
-	if (ret == 0)
+extern int boot_mode_recovery;
+static void alloc_tsp_reboot_mode(void)
+{
+	if (boot_mode_recovery == 0)
 		bootmode = 1;
 	else
 		bootmode = 0;
 
-	printk(KERN_ERR "%s: %d, %s\n", __func__, ret, mode);
-
-	 return 1;
- }
-__setup("androidboot.check_recovery_condition=0x", sec_tsp_reboot_mode);
+	printk(KERN_ERR "%s: bootmode(%d)\n", __func__, bootmode);
+}
 #endif
 
  /**
@@ -4013,6 +4008,7 @@ static int __devinit synaptics_rmi4_probe(struct i2c_client *client,
 	rmi4_data->start_device = synaptics_rmi4_start_device;
 
 #ifdef CONFIG_SEC_TSP_FACTORY
+	alloc_tsp_reboot_mode();
 	rmi4_data->bootmode = bootmode;
 	dev_info(&client->dev,
 			"%s: bootmode =%d\n",

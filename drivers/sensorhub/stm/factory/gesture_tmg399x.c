@@ -85,6 +85,9 @@ static ssize_t ir_current_show(struct device *dev,
 {
 	struct ssp_data *data = dev_get_drvdata(dev);
 
+	if(data->uIr_Current == 0)
+		data->uIr_Current = DEFUALT_IR_CURRENT;
+
 	ssp_dbg("[SSP]: %s - Ir_Current Setting = %d\n",
 		__func__, data->uIr_Current);
 
