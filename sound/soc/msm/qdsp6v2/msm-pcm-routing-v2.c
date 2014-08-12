@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -77,7 +77,7 @@ static int fm_pcmrx_switch_enable;
 static int srs_alsa_ctrl_ever_called;
 static int lsm_mux_slim_port;
 static int slim0_rx_aanc_fb_port;
-static int msm_route_ec_ref_rx = 7; /* NONE */
+static int msm_route_ec_ref_rx = 3; /* NONE */
 static uint32_t voc_session_id = ALL_SESSION_VSID;
 static int msm_route_ext_ec_ref = AFE_PORT_INVALID;
 
@@ -1541,97 +1541,38 @@ static int msm_routing_ec_ref_rx_put(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
 	int ec_ref_port_id;
-	struct snd_soc_dapm_widget_list *wlist = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_dapm_widget *widget = wlist->widgets[0];
-	int mux = ucontrol->value.enumerated.item[0];
-	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
-
 	mutex_lock(&routing_lock);
 	switch (ucontrol->value.integer.value[0]) {
 	case 0:
 		msm_route_ec_ref_rx = 0;
-		ec_ref_port_id = AFE_PORT_INVALID;
+		ec_ref_port_id = SLIMBUS_0_RX;
 		break;
 	case 1:
 		msm_route_ec_ref_rx = 1;
-		ec_ref_port_id = SLIMBUS_0_RX;
-		break;
-	case 2:
-		msm_route_ec_ref_rx = 2;
 		ec_ref_port_id = AFE_PORT_ID_PRIMARY_MI2S_RX;
 		break;
-	case 3:
-		msm_route_ec_ref_rx = 3;
-		ec_ref_port_id = AFE_PORT_ID_PRIMARY_MI2S_TX;
-		break;
-	case 4:
-		msm_route_ec_ref_rx = 4;
-		ec_ref_port_id = AFE_PORT_ID_SECONDARY_MI2S_TX;
-		break;
-	case 5:
-		msm_route_ec_ref_rx = 5;
-		ec_ref_port_id = AFE_PORT_ID_TERTIARY_MI2S_TX;
-		break;
-	case 6:
-		msm_route_ec_ref_rx = 6;
-		ec_ref_port_id = AFE_PORT_ID_QUATERNARY_MI2S_TX;
-		break;
 	default:
-		msm_route_ec_ref_rx = 0; /* NONE */
-		pr_err("%s EC ref rx %ld not valid\n",
-			__func__, ucontrol->value.integer.value[0]);
-		ec_ref_port_id = AFE_PORT_INVALID;
+		msm_route_ec_ref_rx = 3; /* NONE */
+		ec_ref_port_id = -1;
 		break;
 	}
 	adm_ec_ref_rx_id(ec_ref_port_id);
 	pr_debug("%s: msm_route_ec_ref_rx = %d\n",
 	    __func__, msm_route_ec_ref_rx);
 	mutex_unlock(&routing_lock);
-	snd_soc_dapm_mux_update_power(widget, kcontrol, 1, mux, e);
 	return 0;
 }
 
-static const char *const ec_ref_rx[] = { "None", "SLIM_RX", "I2S_RX",
-	"PRI_MI2S_TX",
-	"SEC_MI2S_TX", "TERT_MI2S_TX", "QUAT_MI2S_TX", "PROXY_RX"};
+static const char *const ec_ref_rx[] = { "SLIM_RX", "I2S_RX", "PROXY_RX",
+	"NONE" };
 static const struct soc_enum msm_route_ec_ref_rx_enum[] = {
-	SOC_ENUM_SINGLE_EXT(8, ec_ref_rx),
+	SOC_ENUM_SINGLE_EXT(4, ec_ref_rx),
 };
 
-static const struct snd_kcontrol_new ext_ec_ref_mux_ul1 =
-	SOC_DAPM_ENUM_EXT("AUDIO_REF_EC_UL1 MUX Mux",
-		msm_route_ec_ref_rx_enum[0],
-		msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put);
-
-static const struct snd_kcontrol_new ext_ec_ref_mux_ul2 =
-	SOC_DAPM_ENUM_EXT("AUDIO_REF_EC_UL2 MUX Mux",
-		msm_route_ec_ref_rx_enum[0],
-		msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put);
-
-static const struct snd_kcontrol_new ext_ec_ref_mux_ul4 =
-	SOC_DAPM_ENUM_EXT("AUDIO_REF_EC_UL4 MUX Mux",
-		msm_route_ec_ref_rx_enum[0],
-		msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put);
-
-static const struct snd_kcontrol_new ext_ec_ref_mux_ul5 =
-	SOC_DAPM_ENUM_EXT("AUDIO_REF_EC_UL5 MUX Mux",
-		msm_route_ec_ref_rx_enum[0],
-		msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put);
-
-static const struct snd_kcontrol_new ext_ec_ref_mux_ul6 =
-	SOC_DAPM_ENUM_EXT("AUDIO_REF_EC_UL6 MUX Mux",
-		msm_route_ec_ref_rx_enum[0],
-		msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put);
-
-static const struct snd_kcontrol_new ext_ec_ref_mux_ul8 =
-	SOC_DAPM_ENUM_EXT("AUDIO_REF_EC_UL8 MUX Mux",
-		msm_route_ec_ref_rx_enum[0],
-		msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put);
-
-static const struct snd_kcontrol_new ext_ec_ref_mux_ul9 =
-	SOC_DAPM_ENUM_EXT("AUDIO_REF_EC_UL9 MUX Mux",
-		msm_route_ec_ref_rx_enum[0],
-		msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put);
+static const struct snd_kcontrol_new ec_ref_rx_mixer_controls[] = {
+	SOC_ENUM_EXT("EC_REF_RX", msm_route_ec_ref_rx_enum[0],
+		     msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put),
+};
 
 static int msm_routing_ext_ec_get(struct snd_kcontrol *kcontrol,
 				  struct snd_ctl_elem_value *ucontrol)
@@ -1680,7 +1621,7 @@ static int msm_routing_ext_ec_put(struct snd_kcontrol *kcontrol,
 		msm_route_ext_ec_ref = AFE_PORT_INVALID;
 		break;
 	}
-	if (!voc_set_ext_ec_ref(msm_route_ext_ec_ref, state)) {
+	if (voc_set_ext_ec_ref(msm_route_ext_ec_ref, state)) {
 		mutex_unlock(&routing_lock);
 		snd_soc_dapm_mux_update_power(widget, kcontrol, 1, mux, e);
 	} else {
@@ -3022,7 +2963,6 @@ static const struct snd_kcontrol_new dolby_dap_param_end_point_controls[] = {
 int msm_routing_get_rms_value_control(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol) {
 	int rc = 0;
-	int be_idx = 0;
 	char *param_value;
 	int *update_param_value;
 	uint32_t param_length = sizeof(uint32_t);
@@ -3032,26 +2972,21 @@ int msm_routing_get_rms_value_control(struct snd_kcontrol *kcontrol,
 		pr_err("%s, param memory alloc failed\n", __func__);
 		return -ENOMEM;
 	}
-	for (be_idx = 0; be_idx < MSM_BACKEND_DAI_MAX; be_idx++)
-		if (msm_bedais[be_idx].port_id == SLIMBUS_0_TX)
-			break;
-	if ((be_idx < MSM_BACKEND_DAI_MAX) && msm_bedais[be_idx].active) {
-		rc = adm_get_params(SLIMBUS_0_TX,
-				RMS_MODULEID_APPI_PASSTHRU,
-				RMS_PARAM_FIRST_SAMPLE,
-				param_length + param_payload_len,
-				param_value);
-		if (rc) {
-			pr_err("%s: get parameters failed\n", __func__);
-			kfree(param_value);
-			return -EINVAL;
-		}
-		update_param_value = (int *)param_value;
-		ucontrol->value.integer.value[0] = update_param_value[0];
-
-		pr_debug("%s: FROM DSP value[0] 0x%x\n",
-			  __func__, update_param_value[0]);
+	rc = adm_get_params(SLIMBUS_0_TX,
+			RMS_MODULEID_APPI_PASSTHRU,
+			RMS_PARAM_FIRST_SAMPLE,
+			param_length + param_payload_len,
+			param_value);
+	if (rc) {
+		pr_err("%s: get parameters failed\n", __func__);
+		kfree(param_value);
+		return -EINVAL;
 	}
+	update_param_value = (int *)param_value;
+	ucontrol->value.integer.value[0] = update_param_value[0];
+
+	pr_debug("%s: FROM DSP value[0] 0x%x\n",
+		__func__, update_param_value[0]);
 	kfree(param_value);
 	return 0;
 }
@@ -3546,10 +3481,10 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets[] = {
 	mmul4_mixer_controls, ARRAY_SIZE(mmul4_mixer_controls)),
 	SND_SOC_DAPM_MIXER("MultiMedia5 Mixer", SND_SOC_NOPM, 0, 0,
 	mmul5_mixer_controls, ARRAY_SIZE(mmul5_mixer_controls)),
-	SND_SOC_DAPM_MIXER("MultiMedia6 Mixer", SND_SOC_NOPM, 0, 0,
-	mmul6_mixer_controls, ARRAY_SIZE(mmul6_mixer_controls)),
 	SND_SOC_DAPM_MIXER("MultiMedia8 Mixer", SND_SOC_NOPM, 0, 0,
 	mmul8_mixer_controls, ARRAY_SIZE(mmul8_mixer_controls)),
+	SND_SOC_DAPM_MIXER("MultiMedia6 Mixer", SND_SOC_NOPM, 0, 0,
+	mmul6_mixer_controls, ARRAY_SIZE(mmul6_mixer_controls)),
 #ifdef CONFIG_JACK_AUDIO	
 	SND_SOC_DAPM_MIXER("MultiMedia10 Mixer", SND_SOC_NOPM, 0, 0,
 	mmul10_mixer_controls, ARRAY_SIZE(mmul10_mixer_controls)),	
@@ -3677,20 +3612,7 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets[] = {
 				&slim0_rx_vi_fb_lch_mux),
 	SND_SOC_DAPM_MUX("VOC_EXT_EC MUX", SND_SOC_NOPM, 0, 0,
 			 &voc_ext_ec_mux),
-	SND_SOC_DAPM_MUX("AUDIO_REF_EC_UL1 MUX", SND_SOC_NOPM, 0, 0,
-		&ext_ec_ref_mux_ul1),
-	SND_SOC_DAPM_MUX("AUDIO_REF_EC_UL2 MUX", SND_SOC_NOPM, 0, 0,
-		&ext_ec_ref_mux_ul2),
-	SND_SOC_DAPM_MUX("AUDIO_REF_EC_UL4 MUX", SND_SOC_NOPM, 0, 0,
-		&ext_ec_ref_mux_ul4),
-	SND_SOC_DAPM_MUX("AUDIO_REF_EC_UL5 MUX", SND_SOC_NOPM, 0, 0,
-		&ext_ec_ref_mux_ul5),
-	SND_SOC_DAPM_MUX("AUDIO_REF_EC_UL6 MUX", SND_SOC_NOPM, 0, 0,
-		&ext_ec_ref_mux_ul6),
-	SND_SOC_DAPM_MUX("AUDIO_REF_EC_UL8 MUX", SND_SOC_NOPM, 0, 0,
-		&ext_ec_ref_mux_ul8),
-	SND_SOC_DAPM_MUX("AUDIO_REF_EC_UL9 MUX", SND_SOC_NOPM, 0, 0,
-		&ext_ec_ref_mux_ul9),
+
 };
 
 static const struct snd_soc_dapm_route intercon[] = {
@@ -3887,8 +3809,8 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"MM_UL2", NULL, "MultiMedia2 Mixer"},
 	{"MM_UL4", NULL, "MultiMedia4 Mixer"},
 	{"MM_UL5", NULL, "MultiMedia5 Mixer"},
-	{"MM_UL6", NULL, "MultiMedia6 Mixer"},
 	{"MM_UL8", NULL, "MultiMedia8 Mixer"},
+	{"MM_UL6", NULL, "MultiMedia6 Mixer"},
 #ifdef CONFIG_JACK_AUDIO
 	{"MM_UL10", NULL, "MultiMedia10 Mixer"},
 #endif	
@@ -4020,49 +3942,6 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"VOC_EXT_EC MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
 	{"VOC_EXT_EC MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
 	{"CS-VOICE_UL1", NULL, "VOC_EXT_EC MUX"},
-
-	{"AUDIO_REF_EC_UL1 MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
-	{"AUDIO_REF_EC_UL1 MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
-	{"AUDIO_REF_EC_UL1 MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
-	{"AUDIO_REF_EC_UL1 MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
-
-	{"AUDIO_REF_EC_UL2 MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
-	{"AUDIO_REF_EC_UL2 MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
-	{"AUDIO_REF_EC_UL2 MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
-	{"AUDIO_REF_EC_UL2 MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
-
-	{"AUDIO_REF_EC_UL4 MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
-	{"AUDIO_REF_EC_UL4 MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
-	{"AUDIO_REF_EC_UL4 MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
-	{"AUDIO_REF_EC_UL4 MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
-
-	{"AUDIO_REF_EC_UL5 MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
-	{"AUDIO_REF_EC_UL5 MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
-	{"AUDIO_REF_EC_UL5 MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
-	{"AUDIO_REF_EC_UL5 MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
-
-	{"AUDIO_REF_EC_UL6 MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
-	{"AUDIO_REF_EC_UL6 MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
-	{"AUDIO_REF_EC_UL6 MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
-	{"AUDIO_REF_EC_UL6 MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
-
-	{"AUDIO_REF_EC_UL8 MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
-	{"AUDIO_REF_EC_UL8 MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
-	{"AUDIO_REF_EC_UL8 MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
-	{"AUDIO_REF_EC_UL8 MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
-
-	{"AUDIO_REF_EC_UL9 MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
-	{"AUDIO_REF_EC_UL9 MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
-	{"AUDIO_REF_EC_UL9 MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
-	{"AUDIO_REF_EC_UL9 MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
-
-	{"MM_UL1", NULL, "AUDIO_REF_EC_UL1 MUX"},
-	{"MM_UL2", NULL, "AUDIO_REF_EC_UL2 MUX"},
-	{"MM_UL4", NULL, "AUDIO_REF_EC_UL4 MUX"},
-	{"MM_UL5", NULL, "AUDIO_REF_EC_UL5 MUX"},
-	{"MM_UL6", NULL, "AUDIO_REF_EC_UL6 MUX"},
-	{"MM_UL8", NULL, "AUDIO_REF_EC_UL8 MUX"},
-	{"MM_UL9", NULL, "AUDIO_REF_EC_UL9 MUX"},
 
 	{"Voice_Tx Mixer", "PRI_TX_Voice", "PRI_I2S_TX"},
 	{"Voice_Tx Mixer", "PRI_MI2S_TX_Voice", "PRI_MI2S_TX"},
@@ -4535,6 +4414,10 @@ static int msm_routing_probe(struct snd_soc_platform *platform)
 	snd_soc_add_platform_controls(platform,
 				dolby_dap_param_end_point_controls,
 			ARRAY_SIZE(dolby_dap_param_end_point_controls));
+
+	snd_soc_add_platform_controls(platform,
+				ec_ref_rx_mixer_controls,
+			ARRAY_SIZE(ec_ref_rx_mixer_controls));
 
 	snd_soc_add_platform_controls(platform,
 				get_rms_controls,
