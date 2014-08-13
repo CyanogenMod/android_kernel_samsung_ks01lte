@@ -795,11 +795,17 @@ config QPNP_MISC
 config SEC_MISC
 	bool "Samsung P series miscellaneous driver"
 	default n
-	---help---
+	help
 	  Samsung P series miscellaneous driver
 	  This creates sys fs entries for changing
 	  debug levels. The debug level is stored in
 	  Param partition
+
+config GAMMA_CONTROL
+        bool "Gamma Control for OLED"
+        default y
+        help
+          This adds full support for shifting RGB panel colors.
 
 config SAMSUNG_JACK
 	bool "3.5 PI Jack driver for Samsung devices"

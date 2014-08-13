@@ -250,5 +250,7 @@ struct SMART_DIM {
 	int ldi_revision;
 } __packed;
 
+static int smart_dimming_init(struct SMART_DIM *psmart);
+
 #endif
 
