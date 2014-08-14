@@ -149,6 +149,7 @@ int wifi_platform_set_power(wifi_adapter_info_t *adapter, bool on, unsigned long
 	plat_data = adapter->wifi_plat_data;
 
 	DHD_ERROR(("%s = %d\n", __FUNCTION__, on));
+	
 	if (plat_data->set_power) {
 #ifdef ENABLE_4335BT_WAR
 		if (on) {
