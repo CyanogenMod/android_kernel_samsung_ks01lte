@@ -336,6 +336,13 @@ config SEC_LOGGER_BUFFER_EXPANSION
 	help
 	  This is used to expand buffers of logger.
 	  This feature is enabled in defconfig.
+
+config SEC_LOGGER_BUFFER_EXPANSION_SIZE
+        int "Samsung Logger Buffer Expansion Size(MB)"
+        depends on SEC_LOGGER_BUFFER_EXPANSION
+        default 2
+        help
+          This is used to expand main buffer of logger(MB).
 endif
 config SEC_DEBUG_USER
 	bool "Panic on Userspace fault"

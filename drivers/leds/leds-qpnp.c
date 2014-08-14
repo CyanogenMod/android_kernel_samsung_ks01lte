@@ -134,13 +134,14 @@
 #define FLASH_ENABLE_LED_1		0xA0
 #define FLASH_INIT_MASK			0xE0
 #define	FLASH_SELFCHECK_ENABLE		0x80
+#define FLASH_WATCHDOG_MASK 0x1F
 #define FLASH_RAMP_STEP_27US		0xBF
 
-#define FLASH_HW_SW_STROBE_SEL_MASK	0x04
+#define FLASH_HW_SW_STROBE_SEL_MASK 0x04
 #define FLASH_STROBE_MASK		0xC7
 #define FLASH_LED_0_OUTPUT		0x80
 #define FLASH_LED_1_OUTPUT		0x40
-#define FLASH_TORCH_OUTPUT		0xC0
+#define FLASH_TORCH_OUTPUT 0xC0
 
 #define FLASH_CURRENT_PRGM_MIN		1
 #define FLASH_CURRENT_PRGM_SHIFT	1
@@ -148,6 +149,7 @@
 #define FLASH_CURRENT_TORCH		0x07
 
 #define FLASH_DURATION_200ms		0x13
+#define TORCH_DURATION_12s 0x0A
 #define FLASH_CLAMP_200mA		0x0F
 
 #define FLASH_TORCH_MASK		0x03
@@ -169,8 +171,8 @@
 #define RGB_LED_ATC_CTL(base)		(base + 0x47)
 
 #define RGB_MAX_LEVEL			LED_FULL
-#define RGB_MAX_LEVEL_N2_MENU		130
-#define RGB_MAX_LEVEL_N2_BACK		150
+#define RGB_MAX_LEVEL_N2_MENU		120
+#define RGB_MAX_LEVEL_N2_BACK		125
 #define RGB_MAX_LEVEL_N1		110
 #define RGB_MAX_LEVEL_V1		75
 #define RGB_LED_ENABLE_RED		0x80
@@ -231,6 +233,11 @@
 #define SAMSUNG_LED_PATTERN 1
 #endif
 
+#define SAMSUNG_TKEY_LED_BRIGHTNESS  90
+#if defined(CONFIG_SEC_AFYON_PROJECT) || defined(CONFIG_SEC_ATLANTIC_PROJECT)
+#define SAMSUNG_USE_EXTERNAL_CHARGER
+#endif
+
 /**
  * enum qpnp_leds - QPNP supported led ids
  * @QPNP_ID_WLED - White led backlight
@@ -264,7 +271,7 @@ enum wled_ovp_threshold {
 	WLED_OVP_35V,
 	WLED_OVP_32V,
 	WLED_OVP_29V,
-	WLED_OVP_27V,
+	WLED_OVP_37V,
 };
 
 enum flash_headroom {
@@ -442,8 +449,10 @@ struct flash_config_data {
 	bool	flash_reg_get;
 	bool	flash_on;
 	bool	torch_on;
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
 	struct regulator *flash_boost_reg;
 	struct regulator *torch_boost_reg;
+#endif
 };
 
 /**
@@ -753,9 +762,28 @@ static struct patt_registry led_blink_patt[] = {
 
 
 #endif
-
-static int
-qpnp_led_masked_write(struct qpnp_led_data *led, u16 addr, u8 mask, u8 val)
+#ifdef SAMSUNG_USE_EXTERNAL_CHARGER
+static int qpnp_led_masked_write_new(struct qpnp_led_data *led, u16 addr, u8 mask, u8 val)
+{
+	int rc;
+	u8 reg;
+	rc = spmi_ext_register_readl(led->spmi_dev->ctrl, 0,
+		addr, &reg, 1);
+	if (rc) {
+		dev_err(&led->spmi_dev->dev,
+			"Unable to read from addr=%x, rc(%d)\n", addr, rc);
+	}
+	reg &= ~mask;
+	reg |= val;
+	rc = spmi_ext_register_writel(led->spmi_dev->ctrl, 0,
+		addr, &reg, 1);
+	if (rc)
+		dev_err(&led->spmi_dev->dev,
+			"Unable to write to addr=%x, rc(%d)\n", addr, rc);
+	return rc;
+}
+#endif
+static int qpnp_led_masked_write(struct qpnp_led_data *led, u16 addr, u8 mask, u8 val)
 {
 	int rc;
 	u8 reg;
@@ -786,15 +814,41 @@ static void qpnp_dump_regs(struct qpnp_led_data *led, u8 regs[], u8 array_size)
 	pr_debug("===== %s LED register dump start =====\n", led->cdev.name);
 	for (i = 0; i < array_size; i++) {
 		spmi_ext_register_readl(led->spmi_dev->ctrl,
-					led->spmi_dev->sid,
-					led->base + regs[i],
-					&val, sizeof(val));
+				led->spmi_dev->sid,
+				led->base + regs[i],
+				&val, sizeof(val));
 		pr_debug("%s: 0x%x = 0x%x\n", led->cdev.name,
-					led->base + regs[i], val);
+				led->base + regs[i], val);
 	}
 	pr_debug("===== %s LED register dump end =====\n", led->cdev.name);
 }
+#ifdef SAMSUNG_USE_EXTERNAL_CHARGER
+#define USB_SUSPEND_BIT	BIT(0)
+static void qpnp_flash_reg_en(struct qpnp_led_data *led, bool enable)
+{
+    if(enable)
+    {
+	qpnp_led_masked_write_new(led,  0x1347, USB_SUSPEND_BIT, USB_SUSPEND_BIT);
+	qpnp_led_masked_write_new(led,  0x13D0, 0xFF, 0xA5);
+	qpnp_led_masked_write_new(led,  0x13EA, 0xFF, 0x2F);
+	qpnp_led_masked_write_new(led,  0x1546, 0x80, 0x80);
+    }
+    else
+    {
+	qpnp_led_masked_write_new(led,  0x1546, 0x80, 0x00);
+	qpnp_led_masked_write_new(led,  0x10D0, 0xFF, 0xA5);
+	qpnp_led_masked_write_new(led,  0x10EA, 0xFF, 0x20);
+	usleep(2000);
+	qpnp_led_masked_write_new(led,  0x10D0, 0xFF, 0xA5);
+	qpnp_led_masked_write_new(led,  0x10EA, 0xFF, 0x00);
+	qpnp_led_masked_write_new(led,  0x13D0, 0xFF, 0xA5);
+	qpnp_led_masked_write_new(led,  0x13EA, 0xFF, 0x00);
+	usleep(1000);
+	qpnp_led_masked_write_new(led,  0x1347, USB_SUSPEND_BIT, 0x0);
+    }
 
+}
+#endif
 static int qpnp_wled_sync(struct qpnp_led_data *led)
 {
 	int rc;
@@ -1087,50 +1141,64 @@ static int qpnp_flash_regulator_operate(struct qpnp_led_data *led, bool on)
 		goto regulator_turn_off;
 
 	if (!regulator_on && !led->flash_cfg->flash_on) {
-		for (i = 0; i < led->num_leds; i++) {
-			if (led_array[i].flash_cfg->flash_reg_get) {
-				rc = regulator_enable(
-					led_array[i].flash_cfg->\
-					flash_boost_reg);
-				if (rc) {
-					dev_err(&led->spmi_dev->dev,
-						"Regulator enable failed(%d)\n",
-									rc);
-					return rc;
-				}
-				led->flash_cfg->flash_on = true;
-			}
-			break;
+	    for (i = 0; i < led->num_leds; i++) {
+#ifdef SAMSUNG_USE_EXTERNAL_CHARGER
+		qpnp_flash_reg_en(led, true);
+#else
+		if (led_array[i].flash_cfg->flash_reg_get) {
+		    rc = regulator_enable(
+			    led_array[i].flash_cfg->\
+			    flash_boost_reg);
+		    if (rc) {
+			dev_err(&led->spmi_dev->dev,
+				"Regulator enable failed(%d)\n",
+				rc);
+			return rc;
+		    }
+#endif
+		    led->flash_cfg->flash_on = true;
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
 		}
+#endif
+		break;
+	    }
 	}
 
 	return 0;
 
 regulator_turn_off:
 	if (regulator_on && led->flash_cfg->flash_on) {
-		for (i = 0; i < led->num_leds; i++) {
-			if (led_array[i].flash_cfg->flash_reg_get) {
-				rc = qpnp_led_masked_write(led,
-					FLASH_ENABLE_CONTROL(led->base),
-					FLASH_ENABLE_MASK,
-					FLASH_DISABLE_ALL);
-				if (rc) {
-					dev_err(&led->spmi_dev->dev,
-						"Enable reg write failed(%d)\n",
-						rc);
-				}
-
-				rc = regulator_disable(led_array[i].flash_cfg->\
-							flash_boost_reg);
-				if (rc) {
-					dev_err(&led->spmi_dev->dev,
-						"Regulator disable failed(%d)\n",
-									rc);
-					return rc;
-				}
-				led->flash_cfg->flash_on = false;
-			}
-			break;
+	    for (i = 0; i < led->num_leds; i++) {
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
+		if (led_array[i].flash_cfg->flash_reg_get) {
+#endif
+		    rc = qpnp_led_masked_write(led,
+			    FLASH_ENABLE_CONTROL(led->base),
+			    FLASH_ENABLE_MASK,
+			    FLASH_DISABLE_ALL);
+		    if (rc) {
+			dev_err(&led->spmi_dev->dev,
+				"Enable reg write failed(%d)\n",
+				rc);
+		    }
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
+		    rc = regulator_disable(led_array[i].flash_cfg->\
+			    flash_boost_reg);
+		    if (rc) {
+			dev_err(&led->spmi_dev->dev,
+				"Regulator disable failed(%d)\n",
+				rc);
+			return rc;
+		    }
+#endif
+#ifdef SAMSUNG_USE_EXTERNAL_CHARGER
+		    qpnp_flash_reg_en(led,false);
+#endif
+		    led->flash_cfg->flash_on = false;
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
+		}
+#endif
+		break;
 		}
 	}
 
@@ -1139,40 +1207,49 @@ regulator_turn_off:
 
 static int qpnp_torch_regulator_operate(struct qpnp_led_data *led, bool on)
 {
-	int rc;
+    int rc;
 
-	if (!on)
-		goto regulator_turn_off;
+    if (!on)
+	goto regulator_turn_off;
 
-	if (!led->flash_cfg->torch_on) {
-		rc = regulator_enable(led->flash_cfg->torch_boost_reg);
-		if (rc) {
-			dev_err(&led->spmi_dev->dev,
-				"Regulator enable failed(%d)\n", rc);
-				return rc;
-		}
-		led->flash_cfg->torch_on = true;
+    if (!led->flash_cfg->torch_on) {
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
+	rc = regulator_enable(led->flash_cfg->torch_boost_reg);
+	if (rc) {
+	    dev_err(&led->spmi_dev->dev,
+		    "Regulator enable failed(%d)\n", rc);
+	    return rc;
 	}
-	return 0;
+#endif
+#ifdef SAMSUNG_USE_EXTERNAL_CHARGER
+	qpnp_flash_reg_en(led,true);
+#endif
+	led->flash_cfg->torch_on = true;
+    }
+    return 0;
 
 regulator_turn_off:
-	if (led->flash_cfg->torch_on) {
-		rc = qpnp_led_masked_write(led,	FLASH_ENABLE_CONTROL(led->base),
-				FLASH_ENABLE_MODULE_MASK, FLASH_DISABLE_ALL);
-		if (rc) {
-			dev_err(&led->spmi_dev->dev,
-				"Enable reg write failed(%d)\n", rc);
-		}
-
-		rc = regulator_disable(led->flash_cfg->torch_boost_reg);
-		if (rc) {
-			dev_err(&led->spmi_dev->dev,
-				"Regulator disable failed(%d)\n", rc);
-			return rc;
-		}
-		led->flash_cfg->torch_on = false;
+    if (led->flash_cfg->torch_on) {
+	rc = qpnp_led_masked_write(led,	FLASH_ENABLE_CONTROL(led->base),
+		FLASH_ENABLE_MODULE_MASK, FLASH_DISABLE_ALL);
+	if (rc) {
+	    dev_err(&led->spmi_dev->dev,
+		    "Enable reg write failed(%d)\n", rc);
 	}
-	return 0;
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
+	rc = regulator_disable(led->flash_cfg->torch_boost_reg);
+	if (rc) {
+	    dev_err(&led->spmi_dev->dev,
+		    "Regulator disable failed(%d)\n", rc);
+	    return rc;
+	}
+#endif
+#ifdef SAMSUNG_USE_EXTERNAL_CHARGER
+	qpnp_flash_reg_en(led,false);
+#endif
+	led->flash_cfg->torch_on = false;
+    }
+    return 0;
 }
 
 static int qpnp_flash_set(struct qpnp_led_data *led)
@@ -1271,12 +1348,9 @@ static int qpnp_flash_set(struct qpnp_led_data *led)
 			}
 
 			if (!led->flash_cfg->strobe_type)
-				led->flash_cfg->trigger_flash &=
-						~FLASH_HW_SW_STROBE_SEL_MASK;
+				led->flash_cfg->trigger_flash &= ~FLASH_HW_SW_STROBE_SEL_MASK;
 			else
-				led->flash_cfg->trigger_flash |=
-						FLASH_HW_SW_STROBE_SEL_MASK;
-
+				led->flash_cfg->trigger_flash |= FLASH_HW_SW_STROBE_SEL_MASK;
 			rc = qpnp_led_masked_write(led,
 				FLASH_LED_STROBE_CTRL(led->base),
 				led->flash_cfg->trigger_flash,
@@ -1357,21 +1431,15 @@ static int qpnp_flash_set(struct qpnp_led_data *led)
 			usleep(FLASH_RAMP_UP_DELAY_US);
 
 			if (!led->flash_cfg->strobe_type)
-				led->flash_cfg->trigger_flash &=
-						~FLASH_HW_SW_STROBE_SEL_MASK;
+				led->flash_cfg->trigger_flash &= ~FLASH_HW_SW_STROBE_SEL_MASK;
 			else
-				led->flash_cfg->trigger_flash |=
-						FLASH_HW_SW_STROBE_SEL_MASK;
-
-			rc = qpnp_led_masked_write(led,
-				FLASH_LED_STROBE_CTRL(led->base),
-				led->flash_cfg->trigger_flash,
-				led->flash_cfg->trigger_flash);
-			if (rc) {
-				dev_err(&led->spmi_dev->dev,
-				"LED %d strobe reg write failed(%d)\n",
-				led->id, rc);
-				goto error_flash_set;
+				led->flash_cfg->trigger_flash |= FLASH_HW_SW_STROBE_SEL_MASK;
+			rc = qpnp_led_masked_write(led, FLASH_LED_STROBE_CTRL(led->base), led->flash_cfg->trigger_flash, led->flash_cfg->trigger_flash);
+				if (rc) {
+					dev_err(&led->spmi_dev->dev,
+					"LED %d strobe reg write failed(%d)\n",
+					led->id, rc);
+					goto error_flash_set;
 			}
 		}
 	} else {
@@ -1389,6 +1457,7 @@ static int qpnp_flash_set(struct qpnp_led_data *led)
 		}
 
 		if (led->flash_cfg->torch_enable) {
+
 			rc = qpnp_led_masked_write(led,
 				FLASH_LED_UNLOCK_SECURE(led->base),
 				FLASH_SECURE_MASK, FLASH_UNLOCK_SECURE);
@@ -1397,7 +1466,6 @@ static int qpnp_flash_set(struct qpnp_led_data *led)
 					"Secure reg write failed(%d)\n", rc);
 				goto error_torch_set;
 			}
-
 			rc = qpnp_led_masked_write(led,
 					FLASH_LED_TORCH(led->base),
 					FLASH_TORCH_MASK,
@@ -1634,8 +1702,15 @@ static void qpnp_led_set(struct led_classdev *led_cdev,
 
 	if (value > led->cdev.max_brightness)
 		value = led->cdev.max_brightness;
-
+#ifdef CONFIG_MACH_AFYONLTE_TMO
+	pr_info("[LED]%s: %s value = %d\n", __func__, led_cdev->name, value);
+	if(strncmp(led_cdev->name, "button-backlight",  16))
+		led->cdev.brightness = value;
+	else
+		led->cdev.brightness = value?SAMSUNG_TKEY_LED_BRIGHTNESS:0;
+#else
 	led->cdev.brightness = value;
+#endif
 	schedule_work(&led->work);
 }
 
@@ -1807,7 +1882,7 @@ static int __devinit qpnp_wled_init(struct qpnp_led_data *led)
 	num_wled_strings = led->wled_cfg->num_strings;
 
 	/* verify ranges */
-	if (led->wled_cfg->ovp_val > WLED_OVP_27V) {
+	if (led->wled_cfg->ovp_val > WLED_OVP_37V) {
 		dev_err(&led->spmi_dev->dev, "Invalid ovp value\n");
 		return -EINVAL;
 	}
@@ -1923,15 +1998,6 @@ static int __devinit qpnp_wled_init(struct qpnp_led_data *led)
 			return rc;
 		}
 
-	}
-
-	/* Reset WLED enable register */
-	rc = qpnp_led_masked_write(led, WLED_MOD_CTRL_REG(led->base),
-		WLED_8_BIT_MASK, WLED_BOOST_OFF);
-	if (rc) {
-		dev_err(&led->spmi_dev->dev,
-			"WLED write ctrl reg failed(%d)\n", rc);
-		return rc;
 	}
 
 	/* dump wled registers */
@@ -2991,130 +3057,139 @@ static int __devinit qpnp_get_config_flash(struct qpnp_led_data *led,
 		led->flash_cfg->enable_module = FLASH_ENABLE_LED_0;
 		led->flash_cfg->current_addr = FLASH_LED_0_CURR(led->base);
 		led->flash_cfg->trigger_flash = FLASH_LED_0_OUTPUT;
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
 		if (!*reg_set) {
-			led->flash_cfg->flash_boost_reg =
-				regulator_get(&led->spmi_dev->dev,
-							"flash-boost");
-			if (IS_ERR(led->flash_cfg->flash_boost_reg)) {
-				rc = PTR_ERR(led->flash_cfg->flash_boost_reg);
-				dev_err(&led->spmi_dev->dev,
-					"Regulator get failed(%d)\n", rc);
-				goto error_get_flash_reg;
-			}
-			led->flash_cfg->flash_reg_get = true;
-			*reg_set = true;
+		    led->flash_cfg->flash_boost_reg =
+			regulator_get(&led->spmi_dev->dev,
+				"flash-boost");
+		    if (IS_ERR(led->flash_cfg->flash_boost_reg)) {
+			rc = PTR_ERR(led->flash_cfg->flash_boost_reg);
+			dev_err(&led->spmi_dev->dev,
+				"Regulator get failed(%d)\n", rc);
+			goto error_get_flash_reg;
+		    }
+		    led->flash_cfg->flash_reg_get = true;
+		    *reg_set = true;
 		} else
-			led->flash_cfg->flash_reg_get = false;
-
+		    led->flash_cfg->flash_reg_get = false;
+#endif
 		if (led->flash_cfg->torch_enable) {
-			led->flash_cfg->second_addr =
-						FLASH_LED_1_CURR(led->base);
+		    led->flash_cfg->second_addr =
+			FLASH_LED_1_CURR(led->base);
 		}
 	} else if (led->id == QPNP_ID_FLASH1_LED1) {
-		led->flash_cfg->enable_module = FLASH_ENABLE_LED_1;
-		led->flash_cfg->current_addr = FLASH_LED_1_CURR(led->base);
-		led->flash_cfg->trigger_flash = FLASH_LED_1_OUTPUT;
-		if (!*reg_set) {
-			led->flash_cfg->flash_boost_reg =
-					regulator_get(&led->spmi_dev->dev,
-								"flash-boost");
-			if (IS_ERR(led->flash_cfg->flash_boost_reg)) {
-				rc = PTR_ERR(led->flash_cfg->flash_boost_reg);
-				dev_err(&led->spmi_dev->dev,
-					"Regulator get failed(%d)\n", rc);
-				goto error_get_flash_reg;
-			}
-			led->flash_cfg->flash_reg_get = true;
-			*reg_set = true;
-		} else
-			led->flash_cfg->flash_reg_get = false;
-
-		if (led->flash_cfg->torch_enable) {
-			led->flash_cfg->second_addr =
-						FLASH_LED_0_CURR(led->base);
+	    led->flash_cfg->enable_module = FLASH_ENABLE_LED_1;
+	    led->flash_cfg->current_addr = FLASH_LED_1_CURR(led->base);
+	    led->flash_cfg->trigger_flash = FLASH_LED_1_OUTPUT;
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
+	    if (!*reg_set) {
+		led->flash_cfg->flash_boost_reg =
+		    regulator_get(&led->spmi_dev->dev,
+			    "flash-boost");
+		if (IS_ERR(led->flash_cfg->flash_boost_reg)) {
+		    rc = PTR_ERR(led->flash_cfg->flash_boost_reg);
+		    dev_err(&led->spmi_dev->dev,
+			    "Regulator get failed(%d)\n", rc);
+		    goto error_get_flash_reg;
 		}
+		led->flash_cfg->flash_reg_get = true;
+		*reg_set = true;
+	    } else
+		led->flash_cfg->flash_reg_get = false;
+#endif
+	    if (led->flash_cfg->torch_enable) {
+		led->flash_cfg->second_addr =
+		    FLASH_LED_0_CURR(led->base);
+	    }
 	} else {
-		dev_err(&led->spmi_dev->dev, "Unknown flash LED name given\n");
-		return -EINVAL;
+	    dev_err(&led->spmi_dev->dev, "Unknown flash LED name given\n");
+	    return -EINVAL;
 	}
 
 	if (led->flash_cfg->torch_enable) {
-		if (of_find_property(of_get_parent(node), "torch-boost-supply",
-									NULL)) {
-			led->flash_cfg->torch_boost_reg =
-				regulator_get(&led->spmi_dev->dev,
-								"torch-boost");
-			if (IS_ERR(led->flash_cfg->torch_boost_reg)) {
-				rc = PTR_ERR(led->flash_cfg->torch_boost_reg);
-				dev_err(&led->spmi_dev->dev,
-					"Torch regulator get failed(%d)\n", rc);
-				goto error_get_torch_reg;
-			}
-			led->flash_cfg->enable_module = FLASH_ENABLE_MODULE;
-		} else
-			led->flash_cfg->enable_module = FLASH_ENABLE_ALL;
-		led->flash_cfg->trigger_flash = FLASH_TORCH_OUTPUT;
-	}
-
-	rc = of_property_read_u32(node, "qcom,current", &val);
-	if (!rc) {
-		if (led->flash_cfg->torch_enable) {
-			led->flash_cfg->current_prgm = (val *
-				TORCH_MAX_LEVEL / led->max_current);
-			return 0;
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
+	    if (of_find_property(of_get_parent(node), "torch-boost-supply",
+			NULL)) {
+		led->flash_cfg->torch_boost_reg =
+		    regulator_get(&led->spmi_dev->dev,
+			    "torch-boost");
+		if (IS_ERR(led->flash_cfg->torch_boost_reg)) {
+		    rc = PTR_ERR(led->flash_cfg->torch_boost_reg);
+		    dev_err(&led->spmi_dev->dev,
+			    "Torch regulator get failed(%d)\n", rc);
+		    goto error_get_torch_reg;
 		}
-		else
-			led->flash_cfg->current_prgm = (val *
-				FLASH_MAX_LEVEL / led->max_current);
+#endif
+		led->flash_cfg->enable_module = FLASH_ENABLE_MODULE;
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
+	    } else
+#endif
+		led->flash_cfg->enable_module = FLASH_ENABLE_ALL;
+	    led->flash_cfg->trigger_flash = FLASH_TORCH_OUTPUT;
+	    }
+
+	    rc = of_property_read_u32(node, "qcom,current", &val);
+	    if (!rc) {
+		if (led->flash_cfg->torch_enable) {
+		led->flash_cfg->current_prgm = (val *
+			TORCH_MAX_LEVEL / led->max_current);
+	    return 0;
+		}
+	    else
+		led->flash_cfg->current_prgm = (val *
+			FLASH_MAX_LEVEL / led->max_current);
 	} else
 		if (led->flash_cfg->torch_enable)
 			goto error_get_torch_reg;
-		else
-			goto error_get_flash_reg;
+	    else
+		goto error_get_flash_reg;
 
 	rc = of_property_read_u32(node, "qcom,headroom", &val);
 	if (!rc)
-		led->flash_cfg->headroom = (u8) val;
+	    led->flash_cfg->headroom = (u8) val;
 	else if (rc == -EINVAL)
-		led->flash_cfg->headroom = HEADROOM_500mV;
+	    led->flash_cfg->headroom = HEADROOM_500mV;
 	else
 		goto error_get_flash_reg;
 
 	rc = of_property_read_u32(node, "qcom,duration", &val);
 	if (!rc)
-		led->flash_cfg->duration = (u8)((val - 10) / 10);
+		led->flash_cfg->duration = (((u8) val) - 10) / 10;
 	else if (rc == -EINVAL)
 		led->flash_cfg->duration = FLASH_DURATION_200ms;
 	else
-		goto error_get_flash_reg;
+	    goto error_get_flash_reg;
 
 	rc = of_property_read_u32(node, "qcom,clamp-curr", &val);
 	if (!rc)
-		led->flash_cfg->clamp_curr = (val *
-				FLASH_MAX_LEVEL / led->max_current);
+	    led->flash_cfg->clamp_curr = (val *
+		    FLASH_MAX_LEVEL / led->max_current);
 	else if (rc == -EINVAL)
-		led->flash_cfg->clamp_curr = FLASH_CLAMP_200mA;
+	    led->flash_cfg->clamp_curr = FLASH_CLAMP_200mA;
 	else
-		goto error_get_flash_reg;
+	    goto error_get_flash_reg;
 
 	rc = of_property_read_u32(node, "qcom,startup-dly", &val);
 	if (!rc)
-		led->flash_cfg->startup_dly = (u8) val;
+	    led->flash_cfg->startup_dly = (u8) val;
 	else if (rc == -EINVAL)
-		led->flash_cfg->startup_dly = DELAY_128us;
+	    led->flash_cfg->startup_dly = DELAY_128us;
 	else
-		goto error_get_flash_reg;
+	    goto error_get_flash_reg;
 
 	led->flash_cfg->safety_timer =
-		of_property_read_bool(node, "qcom,safety-timer");
+	    of_property_read_bool(node, "qcom,safety-timer");
 
 	return 0;
 
 error_get_torch_reg:
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
 	regulator_put(led->flash_cfg->torch_boost_reg);
-
+#endif
 error_get_flash_reg:
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
 	regulator_put(led->flash_cfg->flash_boost_reg);
+#endif
 	return rc;
 
 }
@@ -4086,71 +4161,73 @@ fail_id_check:
 
 static int __devexit qpnp_leds_remove(struct spmi_device *spmi)
 {
-	struct qpnp_led_data *led_array  = dev_get_drvdata(&spmi->dev);
-	int i, parsed_leds = led_array->num_leds;
+    struct qpnp_led_data *led_array  = dev_get_drvdata(&spmi->dev);
+    int i, parsed_leds = led_array->num_leds;
 
-	for (i = 0; i < parsed_leds; i++) {
-		cancel_work_sync(&led_array[i].work);
-		mutex_destroy(&led_array[i].lock);
-		led_classdev_unregister(&led_array[i].cdev);
-		switch (led_array[i].id) {
-		case QPNP_ID_WLED:
-			break;
-		case QPNP_ID_FLASH1_LED0:
-		case QPNP_ID_FLASH1_LED1:
-			if (led_array[i].flash_cfg->flash_reg_get)
-				regulator_put(led_array[i].flash_cfg-> \
-							flash_boost_reg);
-			if (led_array[i].flash_cfg->torch_enable)
-				regulator_put(led_array[i].flash_cfg->\
-							torch_boost_reg);
-			sysfs_remove_group(&led_array[i].cdev.dev->kobj,
-							&led_attr_group);
-			break;
-		case QPNP_ID_RGB_RED:
-		case QPNP_ID_RGB_GREEN:
-		case QPNP_ID_RGB_BLUE:
-			if (led_array[i].rgb_cfg->pwm_cfg->mode == PWM_MODE)
-				sysfs_remove_group(&led_array[i].cdev.dev->\
-					kobj, &pwm_attr_group);
-			if (led_array[i].rgb_cfg->pwm_cfg->use_blink) {
-				sysfs_remove_group(&led_array[i].cdev.dev->\
-					kobj, &blink_attr_group);
-				sysfs_remove_group(&led_array[i].cdev.dev->\
-					kobj, &lpg_attr_group);
-			} else if (led_array[i].rgb_cfg->pwm_cfg->mode\
-					== LPG_MODE)
-				sysfs_remove_group(&led_array[i].cdev.dev->\
-					kobj, &lpg_attr_group);
-			break;
-		case QPNP_ID_LED_MPP:
-			if (!led_array[i].mpp_cfg->pwm_cfg)
-				break;
-			if (led_array[i].mpp_cfg->pwm_cfg->mode == PWM_MODE)
-				sysfs_remove_group(&led_array[i].cdev.dev->\
-					kobj, &pwm_attr_group);
-			if (led_array[i].mpp_cfg->pwm_cfg->use_blink) {
-				sysfs_remove_group(&led_array[i].cdev.dev->\
-					kobj, &blink_attr_group);
-				sysfs_remove_group(&led_array[i].cdev.dev->\
-					kobj, &lpg_attr_group);
-			} else if (led_array[i].mpp_cfg->pwm_cfg->mode\
-					== LPG_MODE)
-				sysfs_remove_group(&led_array[i].cdev.dev->\
-					kobj, &lpg_attr_group);
-			break;
-		default:
-			dev_err(&led_array[i].spmi_dev->dev,
-					"Invalid LED(%d)\n",
-					led_array[i].id);
-			return -EINVAL;
-		}
+    for (i = 0; i < parsed_leds; i++) {
+	cancel_work_sync(&led_array[i].work);
+	mutex_destroy(&led_array[i].lock);
+	led_classdev_unregister(&led_array[i].cdev);
+	switch (led_array[i].id) {
+	    case QPNP_ID_WLED:
+		break;
+	    case QPNP_ID_FLASH1_LED0:
+	    case QPNP_ID_FLASH1_LED1:
+#ifndef SAMSUNG_USE_EXTERNAL_CHARGER
+		if (led_array[i].flash_cfg->flash_reg_get)
+		    regulator_put(led_array[i].flash_cfg-> \
+			    flash_boost_reg);
+		if (led_array[i].flash_cfg->torch_enable)
+		    regulator_put(led_array[i].flash_cfg->\
+			    torch_boost_reg);
+#endif
+		sysfs_remove_group(&led_array[i].cdev.dev->kobj,
+			&led_attr_group);
+		break;
+	    case QPNP_ID_RGB_RED:
+	    case QPNP_ID_RGB_GREEN:
+	    case QPNP_ID_RGB_BLUE:
+		if (led_array[i].rgb_cfg->pwm_cfg->mode == PWM_MODE)
+		    sysfs_remove_group(&led_array[i].cdev.dev->\
+			    kobj, &pwm_attr_group);
+		if (led_array[i].rgb_cfg->pwm_cfg->use_blink) {
+		    sysfs_remove_group(&led_array[i].cdev.dev->\
+			    kobj, &blink_attr_group);
+		    sysfs_remove_group(&led_array[i].cdev.dev->\
+			    kobj, &lpg_attr_group);
+		} else if (led_array[i].rgb_cfg->pwm_cfg->mode\
+			== LPG_MODE)
+		    sysfs_remove_group(&led_array[i].cdev.dev->\
+			    kobj, &lpg_attr_group);
+		break;
+	    case QPNP_ID_LED_MPP:
+		if (!led_array[i].mpp_cfg->pwm_cfg)
+		    break;
+		if (led_array[i].mpp_cfg->pwm_cfg->mode == PWM_MODE)
+		    sysfs_remove_group(&led_array[i].cdev.dev->\
+			    kobj, &pwm_attr_group);
+		if (led_array[i].mpp_cfg->pwm_cfg->use_blink) {
+		    sysfs_remove_group(&led_array[i].cdev.dev->\
+			    kobj, &blink_attr_group);
+		    sysfs_remove_group(&led_array[i].cdev.dev->\
+			    kobj, &lpg_attr_group);
+		} else if (led_array[i].mpp_cfg->pwm_cfg->mode\
+			== LPG_MODE)
+		    sysfs_remove_group(&led_array[i].cdev.dev->\
+			    kobj, &lpg_attr_group);
+		break;
+	    default:
+		dev_err(&led_array[i].spmi_dev->dev,
+			"Invalid LED(%d)\n",
+			led_array[i].id);
+		return -EINVAL;
 	}
+    }
 #ifdef SAMSUNG_LED_PATTERN
-	mutex_destroy(&leds_mutex_lock);
+    mutex_destroy(&leds_mutex_lock);
 #endif
 
-	return 0;
+    return 0;
 }
 
 #ifdef CONFIG_OF

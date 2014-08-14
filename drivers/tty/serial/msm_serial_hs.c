@@ -1228,6 +1228,8 @@ static void msm_hs_set_termios(struct uart_port *uport,
 				ret = wait_event_timeout(msm_uport->rx.wait,
 					msm_uport->rx_bam_inprogress == false,
 					RX_FLUSH_COMPLETE_TIMEOUT);
+			tasklet_kill(&msm_uport->tx.tlet);
+			tasklet_kill(&msm_uport->rx.tlet);
 			ret = sps_rx_disconnect(sps_pipe_handle);
 			if (ret)
 				MSM_HS_ERR("%s(): sps_disconnect failed\n",
@@ -2354,6 +2356,15 @@ void msm_hs_request_clock_on(struct uart_port *uport)
 }
 EXPORT_SYMBOL(msm_hs_request_clock_on);
 
+int msm_hs_get_clock_state(struct uart_port *uport)
+{
+       struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
+
+       return (int)msm_uport->clk_state;
+}
+EXPORT_SYMBOL(msm_hs_get_clock_state);
+
+
 static irqreturn_t msm_hs_wakeup_isr(int irq, void *dev)
 {
 	unsigned int wakeup = 0;
@@ -2676,7 +2687,7 @@ free_wake_irq:
 		irq_set_irq_wake(msm_uport->wakeup.irq, 0);
 sps_disconnect_rx:
 	if (is_blsp_uart(msm_uport))
-		sps_disconnect(sps_pipe_handle_rx);
+		sps_rx_disconnect(sps_pipe_handle_rx);
 sps_disconnect_tx:
 	if (is_blsp_uart(msm_uport))
 		sps_disconnect(sps_pipe_handle_tx);

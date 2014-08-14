@@ -714,7 +714,7 @@ int mmc_add_host(struct mmc_host *host)
 	err = pm_runtime_set_active(&host->class_dev);
 	if (err)
 		pr_err("%s: %s: failed setting runtime active: err: %d\n",
-		       mmc_hostname(host), __func__, err);
+				mmc_hostname(host), __func__, err);
 	else if (mmc_use_core_runtime_pm(host))
 		pm_runtime_enable(&host->class_dev);
 
@@ -722,7 +722,6 @@ int mmc_add_host(struct mmc_host *host)
 	if (err)
 		return err;
 
-	device_enable_async_suspend(&host->class_dev);
 	led_trigger_register_simple(dev_name(&host->class_dev), &host->led);
 
 #ifdef CONFIG_DEBUG_FS

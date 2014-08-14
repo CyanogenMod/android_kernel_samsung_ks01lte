@@ -1167,8 +1167,10 @@ static irqreturn_t msm_spi_input_irq(int irq, void *dev_id)
 		if ((!dd->read_buf || op & SPI_OP_MAX_INPUT_DONE_FLAG) &&
 		    (!dd->write_buf || op & SPI_OP_MAX_OUTPUT_DONE_FLAG)) {
 			msm_spi_ack_transfer(dd);
+			if (dd->rx_unaligned_len == 0) {
 				if (atomic_inc_return(&dd->rx_irq_called) == 1)
 					return IRQ_HANDLED;
+			}
 			msm_spi_complete(dd);
 			return IRQ_HANDLED;
 		}
@@ -2797,6 +2799,7 @@ int fp_spi_clock_set_rate(struct spi_device *spidev)
 
 	msm_spi_clock_set(dd, spidev->max_speed_hz);
 
+	pr_info("%s sucess\n", __func__);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(fp_spi_clock_set_rate);
@@ -2828,7 +2831,7 @@ int fp_spi_clock_enable(struct spi_device *spidev)
 		pr_err("%s: unable to enable iface_clk\n", __func__);
 		return rc;
 	}
-
+	pr_info("%s sucess\n", __func__);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(fp_spi_clock_enable);
@@ -2851,6 +2854,7 @@ int fp_spi_clock_disable(struct spi_device *spidev)
 	clk_disable_unprepare(dd->clk);
 	clk_disable_unprepare(dd->pclk);
 
+	pr_info("%s sucess\n", __func__);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(fp_spi_clock_disable);

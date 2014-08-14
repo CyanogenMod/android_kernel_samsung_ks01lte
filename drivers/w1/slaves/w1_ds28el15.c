@@ -17,10 +17,14 @@
 #include <linux/types.h>
 #include <linux/platform_device.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
 #include <linux/idr.h>
 #include <linux/delay.h>
 #include <linux/random.h>
 #include <linux/err.h>
+#include <linux/of.h>
+
+#include <linux/input.h>
 
 #include "../w1.h"
 #include "../w1_int.h"
@@ -97,6 +101,9 @@ static char special_values[2];
 static char rom_no[8];
 
 int verification = -1, id = 2, color;
+#ifdef CONFIG_SEC_H_PROJECT
+extern int verified;
+#endif
 
 #define READ_EOP_BYTE(seg) (32-seg*4)
 
@@ -1061,7 +1068,6 @@ int w1_ds28el15_read_authverify(struct w1_slave *sl, int page_num, uchar *challe
 	// have device compute mac
 	pbyte = anon ? 0xE0 : 0x00;
 	pbyte = pbyte | page_num;
-
 	while (i < RETRY_LIMIT) {
 		rslt = w1_ds28el15_compute_read_pageMAC(sl, pbyte, mac);
 		if (rslt == 0)
@@ -1442,6 +1448,27 @@ int w1_ds28el15_write_authblockprotection(struct w1_slave *sl, uchar *data)
 //-------------------------------------------------------------------------
 // get_array_value
 //
+#ifdef CONFIG_OF_SUBCMDLINE_PARSE
+static int get_array_value(void)
+{
+	int i, ret;
+	char str[20], *buf,  data;
+
+	pr_info("%s: W1 Read Array.\n", __func__);
+	ret = of_parse_args_on_subcmdline("array=",(char *)str);
+	if (ret) {
+		pr_err("%s: W1 Read Array Error\n", __func__);
+		return -1;
+	}
+	buf = str;
+	for(i=0;i<5;i++){
+		strncpy(&data,&buf[i*2],2);
+		sscanf(&data, "%x", (unsigned int *)&ret);
+		w1_array[i]=ret;
+	}
+	return 0;
+}
+#else
 static int __init get_array_value(char *str)
 {
 	int i, get[6];
@@ -1456,6 +1483,7 @@ static int __init get_array_value(char *str)
 	return 0;
 }
 __setup("array=", get_array_value);
+#endif
 
 
 //--------------------------------------------------------------------------
@@ -1481,7 +1509,10 @@ int w1_ds28el15_verifymac(struct w1_slave *sl)
 
 	rt = 0;
 
-	if(w1_array[0] == 0)	goto success;
+	if(w1_array[0] == 0) {
+		pr_info("%s: w1_array[0] == 0\n", __func__);
+		goto success;
+	}
 
 	// Store the master secret and romid.
 	set_secret(master_secret);
@@ -1777,17 +1808,17 @@ static void w1_ds28el15_update_slave_info(struct w1_slave *sl) {
 	if(ret != 0)
 		pr_info("%s : fail to get buffer %d\n", __func__, ret);
 
-	while((rdbuf[0] < ID_MIN) || (rdbuf[0] > ID_MAX) ||
-		(rdbuf[1] < CO_MIN) || (rdbuf[1] > CO_MAX)) {
+	while((rdbuf[0] < sl->id_min) || (rdbuf[0] > sl->id_max) ||
+		(rdbuf[1] < sl->color_min) || (rdbuf[1] > sl->color_max)) {
 		printk(KERN_ERR "%s: out of range : %d %d \n", __func__, rdbuf[0], rdbuf[1]);
 
 		if(retry > 10) {
 			printk(KERN_ERR "%s: out of range over 10 times.\n", __func__);
 
 			pr_info("%s: Change ID(%d) & Color(%d) to Default Value(%d, %d)",
-				__func__, rdbuf[0], rdbuf[1], ID_DEFAULT, CO_DEFAULT);
-			rdbuf[0] = ID_DEFAULT;
-			rdbuf[1] = CO_DEFAULT;
+				__func__, rdbuf[0], rdbuf[1], sl->id_default, sl->color_default);
+			rdbuf[0] = sl->id_default;
+			rdbuf[1] = sl->color_default;
 
 			break;
 		}
@@ -1807,6 +1838,45 @@ static void w1_ds28el15_update_slave_info(struct w1_slave *sl) {
 	pr_info("%s Read ID(%d) & Color(%d) & Verification State(%d)\n",
 			__func__, id, color, verification);
 }
+static int w1_parse_dt(struct w1_slave *sl)
+{
+	struct device_node* np;
+
+	np = of_find_node_by_path("/soc/ds28el15");
+	if (!np) {
+		pr_err("%s: get ds28el15 node failed\n", __func__);
+		return -ENODEV;
+	}
+	of_property_read_u32(np, "ds28el15,id-min", &sl->id_min);
+	of_property_read_u32(np, "ds28el15,id-max", &sl->id_max);
+	of_property_read_u32(np, "ds28el15,id-default", &sl->id_default);
+	of_property_read_u32(np, "ds28el15,color-min", &sl->color_min);
+	of_property_read_u32(np, "ds28el15,color-max", &sl->color_max);
+	of_property_read_u32(np, "ds28el15,color-default", &sl->color_default);
+	pr_info("%s : id min[%d] max[%d] default[%d]\n", __func__,
+			sl->id_min, sl->id_max, sl->id_default);
+	pr_info("%s : color min[%d] max[%d] default[%d]\n", __func__,
+			sl->color_min, sl->color_max, sl->color_default);
+
+	return 0;
+}
+
+static void w1_set_default_range(struct w1_slave *sl)
+{
+	pr_info("%s : get default range\n", __func__);
+
+	sl->id_min = ID_MIN;
+	sl->id_max = ID_MAX;
+	sl->id_default = ID_DEFAULT;
+	sl->color_min = CO_MIN;
+	sl->color_max = CO_MAX;
+	sl->color_default = CO_DEFAULT;
+
+	pr_info("%s : id min[%d] max[%d] default[%d]\n", __func__,
+			sl->id_min, sl->id_max, sl->id_default);
+	pr_info("%s : color min[%d] max[%d] default[%d]\n", __func__,
+			sl->color_min, sl->color_max, sl->color_default);
+}
 
 static int w1_ds28el15_add_slave(struct w1_slave *sl)
 {
@@ -1814,6 +1884,17 @@ static int w1_ds28el15_add_slave(struct w1_slave *sl)
 
 	printk(KERN_ERR "\nw1_ds28el15_add_slave start\n");
 
+	err = w1_parse_dt(sl);
+	if (err) {
+		printk(KERN_ERR "%s: w1_parse_dt error\n", __func__);
+		w1_set_default_range(sl);
+	}
+#ifdef CONFIG_OF_SUBCMDLINE_PARSE
+	err = get_array_value();
+	if (err) {
+		printk(KERN_ERR "%s: w1_get_array_value error\n", __func__);
+	}
+#endif
 	err = device_create_file(&sl->dev, &w1_read_user_eeprom_attr);
 	if (err) {
 		device_remove_file(&sl->dev, &w1_read_user_eeprom_attr);
@@ -1858,8 +1939,18 @@ static int w1_ds28el15_add_slave(struct w1_slave *sl)
 			printk(KERN_ERR "w1_ds28el15_verifymac\n");
 		}
 	}
+#ifdef CONFIG_SEC_H_PROJECT
+	pr_info("%s:verified(%d)", __func__, verified);
+	if(!verified)
+#else
 	if(!verification)
+#endif
+	{
+		pr_info("%s:uevent send 1\n", __func__);
+		input_report_switch(sl->master->bus_master->input, SW_W1, 1);
+		input_sync(sl->master->bus_master->input);
 		w1_ds28el15_update_slave_info(sl);
+	}
 
 	printk(KERN_ERR "w1_ds28el15_add_slave end, skip_setup=%d, err=%d\n", skip_setup, err);
 	return err;
@@ -1896,7 +1987,7 @@ static void __exit w1_ds28el15_exit(void)
 	w1_unregister_family(&w1_ds28el15_family);
 }
 
-module_init(w1_ds28el15_init);
+late_initcall(w1_ds28el15_init);
 module_exit(w1_ds28el15_exit);
 
 MODULE_LICENSE("GPL");

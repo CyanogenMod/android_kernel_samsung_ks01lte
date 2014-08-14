@@ -35,7 +35,7 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
-
+#include <linux/mmc/sdhci.h>
 #include "core.h"
 #include "bus.h"
 #include "host.h"
@@ -895,8 +895,7 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 			mmc_post_req(host, host->areq->mrq, 0);
 			host->areq = NULL;
 			if (areq) {
-				if (!(areq->cmd_flags &
-						MMC_REQ_NOREINSERT_MASK)) {
+				if (!(areq->cmd_flags & REQ_URGENT)) {
 					areq->reinsert_req(areq);
 					mmc_post_req(host, areq->mrq, 0);
 				} else {
@@ -1312,10 +1311,10 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card)
 		data->timeout_ns = 4000000000u; /* 4s */
 		data->timeout_clks = 0;
 	}
-	/* Some emmc cards require a longer read/write time */
+	/* Some eMMC cards require a longer read/write time */
 	if (card->quirks & MMC_QUIRK_BROKEN_DATA_TIMEOUT) {
-		if (data->timeout_ns <  4000000000u)
-			data->timeout_ns = 4000000000u;	/* 4s */
+		if (data->timeout_ns < 4000000000u)
+			data->timeout_ns = 4000000000u; /* 4s */
 	}
 }
 EXPORT_SYMBOL(mmc_set_data_timeout);
@@ -3078,11 +3077,23 @@ EXPORT_SYMBOL_GPL(mmc_exit_clk_scaling);
 
 static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 {
+#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_VIENNAATT) || defined(CONFIG_SEC_KSPORTS_PROJECT)
+	struct sdhci_host *sd_host = NULL;
+#endif
 	host->f_init = freq;
 
 #ifdef CONFIG_MMC_DEBUG
 	pr_info("%s: %s: trying to init card at %u Hz\n",
 		mmc_hostname(host), __func__, host->f_init);
+#endif
+#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_VIENNAATT) || defined(CONFIG_SEC_KSPORTS_PROJECT)
+	sd_host = (struct sdhci_host *)mmc_priv(host);
+	if (sd_host != NULL) {
+		if (sd_host->flags & SDHCI_DEVICE_DEAD) {
+			pr_err("%s: host(%s), SDHCI_DEVICE_DEAD so return! \n", __func__, mmc_hostname(host));
+			return -EIO;
+		}
+	}
 #endif
 	mmc_power_up(host);
 
@@ -3182,7 +3193,6 @@ void mmc_rescan(struct work_struct *work)
 		return;
 
 	mmc_bus_get(host);
-	mmc_rpm_hold(host, &host->class_dev);
 
 	/*
 	 * if there is a _removable_ card registered, check whether it is
@@ -3215,12 +3225,9 @@ void mmc_rescan(struct work_struct *work)
 
 	/* if there still is a card present, stop here */
 	if (host->bus_ops != NULL) {
-		mmc_rpm_release(host, &host->class_dev);
 		mmc_bus_put(host);
 		goto out;
 	}
-
-	mmc_rpm_release(host, &host->class_dev);
 
 	/*
 	 * Only we can add a new handler, so it's safe to
@@ -3252,7 +3259,8 @@ void mmc_start_host(struct mmc_host *host)
 	|| defined(CONFIG_MACH_FLTESKT) || defined(CONFIG_MACH_LT03SKT) || defined(CONFIG_MACH_LT03KTT) || defined(CONFIG_MACH_LT03LGT)\
 	|| defined(CONFIG_MACH_HLTEDCM) || defined(CONFIG_MACH_HLTEKDI) \
 	|| defined(CONFIG_MACH_JS01LTEDCM) || defined(CONFIG_MACH_JS01LTESBM) \
-	|| defined(CONFIG_MACH_H3GDUOS_CTC) || defined(CONFIG_MACH_H3GDUOS_CU)
+	|| defined(CONFIG_MACH_H3GDUOS_CTC) || defined(CONFIG_MACH_H3GDUOS_CU)\
+	|| defined(CONFIG_MACH_FRESCOLTESKT)||defined(CONFIG_MACH_FRESCOLTEKTT)||defined(CONFIG_MACH_FRESCOLTELGT)
 	if ((fw_dl_complete!=true) && (!strcmp(mmc_hostname(host),"mmc2"))){
 		pr_info("%s: %s: %d, Call mmc_rescan after 2sec\n",	mmc_hostname(host), __func__,fw_dl_complete);
 		mmc_detect_change(host, msecs_to_jiffies(2000));
@@ -3403,8 +3411,7 @@ int mmc_flush_cache(struct mmc_card *card)
 	struct mmc_host *host = card->host;
 	int err = 0, rc;
 
-	if (!(host->caps2 & MMC_CAP2_CACHE_CTRL) ||
-	     (card->quirks & MMC_QUIRK_CACHE_DISABLE))
+	if (!(host->caps2 & MMC_CAP2_CACHE_CTRL))
 		return err;
 
 	if (mmc_card_mmc(card) &&
@@ -3443,8 +3450,7 @@ int mmc_cache_ctrl(struct mmc_host *host, u8 enable)
 	int err = 0, rc;
 
 	if (!(host->caps2 & MMC_CAP2_CACHE_CTRL) ||
-			mmc_card_is_removable(host) ||
-			(card->quirks & MMC_QUIRK_CACHE_DISABLE))
+			mmc_card_is_removable(host))
 		return err;
 
 	if (card && mmc_card_mmc(card) &&

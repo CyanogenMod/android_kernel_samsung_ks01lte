@@ -291,7 +291,6 @@ int dwc3_gadget_ep0_set_halt(struct usb_ep *ep, int value)
 	struct dwc3_ep			*dep = to_dwc3_ep(ep);
 	struct dwc3			*dwc = dep->dwc;
 
-	dbg_event(dep->number, "EP0STAL", value);
 	dwc3_ep0_stall_and_restart(dwc);
 
 	return 0;
@@ -394,7 +393,6 @@ static int dwc3_ep0_handle_feature(struct dwc3 *dwc,
 	u32			recip;
 	u32			wValue;
 	u32			wIndex;
-	u32			reg;
 	int			ret;
 
 	wValue = le16_to_cpu(ctrl->wValue);
@@ -415,13 +413,6 @@ static int dwc3_ep0_handle_feature(struct dwc3 *dwc,
 				return -EINVAL;
 			if (dwc->speed != DWC3_DSTS_SUPERSPEED)
 				return -EINVAL;
-
-			reg = dwc3_readl(dwc->regs, DWC3_DCTL);
-			if (set)
-				reg |= DWC3_DCTL_INITU1ENA;
-			else
-				reg &= ~DWC3_DCTL_INITU1ENA;
-			dwc3_writel(dwc->regs, DWC3_DCTL, reg);
 			break;
 
 		case USB_DEVICE_U2_ENABLE:
@@ -429,13 +420,6 @@ static int dwc3_ep0_handle_feature(struct dwc3 *dwc,
 				return -EINVAL;
 			if (dwc->speed != DWC3_DSTS_SUPERSPEED)
 				return -EINVAL;
-
-			reg = dwc3_readl(dwc->regs, DWC3_DCTL);
-			if (set)
-				reg |= DWC3_DCTL_INITU2ENA;
-			else
-				reg &= ~DWC3_DCTL_INITU2ENA;
-			dwc3_writel(dwc->regs, DWC3_DCTL, reg);
 			break;
 
 		case USB_DEVICE_LTM_ENABLE:
@@ -540,7 +524,6 @@ static int dwc3_ep0_set_config(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 {
 	u32 cfg;
 	int ret;
-	u32 reg;
 
 	dwc->start_config_issued = false;
 	cfg = le16_to_cpu(ctrl->wValue);
@@ -555,14 +538,6 @@ static int dwc3_ep0_set_config(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 		/* if the cfg matches and the cfg is non zero */
 		if (cfg && (!ret || (ret == USB_GADGET_DELAYED_STATUS))) {
 			dwc->dev_state = DWC3_CONFIGURED_STATE;
-			/*
-			 * Enable transition to U1/U2 state when
-			 * nothing is pending from application.
-			 */
-			reg = dwc3_readl(dwc->regs, DWC3_DCTL);
-			reg |= (DWC3_DCTL_ACCEPTU1ENA | DWC3_DCTL_ACCEPTU2ENA);
-			dwc3_writel(dwc->regs, DWC3_DCTL, reg);
-
 			dwc->resize_fifos = true;
 			dev_dbg(dwc->dev, "resize fifos flag SET\n");
 		}
@@ -753,10 +728,8 @@ static void dwc3_ep0_inspect_setup(struct dwc3 *dwc,
 		dwc->delayed_status = true;
 
 out:
-	if (ret < 0) {
-		dbg_event(0x0, "ERRSTAL", ret);
+	if (ret < 0)
 		dwc3_ep0_stall_and_restart(dwc);
-	}
 }
 
 bool zlp_required;
@@ -822,7 +795,7 @@ static void dwc3_ep0_complete_data(struct dwc3 *dwc,
 
 	if ((epnum & 1) && ur->actual < ur->length) {
 		/* for some reason we did not get everything out */
-		dbg_event(epnum, "INDATSTAL", 0);
+
 		dwc3_ep0_stall_and_restart(dwc);
 	} else {
 		/*
@@ -858,7 +831,6 @@ static void dwc3_ep0_complete_status(struct dwc3 *dwc,
 		if (ret < 0) {
 			dev_dbg(dwc->dev, "Invalid Test #%d\n",
 					dwc->test_mode_nr);
-			dbg_event(0x00, "INVALTEST", ret);
 			dwc3_ep0_stall_and_restart(dwc);
 			return;
 		}
@@ -1038,7 +1010,6 @@ static void dwc3_ep0_xfernotready(struct dwc3 *dwc,
 
 			dev_vdbg(dwc->dev, "Wrong direction for Data phase\n");
 			dwc3_ep0_end_control_data(dwc, dep);
-			dbg_event(epnum, "WRONGDR", 0);
 			dwc3_ep0_stall_and_restart(dwc);
 			return;
 		}

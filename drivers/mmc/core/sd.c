@@ -504,6 +504,9 @@ static void sd_update_bus_speed_mode(struct mmc_card *card)
 	if ((card->host->caps & MMC_CAP_UHS_SDR104) &&
 	    (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR104) &&
 	    (card->host->f_max > UHS_SDR104_MIN_DTR)) {
+		if ((card->cid.manfid == 0x1b) && mmc_card_ext_capacity(card))
+			card->sd_bus_speed = UHS_SDR50_BUS_SPEED;
+		else
 			card->sd_bus_speed = UHS_SDR104_BUS_SPEED;
 	} else if ((card->host->caps & MMC_CAP_UHS_DDR50) &&
 		   (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_DDR50) &&

@@ -53,6 +53,7 @@ struct max77888_charger_data {
 	/* wakelock */
 	struct wake_lock recovery_wake_lock;
 	struct wake_lock wpc_wake_lock;
+	struct wake_lock chgin_wake_lock;
 
 	unsigned int	is_charging;
 	unsigned int	charging_type;
@@ -467,7 +468,7 @@ static void max77888_recovery_work(struct work_struct *work)
 				(chg_data->soft_reg_recovery_cnt + 1));
 		if (chg_data->siop_level < 100 &&
 			chg_data->cable_type == POWER_SUPPLY_TYPE_MAINS) {
-			pr_info("%s : LCD on status and revocer current\n", __func__);
+			pr_info("%s : LCD on status and recover current\n", __func__);
 			max77888_set_input_current(chg_data,
 					SIOP_INPUT_LIMIT_CURRENT);
 		} else {
@@ -1104,6 +1105,7 @@ static void max77888_chgin_isr_work(struct work_struct *work)
 	union power_supply_propval value;
 	int stable_count = 0;
 
+	wake_lock(&charger->chgin_wake_lock);
 	max77888_read_reg(charger->max77888->i2c,
 		MAX77888_CHG_REG_CHG_INT_MASK, &reg_data);
 	reg_data |= (1 << 6);
@@ -1189,6 +1191,7 @@ static void max77888_chgin_isr_work(struct work_struct *work)
 	reg_data &= ~(1 << 6);
 	max77888_write_reg(charger->max77888->i2c,
 		MAX77888_CHG_REG_CHG_INT_MASK, reg_data);
+	wake_unlock(&charger->chgin_wake_lock);
 }
 
 static irqreturn_t max77888_chgin_irq(int irq, void *data)
@@ -1398,6 +1401,8 @@ static __devinit int max77888_charger_probe(struct platform_device *pdev)
 		pr_err("%s: Fail to Create Workqueue\n", __func__);
 		goto err_free;
 	}
+	wake_lock_init(&charger->chgin_wake_lock, WAKE_LOCK_SUSPEND,
+			            "charger-chgin");
 	INIT_WORK(&charger->chgin_work, max77888_chgin_isr_work);
 	INIT_DELAYED_WORK(&charger->chgin_init_work, max77888_chgin_init_work);
 	wake_lock_init(&charger->recovery_wake_lock, WAKE_LOCK_SUSPEND,

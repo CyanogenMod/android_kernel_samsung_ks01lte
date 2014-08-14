@@ -50,6 +50,17 @@
 #include "../core/core.h"
 
 MODULE_ALIAS("mmc:block");
+#if defined(CONFIG_MMC_CPRM)
+#include "cprmdrv_samsung.h"
+#include <linux/ioctl.h>
+#define MMC_IOCTL_BASE		0xB3 /* Same as MMC block device major number */
+#define MMC_IOCTL_GET_SECTOR_COUNT	_IOR(MMC_IOCTL_BASE, 100, int)
+#define MMC_IOCTL_GET_SECTOR_SIZE		_IOR(MMC_IOCTL_BASE, 101, int)
+#define MMC_IOCTL_GET_BLOCK_SIZE		_IOR(MMC_IOCTL_BASE, 102, int)
+#define MMC_IOCTL_SET_RETRY_AKE_PROCESS		_IOR(MMC_IOCTL_BASE, 104, int)
+
+static int cprm_ake_retry_flag;
+#endif
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
 #endif
@@ -2661,20 +2672,8 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 			break;
 		case MMC_BLK_CMD_ERR:
 			ret = mmc_blk_cmd_err(md, card, brq, req, ret);
-			if (!mmc_blk_reset(md, card->host, type)) {
-				if (!ret) {
-					/*
-					 * We have successfully completed block
-					 * request and notified to upper layers.
-					 * As the reset is successful, assume
-					 * h/w is in clean state and proceed
-					 * with new request.
-					 */
-					BUG_ON(card->host->areq);
-					goto start_new_req;
-				}
+			if (!mmc_blk_reset(md, card->host, type))
 				break;
-			}
 			goto cmd_abort;
 		case MMC_BLK_RETRY:
 			if (retry++ < 5)
@@ -2852,8 +2851,7 @@ out:
 	 */
 	if ((!req && !(mq->flags & MMC_QUEUE_NEW_REQUEST)) ||
 			((mq->flags & MMC_QUEUE_URGENT_REQUEST) &&
-			 !(mq->mqrq_cur->req->cmd_flags &
-				MMC_REQ_NOREINSERT_MASK))) {
+				!(mq->mqrq_cur->req->cmd_flags & REQ_URGENT))) {
 		if (mmc_card_need_bkops(card))
 			mmc_start_bkops(card, false);
 		/* release host only when there are no more requests */
@@ -3201,6 +3199,7 @@ force_ro_fail:
 #define CID_MANFID_TOSHIBA	0x11
 #define CID_MANFID_MICRON	0x13
 #define CID_MANFID_SAMSUNG	0x15
+#define CID_MANFID_HYNIX	0x90
 
 static const struct mmc_fixup blk_fixups[] =
 {
@@ -3262,12 +3261,9 @@ static const struct mmc_fixup blk_fixups[] =
 		  MMC_QUIRK_SEC_ERASE_TRIM_BROKEN),
 	MMC_FIXUP("VZL00M", CID_MANFID_SAMSUNG, CID_OEMID_ANY, add_quirk_mmc,
 		  MMC_QUIRK_SEC_ERASE_TRIM_BROKEN),
-	MMC_FIXUP(CID_NAME_ANY, CID_MANFID_HYNIX, CID_OEMID_ANY, add_quirk_mmc,
-		  MMC_QUIRK_BROKEN_DATA_TIMEOUT),
 
-	/* Disable cache for this cards */
-	MMC_FIXUP("H8G2d", CID_MANFID_HYNIX, CID_OEMID_ANY, add_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
+	MMC_FIXUP(CID_NAME_ANY, CID_MANFID_HYNIX, CID_OEMID_ANY, add_quirk_mmc,
+			MMC_QUIRK_BROKEN_DATA_TIMEOUT),
 	END_FIXUP
 };
 
@@ -3452,9 +3448,6 @@ static void mmc_blk_shutdown(struct mmc_card *card)
 	/* send power off notification */
 	if (mmc_card_mmc(card)) {
 		mmc_rpm_hold(card->host, &card->dev);
-		mmc_claim_host(card->host);
-		mmc_stop_bkops(card);
-		mmc_release_host(card->host);
 		mmc_send_long_pon(card);
 		mmc_rpm_release(card->host, &card->dev);
 	}
@@ -3562,3 +3555,4 @@ module_exit(mmc_blk_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Multimedia Card (MMC) block device driver");
+

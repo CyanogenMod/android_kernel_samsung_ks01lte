@@ -347,7 +347,10 @@ static int msm_pcm_ioctl(struct snd_pcm_substream *substream,
 	return ret;
 }
 
-#if defined(CONFIG_SND_SOC_ES325) && !defined(CONFIG_SEC_LOCALE_KOR_H)
+#ifdef CONFIG_SND_SOC_ES705
+int es705_put_veq_block(int volume);
+#endif
+#if defined(CONFIG_SND_SOC_ES325) && !defined(CONFIG_SEC_LOCALE_KOR_H) && !defined(CONFIG_SEC_LOCALE_KOR_FRESCO)
 int es325_set_VEQ_max_gain(int volume);
 #endif
 static int msm_voice_gain_put(struct snd_kcontrol *kcontrol,
@@ -398,7 +401,13 @@ static int msm_voice_gain_put(struct snd_kcontrol *kcontrol,
 
 	voc_set_rx_vol_step(session_id, RX_PATH, volume, ramp_duration);
 #endif
-#if defined(CONFIG_SND_SOC_ES325) && !defined(CONFIG_SEC_LOCALE_KOR_H)
+
+#ifdef CONFIG_SND_SOC_ES705
+#if !defined(CONFIG_MACH_KLTE_KOR)
+	es705_put_veq_block(volume);
+#endif
+#endif
+#if defined(CONFIG_SND_SOC_ES325) && !defined(CONFIG_SEC_LOCALE_KOR_H) && !defined(CONFIG_SEC_LOCALE_KOR_FRESCO)
 	es325_set_VEQ_max_gain(volume);
 #endif
 done:
@@ -424,37 +433,12 @@ static int msm_voice_mute_put(struct snd_kcontrol *kcontrol,
 	pr_debug("%s: mute=%d session_id=%#x ramp_duration=%d\n", __func__,
 		mute, session_id, ramp_duration);
 
-	ret = voc_set_tx_mute(session_id, TX_PATH, mute, ramp_duration);
+	voc_set_tx_mute(session_id, TX_PATH, mute, ramp_duration);
 
 done:
 	return ret;
 }
 
-static int msm_voice_tx_device_mute_put(struct snd_kcontrol *kcontrol,
-					struct snd_ctl_elem_value *ucontrol)
-{
-	int ret = 0;
-	int mute = ucontrol->value.integer.value[0];
-	uint32_t session_id = ucontrol->value.integer.value[1];
-	int ramp_duration = ucontrol->value.integer.value[2];
-
-	if ((mute < 0) || (mute > 1) || (ramp_duration < 0) ||
-	    (ramp_duration > MAX_RAMP_DURATION)) {
-		pr_err(" %s Invalid arguments", __func__);
-
-		ret = -EINVAL;
-		goto done;
-	}
-
-	pr_debug("%s: mute=%d session_id=%#x ramp_duration=%d\n", __func__,
-		 mute, session_id, ramp_duration);
-
-	ret = voc_set_device_mute(session_id, VSS_IVOLUME_DIRECTION_TX,
-				  mute, ramp_duration);
-
-done:
-	return ret;
-}
 
 static int msm_voice_rx_device_mute_put(struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
@@ -464,8 +448,8 @@ static int msm_voice_rx_device_mute_put(struct snd_kcontrol *kcontrol,
 	uint32_t session_id = ucontrol->value.integer.value[1];
 	int ramp_duration = ucontrol->value.integer.value[2];
 
-	if ((mute < 0) || (mute > 1) || (ramp_duration < 0) ||
-	    (ramp_duration > MAX_RAMP_DURATION)) {
+	if ((mute < 0) || (mute > 1) || (ramp_duration < 0)
+		|| (ramp_duration > MAX_RAMP_DURATION)) {
 		pr_err(" %s Invalid arguments", __func__);
 
 		ret = -EINVAL;
@@ -473,10 +457,9 @@ static int msm_voice_rx_device_mute_put(struct snd_kcontrol *kcontrol,
 	}
 
 	pr_debug("%s: mute=%d session_id=%#x ramp_duration=%d\n", __func__,
-		 mute, session_id, ramp_duration);
+		mute, session_id, ramp_duration);
 
-	voc_set_device_mute(session_id, VSS_IVOLUME_DIRECTION_RX,
-			    mute, ramp_duration);
+	voc_set_rx_device_mute(session_id, mute, ramp_duration);
 
 done:
 	return ret;
@@ -579,8 +562,6 @@ static int msm_voice_slowtalk_get(struct snd_kcontrol *kcontrol,
 static struct snd_kcontrol_new msm_voice_controls[] = {
 	SOC_SINGLE_MULTI_EXT("Voice Rx Device Mute", SND_SOC_NOPM, 0, VSID_MAX,
 				0, 3, NULL, msm_voice_rx_device_mute_put),
-	SOC_SINGLE_MULTI_EXT("Voice Tx Device Mute", SND_SOC_NOPM, 0, VSID_MAX,
-				0, 3, NULL, msm_voice_tx_device_mute_put),
 	SOC_SINGLE_MULTI_EXT("Voice Tx Mute", SND_SOC_NOPM, 0, VSID_MAX,
 				0, 3, NULL, msm_voice_mute_put),
 	SOC_SINGLE_MULTI_EXT("Voice Rx Gain", SND_SOC_NOPM, 0, VSID_MAX, 0, 3,
@@ -595,8 +576,6 @@ static struct snd_kcontrol_new msm_voice_controls[] = {
 #endif	/* CONFIG_SEC_DHA_SOL_MAL */
 	SOC_SINGLE_EXT("Loopback Enable", SND_SOC_NOPM, 0, 1, 0,
 				msm_loopback_get, msm_loopback_put),
-	// Dummy control to expose stereo recording support in kernel to user-space
-	SOC_SINGLE_EXT("Stereo Recording", SND_SOC_NOPM, 0, VSID_MAX, 0, NULL, NULL),
 };
 
 static struct snd_pcm_ops msm_pcm_ops = {

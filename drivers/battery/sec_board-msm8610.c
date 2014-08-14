@@ -29,16 +29,24 @@ struct qpnp_vadc_chip *adc_client;
 static struct battery_data_t samsung_battery_data[] = {
 	/* SDI battery data (High voltage 4.35V) */
 	{
-
+#if defined(CONFIG_MACH_HEAT_DYN)
+		.RCOMP0 = 0x5C,
+		.RCOMP_charging = 0x5C,
+		.temp_cohot = -1000,
+		.temp_cocold = -4350,
+		.is_using_model_data = true,
+		.type_str = "SDI",
+#else
 		.RCOMP0 = 0x73,
 		.RCOMP_charging = 0x8D,
 		.temp_cohot = -1000,
 		.temp_cocold = -4350,
 		.is_using_model_data = true,
 		.type_str = "SDI",
+#endif
 	}
 };
-#else
+#elif defined(CONFIG_FUELGAUGE_MAX17050)
 static struct battery_data_t samsung_battery_data[] = {
 	/* SDI battery data (High voltage 4.35V) */
 	{
@@ -67,6 +75,8 @@ static struct battery_data_t samsung_battery_data[] = {
 		.type_str = "SDI",
 	}
 };
+#else
+static void * samsung_battery_data;
 #endif
 
 #define CAPACITY_MAX			1000
@@ -76,6 +86,34 @@ static struct battery_data_t samsung_battery_data[] = {
 static enum qpnp_vadc_channels temp_channel;
 static struct sec_fuelgauge_info *sec_fuelgauge =  NULL;
 
+
+#if defined(CONFIG_MACH_HEAT_DYN)
+static sec_bat_adc_table_data_t temp_table[] = {
+	{25898,	900},
+	{26106,	850},
+	{26351, 800},
+	{26641,	750},
+	{26982,	700},
+	{27382,	650},
+	{27839,	600},
+	{28376,	550},
+	{28999,	500},
+	{29709,	450},
+	{30849,	400},
+	{31813,	350},
+	{32821,	300},
+	{33881,	250},
+	{35007,	200},
+	{36117,	150},
+	{37207,	100},
+	{38228,	50},
+	{39170,	0},
+	{39670,	-50},
+	{40436,	-100},
+	{41105,	-150},
+	{41653,	-200},
+};
+#else
 static sec_bat_adc_table_data_t temp_table[] = {
     {27281, 700},
     {27669, 650},
@@ -104,7 +142,22 @@ static sec_bat_adc_table_data_t temp_table[] = {
     {41123, -150},
     {41619, -200},
 };
+#endif
 
+#if defined(CONFIG_MACH_HEAT_DYN)
+#define TEMP_HIGH_THRESHOLD_EVENT	500
+#define TEMP_HIGH_RECOVERY_EVENT		450
+#define TEMP_LOW_THRESHOLD_EVENT		-50
+#define TEMP_LOW_RECOVERY_EVENT		0
+#define TEMP_HIGH_THRESHOLD_NORMAL	500
+#define TEMP_HIGH_RECOVERY_NORMAL	450
+#define TEMP_LOW_THRESHOLD_NORMAL	-50
+#define TEMP_LOW_RECOVERY_NORMAL	0
+#define TEMP_HIGH_THRESHOLD_LPM		500
+#define TEMP_HIGH_RECOVERY_LPM		450
+#define TEMP_LOW_THRESHOLD_LPM		-50
+#define TEMP_LOW_RECOVERY_LPM		0
+#else
 #define TEMP_HIGH_THRESHOLD_EVENT	650
 #define TEMP_HIGH_RECOVERY_EVENT		440
 #define TEMP_LOW_THRESHOLD_EVENT		-45
@@ -117,6 +170,7 @@ static sec_bat_adc_table_data_t temp_table[] = {
 #define TEMP_HIGH_RECOVERY_LPM		440
 #define TEMP_LOW_THRESHOLD_LPM		-45
 #define TEMP_LOW_RECOVERY_LPM		0
+#endif
 void sec_bat_check_batt_id(struct sec_battery_info *battery)
 {
 #if defined(CONFIG_SENSORS_QPNP_ADC_VOLTAGE)
@@ -333,7 +387,6 @@ bool sec_bat_check_cable_result_callback(
 int sec_bat_check_cable_callback(struct sec_battery_info *battery)
 {
 	union power_supply_propval value;
-	msleep(750);
 
 	if (battery->pdata->ta_irq_gpio == 0) {
 		pr_err("%s: ta_int_gpio is 0 or not assigned yet(cable_type(%d))\n",

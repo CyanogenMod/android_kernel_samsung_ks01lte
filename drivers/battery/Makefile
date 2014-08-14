@@ -13,6 +13,7 @@ obj-$(CONFIG_CHARGER_MAX8903)	+= max8903_charger.o
 obj-$(CONFIG_CHARGER_SMB328)	+= smb328_charger.o
 obj-$(CONFIG_CHARGER_SMB347)	+= smb347_charger.o
 obj-$(CONFIG_CHARGER_SMB358)	+= smb358_charger.o
+obj-$(CONFIG_CHARGER_SMB1357)	+= smb1357_charger.o
 obj-$(CONFIG_CHARGER_BQ24157)	+= bq24157_charger.o sec_charger.o
 obj-$(CONFIG_CHARGER_BQ24190)	+= bq24190_charger.o
 obj-$(CONFIG_CHARGER_BQ24191)	+= bq24190_charger.o

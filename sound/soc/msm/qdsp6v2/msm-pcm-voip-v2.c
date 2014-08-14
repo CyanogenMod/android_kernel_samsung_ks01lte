@@ -1308,13 +1308,6 @@ static int msm_voip_rate_config_put(struct snd_kcontrol *kcontrol,
 
 				goto done;
 			}
-
-			ret = voc_update_amr_vocoder_rate(
-					voc_get_session_id(VOIP_SESSION_NAME));
-			if (ret) {
-				pr_err("%s:Failed to update AMR rate, ret=%d\n",
-					__func__, ret);
-			}
 		}
 	}
 

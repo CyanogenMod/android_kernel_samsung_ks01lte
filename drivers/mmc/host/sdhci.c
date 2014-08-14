@@ -39,13 +39,17 @@
 
 #if defined(CONFIG_LEDS_CLASS) || (defined(CONFIG_LEDS_CLASS_MODULE) && \
 	defined(CONFIG_MMC_SDHCI_MODULE))
+#if !defined(CONFIG_SEC_K_PROJECT) && !defined(CONFIG_SEC_H_PROJECT) && !defined(CONFIG_SEC_FRESCO_PROJECT)
 #define SDHCI_USE_LEDS_CLASS
+#endif
 #endif
 
 #define MAX_TUNING_LOOP 40
 
 static unsigned int debug_quirks = 0;
 static unsigned int debug_quirks2;
+
+extern unsigned int system_rev;
 
 static void sdhci_finish_data(struct sdhci_host *);
 
@@ -173,6 +177,11 @@ static void sdhci_dump_state(struct sdhci_host *host)
 		mmc_hostname(mmc), mmc->parent->power.runtime_status,
 		atomic_read(&mmc->parent->power.usage_count),
 		mmc->parent->power.disable_depth);
+	if (mmc->card) {
+		pr_info("%s: card->cid : %08x%08x%08x%08x\n", mmc_hostname(mmc), 
+				mmc->card->raw_cid[0], mmc->card->raw_cid[1], 
+				mmc->card->raw_cid[2], mmc->card->raw_cid[3]);
+	}
 }
 
 static void sdhci_dumpregs(struct sdhci_host *host)
@@ -341,7 +350,7 @@ static void sdhci_reset(struct sdhci_host *host, u8 mask)
 		host->clock = 0;
 
 	/* Wait max 100 ms */
-	timeout = 100000;
+	timeout = 100;
 
 	if (host->ops->check_power_status && host->pwr &&
 	    (mask & SDHCI_RESET_ALL))
@@ -356,7 +365,7 @@ static void sdhci_reset(struct sdhci_host *host, u8 mask)
 			return;
 		}
 		timeout--;
-		udelay(1);
+		mdelay(1);
 	}
 
 	if (host->ops->platform_reset_exit)
@@ -1182,7 +1191,7 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 	WARN_ON(host->cmd);
 
 	/* Wait max 10 ms */
-	timeout = 10000;
+	timeout = 10;
 
 	mask = SDHCI_CMD_INHIBIT;
 	if ((cmd->data != NULL) || (cmd->flags & MMC_RSP_BUSY))
@@ -1203,7 +1212,7 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 			return;
 		}
 		timeout--;
-		udelay(1);
+		mdelay(1);
 	}
 
 	mod_timer(&host->timer, jiffies + SDHCI_REQUEST_TIMEOUT * HZ);
@@ -1395,7 +1404,7 @@ static void sdhci_set_clock(struct sdhci_host *host, unsigned int clock)
 	sdhci_writew(host, clk, SDHCI_CLOCK_CONTROL);
 
 	/* Wait max 20 ms */
-	timeout = 20000;
+	timeout = 20;
 	while (!((clk = sdhci_readw(host, SDHCI_CLOCK_CONTROL))
 		& SDHCI_CLOCK_INT_STABLE)) {
 		if (timeout == 0) {
@@ -1405,7 +1414,7 @@ static void sdhci_set_clock(struct sdhci_host *host, unsigned int clock)
 			goto ret;
 		}
 		timeout--;
-		udelay(1);
+		mdelay(1);
 	}
 
 	clk |= SDHCI_CLOCK_CARD_EN;
@@ -1611,7 +1620,6 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	struct sdhci_host *host;
 	bool present;
 	unsigned long flags;
-	u32 tuning_opcode;
 
 	host = mmc_priv(mmc);
 
@@ -1672,19 +1680,12 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		 */
 		if ((host->flags & SDHCI_NEEDS_RETUNING) &&
 		    !(present_state & (SDHCI_DOING_WRITE | SDHCI_DOING_READ))) {
-			if (mmc->card) {
-				/* eMMC uses cmd21 but sd and sdio use cmd19 */
-				tuning_opcode =
-					mmc->card->type == MMC_TYPE_MMC ?
-					MMC_SEND_TUNING_BLOCK_HS200 :
-					MMC_SEND_TUNING_BLOCK;
-				spin_unlock_irqrestore(&host->lock, flags);
-				sdhci_execute_tuning(mmc, tuning_opcode);
-				spin_lock_irqsave(&host->lock, flags);
+			spin_unlock_irqrestore(&host->lock, flags);
+			sdhci_execute_tuning(mmc, mrq->cmd->opcode);
+			spin_lock_irqsave(&host->lock, flags);
 
-				/* Restore original mmc_request structure */
-				host->mrq = mrq;
-			}
+			/* Restore original mmc_request structure */
+			host->mrq = mrq;
 		}
 
 		if (mrq->sbc && !(host->flags & SDHCI_AUTO_CMD23))
@@ -1773,14 +1774,14 @@ static void sdhci_do_set_ios(struct sdhci_host *host, struct mmc_ios *ios)
 			ret = host->ops->enable_controller_clock(host);
 			if (ret) {
 				pr_err("%s: enabling controller clock: failed: %d\n",
-				       mmc_hostname(host->mmc), ret);
+						mmc_hostname(host->mmc), ret);
 			} else {
 				vdd_bit = sdhci_set_power(host, ios->vdd);
 
 				if (host->vmmc && vdd_bit != -1)
 					mmc_regulator_set_ocr(host->mmc,
-							      host->vmmc,
-							      vdd_bit);
+							host->vmmc,
+							vdd_bit);
 			}
 		}
 	}
@@ -1795,8 +1796,7 @@ static void sdhci_do_set_ios(struct sdhci_host *host, struct mmc_ios *ios)
 	spin_unlock_irqrestore(&host->lock, flags);
 
 	if (!host->ops->enable_controller_clock && (ios->power_mode &
-						    (MMC_POWER_UP |
-						     MMC_POWER_ON))) {
+				(MMC_POWER_UP | MMC_POWER_ON))) {
 		vdd_bit = sdhci_set_power(host, ios->vdd);
 
 		if (host->vmmc && vdd_bit != -1)
@@ -3337,8 +3337,20 @@ int sdhci_add_host(struct sdhci_host *host)
 	if(strcmp(host->hw_name, "msm_sdcc.3") == 0) {
 		/* Custom: An external level shifter on SDC3 */
 		caps[0] |= (SDHCI_CAN_VDD_330 | SDHCI_CAN_VDD_300 | SDHCI_CAN_VDD_180);
-		/* disable SD 3.0 feature */
+		/* 
+		 * Disable SD 3.0 feature 
+		 * But, 8974pro after HW_GPIO_06 uses SDR50 Mode 
+		 */
+#ifdef CONFIG_SEC_K_PROJECT
+		if (system_rev >= 6) {
+			caps[1] &= (u32) ~(SDHCI_SUPPORT_SDR104 | SDHCI_SUPPORT_DDR50);
+			caps[1] |= (u32) (SDHCI_SUPPORT_SDR50);
+		}
+		else
+			caps[1] &= (u32) ~(SDHCI_SUPPORT_SDR50 |SDHCI_SUPPORT_SDR104 | SDHCI_SUPPORT_DDR50);
+#else
 		caps[1] &= (u32) ~(SDHCI_SUPPORT_SDR50 |SDHCI_SUPPORT_SDR104 | SDHCI_SUPPORT_DDR50);
+#endif
 	}
 
 	if (host->quirks & SDHCI_QUIRK_FORCE_DMA)

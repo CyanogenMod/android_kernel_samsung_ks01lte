@@ -157,18 +157,22 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 #ifdef CONFIG_SEC_DEBUG_LMK_MEMINFO
 	static DEFINE_RATELIMIT_STATE(lmk_rs, DEFAULT_RATELIMIT_INTERVAL, 1);
 #endif
+	unsigned long nr_cma_free;
 
 	if (nr_to_scan > 0) {
 		if (mutex_lock_interruptible(&scan_mutex) < 0)
 			return 0;
 	}
 
-#ifndef CONFIG_CMA
 	other_free = global_page_state(NR_FREE_PAGES);
-#else
-	other_free = global_page_state(NR_FREE_PAGES) -
-					global_page_state(NR_FREE_CMA_PAGES);
+
+	nr_cma_free = global_page_state(NR_FREE_CMA_PAGES);
+#ifdef CONFIG_ZSWAP
+	if (!current_is_kswapd() || sc->priority <= 6)
 #endif
+
+		other_free -= nr_cma_free;
+
 	if (global_page_state(NR_SHMEM) + total_swapcache_pages <
 		global_page_state(NR_FILE_PAGES))
 		other_file = global_page_state(NR_FILE_PAGES) -
@@ -256,9 +260,14 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 			     p->pid, p->comm, oom_score_adj, tasksize);
 	}
 	if (selected) {
-		lowmem_print(1, "send sigkill to %d (%s), adj %d, size %d\n",
-			     selected->pid, selected->comm,
-			     selected_oom_score_adj, selected_tasksize);
+		lowmem_print(1, "send sigkill to %d (%s), adj %d, size %d, "
+				"free memory = %d, reclaimable memory = %d "
+				"is_kswapd %d cma_free %lu priority %d\n",
+				selected->pid, selected->comm,
+				selected_oom_score_adj, selected_tasksize,
+				other_free, other_file,
+				!!current_is_kswapd(),
+				nr_cma_free, sc->priority);
 		lowmem_deathpending_timeout = jiffies + HZ;
 		send_sig(SIGKILL, selected, 0);
 		set_tsk_thread_flag(selected, TIF_MEMDIE);
@@ -345,10 +354,6 @@ static int android_oom_handler(struct notifier_block *nb,
 		selected_oom_score_adj[i] = min_score_adj;
 #else
 	selected_oom_score_adj = min_score_adj;
-#endif
-
-#ifdef CONFIG_ZRAM_FOR_ANDROID
-	atomic_set(&s_reclaim.lmk_running, 1);
 #endif
 
 	read_lock(&tasklist_lock);
@@ -462,10 +467,6 @@ static int android_oom_handler(struct notifier_block *nb,
 	}
 #endif
 	read_unlock(&tasklist_lock);
-
-#ifdef CONFIG_ZRAM_FOR_ANDROID
-	atomic_set(&s_reclaim.lmk_running, 0);
-#endif
 
 	lowmem_print(2, "oom: get memory %lu", *freed);
 	return rem;

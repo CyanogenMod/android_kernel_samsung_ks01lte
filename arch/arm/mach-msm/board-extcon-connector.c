@@ -26,6 +26,8 @@
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
 
+
+static int jig_state;
 struct muic_cable {
 	struct work_struct work;
 	struct delayed_work cable_init;
@@ -35,6 +37,11 @@ struct muic_cable {
 	enum extcon_cable_name cable_type;
 	int cable_state;
 };
+
+int get_jig_state(void)
+{
+	return jig_state;
+}
 
 static struct switch_dev switch_dock = {
 	.name = "dock",
@@ -47,6 +54,13 @@ static struct muic_cable support_cable_list[] = {
 	{ .cable_type = EXTCON_CARDOCK, },
 	{ .cable_type = EXTCON_AUDIODOCK, },
 	{ .cable_type = EXTCON_SMARTDOCK, },
+#if defined(CONFIG_MUIC_MAX77804K_SUPPORT_HMT_DETECTION)
+	{ .cable_type = EXTCON_HMT,	},
+#endif
+	{ .cable_type = EXTCON_JIG_USBON, },
+	{ .cable_type = EXTCON_JIG_USBOFF, },
+	{ .cable_type = EXTCON_JIG_UARTON, },
+	{ .cable_type = EXTCON_JIG_UARTOFF, },
 };
 
 static void muic_cable_event_worker(struct work_struct *work)
@@ -59,17 +73,28 @@ static void muic_cable_event_worker(struct work_struct *work)
 			cable->cable_state ? "attached" : "detached");
 
 	switch (cable->cable_type) {
-	case EXTCON_DESKDOCK:
-		switch_set_state(&switch_dock, cable->cable_state);
+	case EXTCON_DESKDOCK:	/*	Deskdock	#1	*/
+		switch_set_state(&switch_dock, cable->cable_state ? 1 : 0);
 		break;
-	case EXTCON_CARDOCK:
-		switch_set_state(&switch_dock, cable->cable_state);
+	case EXTCON_CARDOCK:	/*	Cardock		#2	*/
+		switch_set_state(&switch_dock, cable->cable_state ? 2 : 0);
 		break;
-	case EXTCON_AUDIODOCK:
-		switch_set_state(&switch_dock, cable->cable_state);
+	case EXTCON_AUDIODOCK:	/*	Audiodock	#7	*/
+		switch_set_state(&switch_dock, cable->cable_state ? 7 : 0);
 		break;
-	case EXTCON_SMARTDOCK:
-		switch_set_state(&switch_dock, cable->cable_state);
+	case EXTCON_SMARTDOCK:	/*	Smartdock	#8	*/
+		switch_set_state(&switch_dock, cable->cable_state ? 8 : 0);
+		break;
+#if defined(CONFIG_MUIC_MAX77804K_SUPPORT_HMT_DETECTION)
+	case EXTCON_HMT:		/*	HMT			#11	*/
+		switch_set_state(&switch_dock, cable->cable_state ? 11 : 0);
+		break;
+#endif
+	case EXTCON_JIG_USBON:
+	case EXTCON_JIG_USBOFF:
+	case EXTCON_JIG_UARTON:
+	case EXTCON_JIG_UARTOFF:
+		jig_state = cable->cable_state;
 		break;
 	default:
 		pr_err("%s: invalid cable value (%d, %d)\n", __func__,
