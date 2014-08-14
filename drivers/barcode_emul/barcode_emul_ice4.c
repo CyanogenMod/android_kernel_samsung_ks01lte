@@ -1377,7 +1377,7 @@ static int __init barcode_emul_init(void)
 	}
 	return i2c_add_driver(&ice4_i2c_driver);
 }
-late_initcall(barcode_emul_init);
+device_initcall(barcode_emul_init);
 
 static void __exit barcode_emul_exit(void)
 {
