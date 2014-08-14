@@ -72,7 +72,7 @@
 	memory {
 		secure_mem: secure_region {
 			linux,reserve-contiguous-region;
-			reg = <0 0xB500000>;
+			reg = <0 0xFC00000>;
 			label = "secure_mem";
 		};
 
@@ -86,6 +86,33 @@
 			linux,reserve-contiguous-region;
 			reg = <0 0x1100000>;
 			label = "qseecom_mem";
+		};
+
+		fb_mem: fb_region {
+			linux,reserve-contiguous-region;
+			reg = <0 0x800000>;
+			label = "fb_mem";
+		};
+
+		audio_mem: audio_region {
+			linux,reserve-contiguous-region;
+			linux,reserve-region;
+			reg = <0 0x614000>;
+			label = "audio_mem";
+		};
+
+		peripheral_mem: peripheral_region@5d00000 {
+			linux,reserve-contiguous-region;
+			linux,reserve-region;
+			linux,remove-completely;
+			reg = <0x6c00000 0xa600000>;
+			label = "peripheral_mem";
+		};
+
+		camera_mem: camera_region {
+			linux,reserve-contiguous-region;
+			reg = <0 0x1E00000>;
+			label = "camera_mem";
 		};
 	};
 
