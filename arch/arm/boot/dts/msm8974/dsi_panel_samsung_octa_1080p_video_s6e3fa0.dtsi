@@ -64,7 +64,7 @@
 				29 01 00 00 00 03 ED 01 00
 				29 01 00 00 00 03 FD 18 80
 				/* !! Needs 1 frame wait (16.7)	!!*/
-				05 01 00 00 14 02 11 00  /* Sleep out = Needs 20ms  */
+				05 01 00 00 78 02 11 00  /* Sleep out = Needs 120ms  */
 
 				29 01 00 00 00 02 F2 02 /* Video Mode Enable */
 
@@ -95,11 +95,11 @@
 				23 01 00 00 00 02 B0 1F
 				23 01 00 00 00 02 D7 0A
 
-				05 01 00 00 00 02 29 00		/* Display On Command (29h) */
+				05 01 00 00 32 02 29 00		/* Display On Command (29h) */
 			];
 		qcom,on-cmds-dsi-state = "DSI_LP_MODE";
-		qcom,panel-off-cmds = [05 01 00 00 00 02 28 00
-					05 01 00 00 14 02 10 00];
+		qcom,panel-off-cmds = [05 01 00 00 32 02 28 00
+					05 01 00 00 78 02 10 00];
 		qcom,off-cmds-dsi-state = "DSI_HS_MODE";
 
 		/*

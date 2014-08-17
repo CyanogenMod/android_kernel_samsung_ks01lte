@@ -74,8 +74,8 @@
 					29 01 00 00 00 00 02 CB 10  /* samsung_lpts_1 */
 					29 01 00 00 00 00 02 B0 20		/* samsung_lpts_0 */
 					29 01 00 00 00 00 02 CB 04		/* samsung_lpts_1 */
-					23 01 00 00 14 00 03 f7 03	00	/* samsung_gamma_update */
-					/* !! Needs 20ms !!*/
+					23 01 00 00 64 00 03 f7 03	00	/* samsung_gamma_update */
+					/* !! Needs 100ms !!*/
 
 					29 01 00 00 00 00 22                   /* samsung_brightness_gamma */
 						ca 01 00 01 00 01 00 80
@@ -97,8 +97,8 @@
 		qcom,on-cmds-dsi-state = "DSI_LP_MODE";
 		qcom,panel-off-cmds = [
 					29 01 00 00 00 00 03 ff 1f 01
-					05 01 00 00 00 00 02 28 00
-					05 01 00 00 14 00 02 10 00];
+					05 01 00 00 32 00 02 28 00
+					05 01 00 00 78 00 02 10 00];
 		qcom,off-cmds-dsi-state = "DSI_HS_MODE";
 
 		qcom,panel-touchsensing-on-cmds = [29 01 00 00 00 00 03 ff 07 01];
