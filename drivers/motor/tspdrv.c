@@ -210,6 +210,40 @@ static struct timed_output_dev timed_output_vt = {
 	.enable   = enable_vibetonz_from_user,
 };
 
+static ssize_t tspdrv_value_show(struct device *dev,
+                                struct device_attribute *attr, char *buf)
+{
+        int count;
+
+        count = sprintf(buf, "%lu\n", (motor_strength*100)/98);
+
+        return count;
+}
+
+ssize_t tspdrv_value_store(struct device *dev,
+                        struct device_attribute *attr,
+                        const char *buf, size_t size)
+{
+	int perc = 96;
+	
+        if (kstrtoul(buf, 0, &perc))
+                pr_err("[VIB] %s: error on storing motor_strength\n", __func__);
+
+	motor_strength = (perc*98)/100;
+
+        if (motor_strength > 98)
+                motor_strength = 98;
+        else if (motor_strength < 0)
+                motor_strength = 0;
+
+        pr_info("[VIB] %s: motor_strength=%lu\n", __func__, motor_strength);
+
+        return size;
+}
+
+static DEVICE_ATTR(pwm_value, S_IRUGO | S_IWUSR,
+                tspdrv_value_show, tspdrv_value_store);
+
 static void vibetonz_start(void)
 {
 	int ret = 0;
@@ -222,6 +256,12 @@ static void vibetonz_start(void)
 	if (ret)
 		DbgOut((KERN_ERR
 		"tspdrv: timed_output_dev_register is fail\n"));
+
+	ret = device_create_file(timed_output_vt.dev, &dev_attr_pwm_value);
+
+	if (ret)
+		DbgOut((KERN_ERR
+		"tspdrv: device_create_file fail: pwm_value\n"));
 }
 
 /* File IO */
