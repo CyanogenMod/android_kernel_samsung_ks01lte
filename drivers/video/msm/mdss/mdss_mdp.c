@@ -885,7 +885,9 @@ int mdss_iommu_attach(struct mdss_data_type *mdata)
 	struct mdss_iommu_map_type *iomap;
 	int i, rc = 0;
 
+#if defined (CONFIG_FB_MSM_MDSS_DSI_DBG)
 	xlog(__func__, mdata->iommu_attached, 0, 0, 0, 0, 0); 
+#endif
 	if (mdata->iommu_attached) {
 		pr_debug("mdp iommu already attached\n");
 		goto end;
@@ -923,7 +925,9 @@ int mdss_iommu_dettach(struct mdss_data_type *mdata)
 	struct mdss_iommu_map_type *iomap;
 	int i;
 
+#if defined (CONFIG_FB_MSM_MDSS_DSI_DBG)
 	xlog(__func__, mdata->iommu_attached, 0, 0, 0, 0, 0); 
+#endif
 	if (!mdata->iommu_attached) {
 		pr_debug("mdp iommu already dettached\n");
 		return 0;
