@@ -183,7 +183,7 @@ static int get_time_for_vibetonz(struct timed_output_dev *dev)
 
 static void enable_vibetonz_from_user(struct timed_output_dev *dev, int value)
 {
-	printk(KERN_DEBUG "tspdrv: Enable time = %d msec\n", value);
+	DbgOut((KERN_DEBUG "tspdrv: Enable time = %d msec\n", value));
 	hrtimer_cancel(&timer);
 
 	/* set_vibetonz(value); */
@@ -215,7 +215,7 @@ static ssize_t tspdrv_value_show(struct device *dev,
 {
         int count;
 
-        count = sprintf(buf, "%lu\n", (motor_strength*100)/98);
+        count = sprintf(buf, "%d\n", (motor_strength*100)/98);
 
         return count;
 }
@@ -226,7 +226,7 @@ ssize_t tspdrv_value_store(struct device *dev,
 {
 	int perc = 96;
 	
-        if (kstrtoul(buf, 0, &perc))
+        if (kstrtoint(buf, 0, &perc))
                 pr_err("[VIB] %s: error on storing motor_strength\n", __func__);
 
 	motor_strength = (perc*98)/100;
@@ -236,7 +236,7 @@ ssize_t tspdrv_value_store(struct device *dev,
         else if (motor_strength < 0)
                 motor_strength = 0;
 
-        pr_info("[VIB] %s: motor_strength=%lu\n", __func__, motor_strength);
+        pr_info("[VIB] %s: motor_strength=%d\n", __func__, motor_strength);
 
         return size;
 }
@@ -433,7 +433,7 @@ static void max77803_haptic_power_onoff(int onoff)
 			printk(KERN_ERR"enable l23 failed, rc=%d\n", ret);
 			return;
 		}
-		printk(KERN_DEBUG"haptic power_on is finished.\n");
+		DbgOut((KERN_DEBUG"haptic power_on is finished.\n"));
 	} else {
 		if (regulator_is_enabled(reg_l23)) {
 			ret = regulator_disable(reg_l23);
@@ -443,7 +443,7 @@ static void max77803_haptic_power_onoff(int onoff)
 				return;
 			}
 		}
-		printk(KERN_DEBUG"haptic power_off is finished.\n");
+		DbgOut((KERN_DEBUG"haptic power_off is finished.\n"));
 	}
 }
 #endif
