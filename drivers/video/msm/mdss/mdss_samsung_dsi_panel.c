@@ -259,7 +259,7 @@ static int err_fg_working = 0;
 static int err_fg_enable = 0;
 #endif
 
-static int mipi_samsung_disp_send_cmd(
+int mipi_samsung_disp_send_cmd(
 		enum mipi_samsung_cmd_list cmd,
 		unsigned char lock);
 
@@ -2156,7 +2156,7 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 #endif
 }
 
-static int mipi_samsung_disp_send_cmd(
+int mipi_samsung_disp_send_cmd(
 		enum mipi_samsung_cmd_list cmd,
 		unsigned char lock)
 {

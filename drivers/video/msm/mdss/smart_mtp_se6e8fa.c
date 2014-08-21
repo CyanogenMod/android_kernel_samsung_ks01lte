@@ -34,6 +34,7 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #include "smart_mtp_se6e8fa.h"
 #include "smart_mtp_2p2_gamma.h"
 #include "smart_dimming.h"
+#include "mdss_samsung_dsi_panel.h"
 /*
 #define SMART_DIMMING_DEBUG
 */
@@ -115,9 +116,14 @@ extern int v23_val[3];
 extern int v11_val[3];
 extern int v3_val[3];
 
+extern int mipi_samsung_disp_send_cmd(
+		enum mipi_samsung_cmd_list cmd,
+		unsigned char lock);
+
 void panel_load_colors(void)
 {
 	smart_dimming_init(gpsmart);
+	mipi_samsung_disp_send_cmd(PANEL_BRIGHT_CTRL, true);
 }
 
 static int char_to_int_v255(char data1, char data2)
