@@ -111,6 +111,7 @@
 	qcom,mdss_mdp@fd900000 {
 		qcom,mdss-pref-prim-intf = "dsi";
 		mdss_fb0: qcom,mdss_fb_primary {
+			qcom,memory-reservation-size = <0x1F40000>;	/* 32 MB allocaed for fb0 */
 			qcom,memory-alt-reservation-size = <0x1F40000>;	 /* Framebuffer reservation only for LPM or recovery boot mode */
 			qcom,memblock-reserve = <0x03200000 0x01F00000>;
 		};
@@ -1096,4 +1097,8 @@
 		es325-slim-ifd = "es325-ifd";
 		es325-slim-ifd-elemental-addr = [00 00 02 00 BE 02];
 	};
+};
+
+&pm8941_l22 {
+	regulator-always-on;
 };

@@ -1068,7 +1068,7 @@
 		reg-names = "qup_phys_addr";
 		interrupts = <0 106 0>;
 		interrupt-names = "qup_err_intr";
-		qcom,i2c-bus-freq = <400000>;
+		qcom,i2c-bus-freq = <100000>;
 		qcom,i2c-src-freq = <50000000>;
 		qcom,master-id = <84>;
 	};
@@ -1701,7 +1701,9 @@
 		compatible = "qcom,cpubw";
 		qcom,cpu-mem-ports = <1 512>, <2 512>;
 		qcom,bw-tbl =
+			<  381 /*  50 MHz */ >,
 			<  572 /*  75 MHz */ >,
+			<  762 /* 762 MHz */ >,
 			< 1144 /* 150 MHz */ >,
 			< 1525 /* 200 MHz */ >,
 			< 2342 /* 307 MHz */ >,
@@ -1844,6 +1846,13 @@
 	qcom,msm-pcm-low-latency {
 		compatible = "qcom,msm-pcm-dsp";
 		qcom,msm-pcm-dsp-id = <1>;
+		qcom,msm-pcm-low-latency;
+		qcom,latency-level = "regular";
+	};
+
+	qcom,msm-pcm-jack-low-latency {
+		compatible = "qcom,msm-pcm-dsp";
+		qcom,msm-pcm-dsp-id = <2>;
 		qcom,msm-pcm-low-latency;
 		qcom,latency-level = "regular";
 	};
