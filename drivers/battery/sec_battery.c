@@ -1748,7 +1748,7 @@ static void sec_bat_get_battery_info(
 	}
 #endif
 
-	dev_info(battery->dev,
+	dev_dbg(battery->dev,
 		"%s:Vnow(%dmV),Inow(%dmA),Imax(%dmA),SOC(%d%%),Tbat(%d)\n",
 		__func__,
 		battery->voltage_now, battery->current_now,
