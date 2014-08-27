@@ -78,16 +78,11 @@ static unsigned long go_hispeed_load = DEFAULT_GO_HISPEED_LOAD;
 static unsigned int sampling_down_factor;
 
 /* Target load.  Lower values result in higher CPU speeds. */
-
-static spinlock_t target_loads_lock;
-
 #define DEFAULT_TARGET_LOAD 90
 static unsigned int default_target_loads[] = {DEFAULT_TARGET_LOAD};
+static spinlock_t target_loads_lock;
 static unsigned int *target_loads = default_target_loads;
 static int ntarget_loads = ARRAY_SIZE(default_target_loads);
-
-static unsigned int *target_loads_down = NULL;
-static int ntarget_loads_down = 0;
 
 /*
  * The minimum amount of time to spend at a frequency before we can ramp down.
@@ -141,6 +136,37 @@ static unsigned int up_threshold_any_cpu_load;
 static unsigned int sync_freq;
 static unsigned int up_threshold_any_cpu_freq;
 
+static bool use_idle_notifier = false;
+
+/*
+ * The load at which we start scaling more aggressively and checking the load
+ * more frequently.  The fact that we hit ~100% load doesn't provide enough
+ * information to scale the frequency because it is equally likely that we
+ * only need to scale up a little bit (e.g. min frequency is almost enough)
+ * or that we need to scale up to max frequency (sudden burst of load).
+ *
+ * To accommodate both, start scaling faster and at the same time check
+ * more frequently to correctly narrow down the right frequency.
+ */
+
+static unsigned int check_fast_load = 99;
+
+/*
+ * The load to target when the current cpu_load exceeds the check_fast_load
+ * threshold.
+ */
+
+#define DEFAULT_CHECK_FAST_TARGET_LOAD 50
+static unsigned int default_check_fast_target_loads[] = {DEFAULT_CHECK_FAST_TARGET_LOAD};
+static unsigned int *check_fast_target_loads = default_check_fast_target_loads;
+static int n_check_fast_target_loads = ARRAY_SIZE(default_check_fast_target_loads);
+
+/*
+ * The rate at which we should then re-evaluate the load.
+ */
+
+static unsigned int check_fast_timer_rate = 5000;
+
 static inline cputime64_t get_cpu_idle_time_jiffy(unsigned int cpu,
 						  cputime64_t *wall)
 {
@@ -178,7 +204,7 @@ static inline cputime64_t get_cpu_idle_time(unsigned int cpu,
 }
 
 static void cpufreq_interactive_timer_resched(
-	struct cpufreq_interactive_cpuinfo *pcpu)
+	struct cpufreq_interactive_cpuinfo *pcpu, unsigned usecs)
 {
 	unsigned long expires;
 	unsigned long flags;
@@ -190,7 +216,7 @@ static void cpufreq_interactive_timer_resched(
 				     &pcpu->time_in_idle_timestamp);
 	pcpu->cputime_speedadj = 0;
 	pcpu->cputime_speedadj_timestamp = pcpu->time_in_idle_timestamp;
-	expires = jiffies + usecs_to_jiffies(timer_rate);
+	expires = jiffies + usecs_to_jiffies(usecs);
 	mod_timer_pinned(&pcpu->cpu_timer, expires);
 
 	if (timer_slack_val >= 0 &&
@@ -269,21 +295,18 @@ static unsigned int freq_to_targetload(unsigned int freq)
 	return ret;
 }
 
-static unsigned int freq_to_target_load_down(unsigned int freq)
+static unsigned int freq_to_check_fast_target_load(unsigned int freq)
 {
 	int i;
 	unsigned int ret;
 	unsigned long flags;
 
-	if (! ntarget_loads_down)
-		return freq_to_targetload(freq);
-
 	spin_lock_irqsave(&target_loads_lock, flags);
 
-	for (i = 0; i < ntarget_loads_down - 1 && freq >= target_loads_down[i+1]; i += 2)
+	for (i = 0; i < n_check_fast_target_loads - 1 && freq >= check_fast_target_loads[i+1]; i += 2)
 		;
 
-	ret = target_loads_down[i];
+	ret = check_fast_target_loads[i];
 	spin_unlock_irqrestore(&target_loads_lock, flags);
 	return ret;
 }
@@ -294,8 +317,8 @@ static unsigned int freq_to_target_load_down(unsigned int freq)
  * target load given the current load.
  */
 
-static unsigned int choose_freq_iterative(
-	struct cpufreq_interactive_cpuinfo *pcpu, unsigned int loadadjfreq)
+static unsigned int choose_freq(
+	struct cpufreq_interactive_cpuinfo *pcpu, unsigned int loadadjfreq, unsigned int cpu_load)
 {
 	unsigned int freq = pcpu->policy->cur;
 	unsigned int prevfreq, freqmin, freqmax;
@@ -307,7 +330,10 @@ static unsigned int choose_freq_iterative(
 
 	do {
 		prevfreq = freq;
-		tl = freq_to_targetload(freq);
+		if (cpu_load >= check_fast_load)
+			tl = freq_to_check_fast_target_load(freq);
+		else
+			tl = freq_to_targetload(freq);
 
 		/*
 		 * Find the lowest frequency where the computed load is less
@@ -379,45 +405,6 @@ static unsigned int choose_freq_iterative(
 	return freq;
 }
 
-static unsigned int find_valid_freq_l(struct cpufreq_interactive_cpuinfo *pcpu, unsigned int target)
-{
-	unsigned int index;
-
-	if (cpufreq_frequency_table_target(pcpu->policy, pcpu->freq_table,
-		    target, CPUFREQ_RELATION_L, &index))
-		return target;
-
-	return pcpu->freq_table[index].frequency;
-}
-
-static unsigned int choose_freq_up_down(
-	struct cpufreq_interactive_cpuinfo *pcpu, unsigned int loadadjfreq)
-{
-	unsigned int new_freq;
-	unsigned int cur_freq = pcpu->policy->cur;
-
-	new_freq = loadadjfreq / freq_to_targetload(cur_freq);
-	new_freq = find_valid_freq_l(pcpu, new_freq);
-	if (new_freq >= cur_freq)
-		return new_freq;
-
-	new_freq = loadadjfreq / freq_to_target_load_down(cur_freq);
-	new_freq = find_valid_freq_l(pcpu, new_freq);
-	if (new_freq < cur_freq)
-		return new_freq;
-
-	return cur_freq;
-}
-
-static unsigned int choose_freq(
-	struct cpufreq_interactive_cpuinfo *pcpu, unsigned int loadadjfreq)
-{
-	if (ntarget_loads_down)
-		return choose_freq_up_down(pcpu, loadadjfreq);
-	else
-		return choose_freq_iterative(pcpu, loadadjfreq);
-}
-
 static u64 update_load(int cpu)
 {
 	struct cpufreq_interactive_cpuinfo *pcpu = &per_cpu(cpuinfo, cpu);
@@ -453,12 +440,21 @@ static u64 update_load(int cpu)
 	return now;
 }
 
+static unsigned
+get_timer_rate(struct cpufreq_interactive_cpuinfo *pcpu, unsigned int cpu_load)
+{
+	if (cpu_load < check_fast_load || pcpu->target_freq == pcpu->policy->max)
+		return timer_rate;
+	else
+		return check_fast_timer_rate;
+}
+
 static void cpufreq_interactive_timer(unsigned long data)
 {
 	u64 now;
 	unsigned int delta_time;
 	u64 cputime_speedadj;
-	int cpu_load;
+	int cpu_load = 0;
 	struct cpufreq_interactive_cpuinfo *pcpu =
 		&per_cpu(cpuinfo, data);
 	unsigned int new_freq;
@@ -502,13 +498,13 @@ static void cpufreq_interactive_timer(unsigned long data)
 		if (pcpu->target_freq < boosted_freq) {
 			new_freq = boosted_freq;
 		} else {
-			new_freq = choose_freq(pcpu, loadadjfreq);
+			new_freq = choose_freq(pcpu, loadadjfreq, cpu_load);
 
 			if (new_freq < boosted_freq)
 				new_freq = boosted_freq;
 		}
 	} else {
-		new_freq = choose_freq(pcpu, loadadjfreq);
+		new_freq = choose_freq(pcpu, loadadjfreq, cpu_load);
 
 		if (sync_freq && new_freq < sync_freq) {
 
@@ -617,12 +613,12 @@ rearm_if_notmax:
 	 * Already set max speed and don't see a need to change that,
 	 * wait until next idle to re-evaluate, don't need timer.
 	 */
-	if (pcpu->target_freq == pcpu->policy->max)
+	if (use_idle_notifier && pcpu->target_freq == pcpu->policy->max)
 		goto exit;
 
 rearm:
 	if (!timer_pending(&pcpu->cpu_timer))
-		cpufreq_interactive_timer_resched(pcpu);
+		cpufreq_interactive_timer_resched(pcpu, get_timer_rate(pcpu, cpu_load));
 
 exit:
 	up_read(&pcpu->enable_sem);
@@ -658,7 +654,7 @@ static void cpufreq_interactive_idle_start(void)
 		 * the CPUFreq driver.
 		 */
 		if (!pending) {
-			cpufreq_interactive_timer_resched(pcpu);
+			cpufreq_interactive_timer_resched(pcpu, timer_rate);
 
 			now = ktime_to_us(ktime_get());
 			if ((pcpu->policy->cur == pcpu->policy->max) &&
@@ -687,7 +683,7 @@ static void cpufreq_interactive_idle_end(void)
 
 	/* Arm the timer for 1-2 ticks later if not already. */
 	if (!timer_pending(&pcpu->cpu_timer)) {
-		cpufreq_interactive_timer_resched(pcpu);
+		cpufreq_interactive_timer_resched(pcpu, timer_rate);
 	} else if (time_after_eq(jiffies, pcpu->cpu_timer.expires)) {
 		del_timer(&pcpu->cpu_timer);
 		del_timer(&pcpu->cpu_slack_timer);
@@ -927,52 +923,6 @@ static ssize_t store_target_loads(
 static struct global_attr target_loads_attr =
 	__ATTR(target_loads, S_IRUGO | S_IWUSR,
 		show_target_loads, store_target_loads);
-
-static ssize_t show_target_loads_down(
-	struct kobject *kobj, struct attribute *attr, char *buf)
-{
-	int i;
-	ssize_t ret = 0;
-	unsigned long flags;
-
-	spin_lock_irqsave(&target_loads_lock, flags);
-
-	for (i = 0; i < ntarget_loads_down; i++)
-		ret += sprintf(buf + ret, "%u%s", target_loads_down[i],
-			       i & 0x1 ? ":" : " ");
-
-	if (ret)
-		ret--;	/* remove trailing space */
-
-	sprintf(buf + ret, "\n");
-	spin_unlock_irqrestore(&target_loads_lock, flags);
-	return ret;
-}
-
-static ssize_t store_target_loads_down(
-	struct kobject *kobj, struct attribute *attr, const char *buf,
-	size_t count)
-{
-	int ntokens;
-	unsigned int *new_target_loads_down = NULL;
-	unsigned long flags;
-
-	new_target_loads_down = get_tokenized_data(buf, &ntokens);
-	if (IS_ERR(new_target_loads_down))
-		return PTR_RET(new_target_loads_down);
-
-	spin_lock_irqsave(&target_loads_lock, flags);
-	if (target_loads_down)
-		kfree(target_loads_down);
-	target_loads_down = new_target_loads_down;
-	ntarget_loads_down = ntokens;
-	spin_unlock_irqrestore(&target_loads_lock, flags);
-	return count;
-}
-
-static struct global_attr target_loads_down_attr =
-	__ATTR(target_loads_down, S_IRUGO | S_IWUSR,
-		show_target_loads_down, store_target_loads_down);
 
 static ssize_t show_above_hispeed_delay(
 	struct kobject *kobj, struct attribute *attr, char *buf)
@@ -1318,9 +1268,95 @@ static struct global_attr up_threshold_any_cpu_freq_attr =
 		show_up_threshold_any_cpu_freq,
 				store_up_threshold_any_cpu_freq);
 
+static ssize_t show_check_fast_load(struct kobject *kobj,
+			struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", check_fast_load);
+}
+
+static ssize_t store_check_fast_load(struct kobject *kobj,
+			struct attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long val;
+
+	ret = strict_strtoul(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+	check_fast_load = val;
+	return count;
+}
+
+static struct global_attr check_fast_load_attr = __ATTR(check_fast_load, 0644,
+		show_check_fast_load, store_check_fast_load);
+
+static ssize_t show_check_fast_target_loads(
+	struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	int i;
+	ssize_t ret = 0;
+	unsigned long flags;
+
+	spin_lock_irqsave(&target_loads_lock, flags);
+
+	for (i = 0; i < n_check_fast_target_loads; i++)
+		ret += sprintf(buf + ret, "%u%s", check_fast_target_loads[i],
+			       i & 0x1 ? ":" : " ");
+
+	sprintf(buf + ret - 1, "\n");
+	spin_unlock_irqrestore(&target_loads_lock, flags);
+	return ret;
+}
+
+static ssize_t store_check_fast_target_loads(
+	struct kobject *kobj, struct attribute *attr, const char *buf,
+	size_t count)
+{
+	int ntokens;
+	unsigned int *new_check_fast_target_loads = NULL;
+	unsigned long flags;
+
+	new_check_fast_target_loads = get_tokenized_data(buf, &ntokens);
+	if (IS_ERR(new_check_fast_target_loads))
+		return PTR_RET(new_check_fast_target_loads);
+
+	spin_lock_irqsave(&target_loads_lock, flags);
+	if (check_fast_target_loads != default_check_fast_target_loads)
+		kfree(check_fast_target_loads);
+	check_fast_target_loads = new_check_fast_target_loads;
+	n_check_fast_target_loads = ntokens;
+	spin_unlock_irqrestore(&target_loads_lock, flags);
+	return count;
+}
+
+static struct global_attr check_fast_target_loads_attr =
+	__ATTR(check_fast_target_loads, S_IRUGO | S_IWUSR,
+		show_check_fast_target_loads, store_check_fast_target_loads);
+
+static ssize_t show_check_fast_timer_rate(struct kobject *kobj,
+			struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", check_fast_timer_rate);
+}
+
+static ssize_t store_check_fast_timer_rate(struct kobject *kobj,
+			struct attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long val;
+
+	ret = strict_strtoul(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+	check_fast_timer_rate = val;
+	return count;
+}
+
+static struct global_attr check_fast_timer_rate_attr = __ATTR(check_fast_timer_rate, 0644,
+		show_check_fast_timer_rate, store_check_fast_timer_rate);
+
 static struct attribute *interactive_attributes[] = {
 	&target_loads_attr.attr,
-	&target_loads_down_attr.attr,
 	&above_hispeed_delay_attr.attr,
 	&hispeed_freq_attr.attr,
 	&go_hispeed_load_attr.attr,
@@ -1335,6 +1371,9 @@ static struct attribute *interactive_attributes[] = {
 	&sync_freq_attr.attr,
 	&up_threshold_any_cpu_load_attr.attr,
 	&up_threshold_any_cpu_freq_attr.attr,
+	&check_fast_load_attr.attr,
+	&check_fast_timer_rate_attr.attr,
+	&check_fast_target_loads_attr.attr,
 	NULL,
 };
 
@@ -1418,8 +1457,9 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 		}
 
 		idle_notifier_register(&cpufreq_interactive_idle_nb);
-		cpufreq_register_notifier(
-			&cpufreq_notifier_block, CPUFREQ_TRANSITION_NOTIFIER);
+		if (use_idle_notifier)
+			cpufreq_register_notifier(
+				&cpufreq_notifier_block, CPUFREQ_TRANSITION_NOTIFIER);
 		mutex_unlock(&gov_lock);
 		break;
 
@@ -1440,8 +1480,9 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			return 0;
 		}
 
-		cpufreq_unregister_notifier(
-			&cpufreq_notifier_block, CPUFREQ_TRANSITION_NOTIFIER);
+		if (use_idle_notifier)
+			cpufreq_unregister_notifier(
+				&cpufreq_notifier_block, CPUFREQ_TRANSITION_NOTIFIER);
 		idle_notifier_unregister(&cpufreq_interactive_idle_nb);
 		sysfs_remove_group(cpufreq_global_kobject,
 				&interactive_attr_group);
