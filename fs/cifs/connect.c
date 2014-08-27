@@ -1891,6 +1891,46 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
 	}
 #endif
 
+	if (vol->UNC == NULL)
+	{
+		char *pos;
+		const char *delims = "/\\";
+		size_t len;
+
+        	/* make sure we have a valid UNC double delimiter prefix */
+        	len = strspn(devname, delims);
+        	if (len != 2)
+                	goto cifs_parse_mount_err;
+
+        	/* find delimiter between host and sharename */
+        	pos = strpbrk(devname + 2, delims);
+        	if (!pos)
+                	goto cifs_parse_mount_err;
+
+        	/* skip past delimiter */
+        	++pos;
+
+        	/* now go until next delimiter or end of string */
+        	len = strcspn(pos, delims);
+
+        	/* move "pos" up to delimiter or NULL */
+        	pos += len;
+        	vol->UNC = kstrndup(devname, pos - devname, GFP_KERNEL);
+        	if (!vol->UNC)
+                	goto out_nomem;
+
+		char *convp = vol->UNC;
+		while ((convp = strchr(convp, '/')))
+			*convp = '\\';
+
+        	/* If pos is NULL, or is a bogus trailing delimiter then no prepath */
+        	if (*pos++ && *pos && vol->prepath == NULL) {
+		        vol->prepath = kstrdup(pos, GFP_KERNEL);
+		        if (!vol->prepath)
+                		goto out_nomem;
+		}
+	}
+
 	if (vol->UNCip == NULL)
 		vol->UNCip = &vol->UNC[2];
 
