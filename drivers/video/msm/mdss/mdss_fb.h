@@ -21,7 +21,6 @@
 #include <linux/notifier.h>
 
 #include "mdss_panel.h"
-#include "mdss_mdp_splash_logo.h"
 
 #define MSM_FB_DEFAULT_PAGE_SIZE 2
 #define MFD_KEY  0x11161126
@@ -128,6 +127,7 @@ struct msm_mdp_interface {
 	int (*splash_init_fnc)(struct msm_fb_data_type *mfd);
 	struct msm_sync_pt_data *(*get_sync_fnc)(struct msm_fb_data_type *mfd,
 				const struct mdp_buf_sync *buf_sync);
+	void (*check_dsi_status)(struct work_struct *work, uint32_t interval);
 	void *private1;
 };
 
@@ -162,6 +162,9 @@ struct msm_fb_data_type {
 
 	u32 dest;
 	struct fb_info *fbi;
+
+	int idle_time;
+	struct delayed_work idle_notify_work;
 
 	int op_enable;
 	u32 fb_imgType;
@@ -220,8 +223,6 @@ struct msm_fb_data_type {
 	wait_queue_head_t idle_wait_q;
 	wait_queue_head_t kickoff_wait_q;
 	bool shutdown_pending;
-
-	struct msm_fb_splash_info splash_info;
 
 	wait_queue_head_t ioctl_q;
 	atomic_t ioctl_ref_cnt;
