@@ -1137,6 +1137,10 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		mutex_lock(&dbs_mutex);
 
 		dbs_enable++;
+
+		if (dbs_enable == 1)
+			BUG_ON(smpboot_register_percpu_thread(&dbs_sync_threads));
+
 		for_each_cpu(j, policy->cpus) {
 			struct cpu_dbs_info_s *j_dbs_info;
 			j_dbs_info = &per_cpu(od_cpu_dbs_info, j);
@@ -1214,6 +1218,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		 * valid. */
 		this_dbs_info->cur_policy = NULL;
 		if (!dbs_enable) {
+			smpboot_unregister_percpu_thread(&dbs_sync_threads);
+
 			sysfs_remove_group(cpufreq_global_kobject,
 					   &dbs_attr_group);
 			atomic_notifier_chain_unregister(
@@ -1253,7 +1259,7 @@ static int __init cpufreq_gov_dbs_init(void)
 {
 	u64 idle_time;
 	unsigned int i;
-	int rc, cpu = get_cpu();
+	int cpu = get_cpu();
 
 	idle_time = get_cpu_idle_time_us(cpu, NULL);
 	put_cpu();
@@ -1287,10 +1293,6 @@ static int __init cpufreq_gov_dbs_init(void)
 
 		atomic_set(&this_dbs_info->src_sync_cpu, -1);
 	}
-
-	rc = smpboot_register_percpu_thread(&dbs_sync_threads);
-	if (rc)
-		printk(KERN_ERR "Failed to register dbs_sync threads\n");
 
 	return cpufreq_register_governor(&cpufreq_gov_ondemand);
 }

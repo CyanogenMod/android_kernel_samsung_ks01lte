@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2008-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2008-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -22,79 +22,7 @@
 #define KGSL_LOG_LEVEL_MAX     7
 
 struct dentry *kgsl_debugfs_dir;
-static struct dentry *pm_d_debugfs;
 struct dentry *proc_d_debugfs;
-
-static int pm_dump_set(void *data, u64 val)
-{
-	struct kgsl_device *device = data;
-
-	if (val) {
-		mutex_lock(&device->mutex);
-		kgsl_postmortem_dump(device, 1);
-		mutex_unlock(&device->mutex);
-	}
-
-	return 0;
-}
-DEFINE_SIMPLE_ATTRIBUTE(pm_dump_fops,
-			NULL,
-			pm_dump_set, "%llu\n");
-
-static int pm_regs_enabled_set(void *data, u64 val)
-{
-	struct kgsl_device *device = data;
-	device->pm_regs_enabled = val ? 1 : 0;
-	return 0;
-}
-
-static int pm_regs_enabled_get(void *data, u64 *val)
-{
-	struct kgsl_device *device = data;
-	*val = device->pm_regs_enabled;
-	return 0;
-}
-
-static int pm_ib_enabled_set(void *data, u64 val)
-{
-	struct kgsl_device *device = data;
-	device->pm_ib_enabled = val ? 1 : 0;
-	return 0;
-}
-
-static int pm_ib_enabled_get(void *data, u64 *val)
-{
-	struct kgsl_device *device = data;
-	*val = device->pm_ib_enabled;
-	return 0;
-}
-
-static int pm_enabled_set(void *data, u64 val)
-{
-	struct kgsl_device *device = data;
-	device->pm_dump_enable = val;
-	return 0;
-}
-
-static int pm_enabled_get(void *data, u64 *val)
-{
-	struct kgsl_device *device = data;
-	*val = device->pm_dump_enable;
-	return 0;
-}
-
-
-DEFINE_SIMPLE_ATTRIBUTE(pm_regs_enabled_fops,
-			pm_regs_enabled_get,
-			pm_regs_enabled_set, "%llu\n");
-
-DEFINE_SIMPLE_ATTRIBUTE(pm_ib_enabled_fops,
-			pm_ib_enabled_get,
-			pm_ib_enabled_set, "%llu\n");
-
-DEFINE_SIMPLE_ATTRIBUTE(pm_enabled_fops,
-			pm_enabled_get,
-			pm_enabled_set, "%llu\n");
 
 static inline int kgsl_log_set(unsigned int *log_val, void *data, u64 val)
 {
@@ -123,52 +51,6 @@ KGSL_DEBUGFS_LOG(ctxt_log);
 KGSL_DEBUGFS_LOG(mem_log);
 KGSL_DEBUGFS_LOG(pwr_log);
 
-static int memfree_hist_print(struct seq_file *s, void *unused)
-{
-	void *base = kgsl_driver.memfree_hist.base_hist_rb;
-
-	struct kgsl_memfree_hist_elem *wptr = kgsl_driver.memfree_hist.wptr;
-	struct kgsl_memfree_hist_elem *p;
-	char str[16];
-
-	seq_printf(s, "%8s %8s %8s %11s\n",
-			"pid", "gpuaddr", "size", "flags");
-
-	mutex_lock(&kgsl_driver.memfree_hist_mutex);
-	p = wptr;
-	for (;;) {
-		kgsl_get_memory_usage(str, sizeof(str), p->flags);
-		/*
-		 * if the ring buffer is not filled up yet
-		 * all its empty elems have size==0
-		 * just skip them ...
-		*/
-		if (p->size)
-			seq_printf(s, "%8d %08x %8d %11s\n",
-				p->pid, p->gpuaddr, p->size, str);
-		p++;
-		if ((void *)p >= base + kgsl_driver.memfree_hist.size)
-			p = (struct kgsl_memfree_hist_elem *) base;
-
-		if (p == kgsl_driver.memfree_hist.wptr)
-			break;
-	}
-	mutex_unlock(&kgsl_driver.memfree_hist_mutex);
-	return 0;
-}
-
-static int memfree_hist_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, memfree_hist_print, inode->i_private);
-}
-
-static const struct file_operations memfree_hist_fops = {
-	.open = memfree_hist_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
-
 void kgsl_device_debugfs_init(struct kgsl_device *device)
 {
 	if (kgsl_debugfs_dir && !IS_ERR(kgsl_debugfs_dir))
@@ -188,25 +70,6 @@ void kgsl_device_debugfs_init(struct kgsl_device *device)
 				&mem_log_fops);
 	debugfs_create_file("log_level_pwr", 0644, device->d_debugfs, device,
 				&pwr_log_fops);
-	debugfs_create_file("memfree_history", 0444, device->d_debugfs, device,
-				&memfree_hist_fops);
-
-	/* Create postmortem dump control files */
-
-	pm_d_debugfs = debugfs_create_dir("postmortem", device->d_debugfs);
-
-	if (IS_ERR(pm_d_debugfs))
-		return;
-
-	debugfs_create_file("dump",  0600, pm_d_debugfs, device,
-			    &pm_dump_fops);
-	debugfs_create_file("regs_enabled", 0644, pm_d_debugfs, device,
-			    &pm_regs_enabled_fops);
-	debugfs_create_file("ib_enabled", 0644, pm_d_debugfs, device,
-				    &pm_ib_enabled_fops);
-	debugfs_create_file("enable", 0644, pm_d_debugfs, device,
-				    &pm_enabled_fops);
-
 }
 
 static const char * const memtype_strings[] = {
@@ -247,7 +110,7 @@ static char get_cacheflag(const struct kgsl_memdesc *m)
 
 static void print_mem_entry(struct seq_file *s, struct kgsl_mem_entry *entry)
 {
-	char flags[6];
+	char flags[7];
 	char usage[16];
 	struct kgsl_memdesc *m = &entry->memdesc;
 
@@ -256,14 +119,13 @@ static void print_mem_entry(struct seq_file *s, struct kgsl_mem_entry *entry)
 	flags[2] = get_alignflag(m);
 	flags[3] = get_cacheflag(m);
 	flags[4] = kgsl_memdesc_use_cpu_map(m) ? 'p' : '-';
-	flags[5] = '\0';
+	flags[5] = (m->useraddr) ? 'Y' : 'N';
+	flags[6] = '\0';
 
 	kgsl_get_memory_usage(usage, sizeof(usage), m->flags);
 
-	seq_printf(s, "%pK %pK %8zd %5d %5s %10s %16s %5d\n",
-			(unsigned long *) m->gpuaddr,
-			(unsigned long *) m->useraddr,
-			m->size, entry->id, flags,
+	seq_printf(s, "%08x %08lx %8d %5d %6s %10s %16s %5d\n",
+			m->gpuaddr, m->useraddr, m->size, entry->id, flags,
 			memtype_str(entry->memtype), usage, m->sglen);
 }
 
@@ -274,7 +136,7 @@ static int process_mem_print(struct seq_file *s, void *unused)
 	struct kgsl_process_private *private = s->private;
 	int next = 0;
 
-	seq_printf(s, "%8s %8s %8s %5s %5s %10s %16s %5s\n",
+	seq_printf(s, "%8s %8s %8s %5s %6s %10s %16s %5s\n",
 		   "gpuaddr", "useraddr", "size", "id", "flags", "type",
 		   "usage", "sglen");
 
@@ -349,7 +211,7 @@ kgsl_process_init_debugfs(struct kgsl_process_private *private)
 	 * So if debugfs is disabled in kernel, return as
 	 * success.
 	 */
-	dentry = debugfs_create_file("mem", 0444, private->debug_root, private,
+	dentry = debugfs_create_file("mem", 0400, private->debug_root, private,
 			    &process_mem_fops);
 
 	if (IS_ERR(dentry)) {

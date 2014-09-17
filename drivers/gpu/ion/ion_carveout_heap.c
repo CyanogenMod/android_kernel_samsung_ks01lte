@@ -153,18 +153,7 @@ int ion_carveout_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 			       struct vm_area_struct *vma)
 {
 	int ret_value = 0;
-#ifdef CONFIG_TIMA_RKP
-        if (buffer->size) {
-        /* iommu optimization- needs to be turned ON from
-         * the tz side.
-         */
-                cpu_v7_tima_iommu_opt(vma->vm_start, vma->vm_end, (unsigned long)vma->vm_mm->pgd);
-                __asm__ __volatile__ (
-                "mcr    p15, 0, r0, c8, c3, 0\n"
-                "dsb\n"
-                "isb\n");
-        }
-#endif
+
 	if (!ION_IS_CACHED(buffer->flags))
 		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
 
@@ -207,8 +196,8 @@ static int ion_carveout_print_debug(struct ion_heap *heap, struct seq_file *s,
 				da = data->addr-1;
 				seq_printf(s, "%16.s %14pa %14pa %14lu (%lx)\n",
 					   "FREE", &last_end, &da,
-					   data->addr-last_end,
-					   data->addr-last_end);
+					   (unsigned long)data->addr-last_end,
+					   (unsigned long)data->addr-last_end);
 			}
 
 			if (data->client_name)

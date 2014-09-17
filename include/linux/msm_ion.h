@@ -5,8 +5,7 @@
 
 enum msm_ion_heap_types {
 	ION_HEAP_TYPE_MSM_START = ION_HEAP_TYPE_CUSTOM + 1,
-	ION_HEAP_TYPE_DMA = ION_HEAP_TYPE_MSM_START,
-	ION_HEAP_TYPE_SECURE_DMA,
+	ION_HEAP_TYPE_SECURE_DMA = ION_HEAP_TYPE_MSM_START,
 	ION_HEAP_TYPE_REMOVED,
 	/*
 	 * if you add a heap type here you should also add it to
@@ -64,8 +63,6 @@ enum cp_mem_usage {
 	MAX_USAGE = 0x4,
 	UNKNOWN = 0x7FFFFFFF,
 };
-
-#define ION_HEAP_TYPE_DMA_MASK         (1 << ION_HEAP_TYPE_DMA)
 
 /**
  * Flag to use when allocating to indicate that a heap is secure.
@@ -254,7 +251,7 @@ int ion_handle_get_flags(struct ion_client *client, struct ion_handle *handle,
  */
 int ion_map_iommu(struct ion_client *client, struct ion_handle *handle,
 			int domain_num, int partition_num, unsigned long align,
-			unsigned long iova_length, unsigned long *iova,
+			unsigned long iova_length, ion_phys_addr_t *iova,
 			unsigned long *buffer_size,
 			unsigned long flags, unsigned long iommu_flags);
 
@@ -336,7 +333,7 @@ static inline struct ion_client *msm_ion_client_create(unsigned int heap_mask,
 static inline int ion_map_iommu(struct ion_client *client,
 			struct ion_handle *handle, int domain_num,
 			int partition_num, unsigned long align,
-			unsigned long iova_length, unsigned long *iova,
+			unsigned long iova_length, ion_phys_addr_t *iova,
 			unsigned long *buffer_size,
 			unsigned long flags,
 			unsigned long iommu_flags)

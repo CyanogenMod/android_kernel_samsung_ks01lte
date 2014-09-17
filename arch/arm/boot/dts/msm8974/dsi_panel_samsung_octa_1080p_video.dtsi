@@ -19,7 +19,7 @@
 		qcom,mdss-dsi-panel-controller = <&mdss_dsi0>;
 		qcom,rst-gpio = <&pm8941_gpios 19 0>;
 		qcom,enable-gpio = <&pm8941_gpios 14 0>;
-		qcom,cont-splash-enabled = <1>;
+		qcom,cont-splash-enabled = <0>;
 		qcom,mdss-pan-res = <1080 1920>;
 		qcom,mdss-pan-size = <62 111>; /* <Width> <Height> real size of panel in mm */
 		qcom,mdss-pan-bpp = <24>;
@@ -75,8 +75,8 @@
 					29 01 00 00 00 00 02 CB 10  /* samsung_lpts_1 */
 					29 01 00 00 00 00 02 B0 20		/* samsung_lpts_0 */
 					29 01 00 00 00 00 02 CB 04		/* samsung_lpts_1 */
-					23 01 00 00 64 00 03 f7 03	00	/* samsung_gamma_update */
-					/* !! Needs 100ms !!*/
+					23 01 00 00 14 00 03 f7 03	00	/* samsung_gamma_update */
+					/* !! Needs 20ms !!*/
 
 					29 01 00 00 00 00 22                   /* samsung_brightness_gamma */
 						ca 01 00 01 00 01 00 80
@@ -98,8 +98,8 @@
 		qcom,on-cmds-dsi-state = "DSI_LP_MODE";
 		qcom,panel-off-cmds = [
 					29 01 00 00 00 00 03 ff 1f 01
-					05 01 00 00 32 00 02 28 00
-					05 01 00 00 78 00 02 10 00];
+					05 01 00 00 00 00 02 28 00
+					05 01 00 00 14 00 02 10 00];
 		qcom,off-cmds-dsi-state = "DSI_HS_MODE";
 
 		qcom,panel-touchsensing-on-cmds = [29 01 00 00 00 00 03 ff 07 01];

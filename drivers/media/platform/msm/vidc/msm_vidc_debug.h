@@ -52,6 +52,7 @@ extern int msm_vidc_debug_out;
 extern int msm_fw_debug;
 extern int msm_fw_debug_mode;
 extern int msm_fw_low_power_mode;
+extern int msm_vp8_low_tier;
 extern int msm_vidc_hw_rsp_timeout;
 
 #define dprintk(__level, __fmt, arg...)	\
@@ -68,6 +69,7 @@ extern int msm_vidc_hw_rsp_timeout;
 	} while (0)
 
 
+struct dentry *msm_vidc_debugfs_init_drv(void);
 struct dentry *msm_vidc_debugfs_init_core(struct msm_vidc_core *core,
 		struct dentry *parent);
 struct dentry *msm_vidc_debugfs_init_inst(struct msm_vidc_inst *inst,

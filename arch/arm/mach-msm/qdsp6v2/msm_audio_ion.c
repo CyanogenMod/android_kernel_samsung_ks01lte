@@ -29,7 +29,7 @@ struct msm_audio_ion_private {
 	bool smmu_enabled;
 	bool audioheap_enabled;
 	struct iommu_group *group;
-	u32 domain_id;
+	int32_t domain_id;
 	struct iommu_domain *domain;
 };
 
@@ -344,7 +344,7 @@ int msm_audio_ion_import_legacy(const char *name, struct ion_client *client,
 		pr_err("%s: ion import dma buffer failed\n",
 			__func__);
 		rc = -EINVAL;
-		goto err_destroy_client;
+		goto err;
 	}
 
 	if (ionflag != NULL) {
@@ -380,10 +380,6 @@ int msm_audio_ion_import_legacy(const char *name, struct ion_client *client,
 
 err_ion_handle:
 	ion_free(client, *handle);
-err_destroy_client:
-	msm_audio_ion_client_destroy(client);
-	client = NULL;
-	*handle = NULL;
 err:
 	return rc;
 }

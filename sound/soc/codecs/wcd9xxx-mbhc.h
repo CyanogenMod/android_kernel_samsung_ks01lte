@@ -242,6 +242,7 @@ struct wcd9xxx_mbhc_config {
 	unsigned long micbias_enable_flags;
 	/* swap_gnd_mic returns true if extern GND/MIC swap switch toggled */
 	bool (*swap_gnd_mic) (struct snd_soc_codec *);
+	bool (*reset_gnd_mic) (struct snd_soc_card *);
 	unsigned long cs_enable_flags;
 	bool use_int_rbias;
 	bool do_recalibration;
@@ -285,6 +286,7 @@ struct wcd9xxx_mbhc_cb {
 	int (*enable_mb_source) (struct snd_soc_codec *, bool, bool);
 	void (*setup_int_rbias) (struct snd_soc_codec *, bool);
 	void (*pull_mb_to_vddio) (struct snd_soc_codec *, bool);
+	int (*enable_hpmic_switch) (struct snd_soc_codec *, bool);
 };
 
 struct wcd9xxx_mbhc {
@@ -364,10 +366,15 @@ struct wcd9xxx_mbhc {
 	/* Holds codec specific interrupt mapping */
 	const struct wcd9xxx_mbhc_intr *intr_ids;
 
+	/* Indicates status of current source switch */
+	bool is_cs_enabled;
+
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_poke;
 	struct dentry *debugfs_mbhc;
 #endif
+
+	struct mutex mbhc_lock;
 };
 
 #define WCD9XXX_MBHC_CAL_SIZE(buttons, rload) ( \

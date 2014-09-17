@@ -470,7 +470,7 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 		snd_pcm_period_elapsed(prtd->capture_substream);
 	} else {
 		spin_unlock_irqrestore(&prtd->dsp_ul_lock, dsp_flags);
-		pr_debug("UL data dropped\n");
+		pr_err("UL data dropped\n");
 	}
 
 	wake_up(&prtd->out_wait);
@@ -632,7 +632,7 @@ static void voip_process_dl_pkt(uint8_t *voc_pkt, void *private_data)
 	} else {
 		*((uint32_t *)voc_pkt) = 0;
 		spin_unlock_irqrestore(&prtd->dsp_lock, dsp_flags);
-		pr_debug("DL data not available\n");
+		pr_err("DL data not available\n");
 	}
 	wake_up(&prtd->in_wait);
 }
@@ -987,7 +987,7 @@ static int voip_config_vocoder(struct snd_pcm_substream *substream)
 	uint32_t evrc_min_rate_type = 0;
 	uint32_t evrc_max_rate_type = 0;
 
-        pr_info("%s(): mode=%d, playback sample rate=%d, capture sample rate=%d\n",
+        pr_debug("%s(): mode=%d, playback sample rate=%d, capture sample rate=%d\n",
                   __func__, prtd->mode, prtd->play_samp_rate, prtd->cap_samp_rate);
 
 	if ((runtime->format != FORMAT_S16_LE &&
@@ -1098,13 +1098,9 @@ static int voip_config_vocoder(struct snd_pcm_substream *substream)
 				   evrc_min_rate_type,
 				   evrc_max_rate_type);
 	else {
-		if((prtd->play_samp_rate != 0) &&
-			(prtd->cap_samp_rate == 0) )
-			pr_info("%s: TX setting is not complete ", __func__);
-		else
-			pr_err("%s: Invalid rate playback %d, capture %d\n",
-				__func__, prtd->play_samp_rate,
-				prtd->cap_samp_rate);
+		pr_debug("%s: Invalid rate playback %d, capture %d\n",
+			 __func__, prtd->play_samp_rate,
+			 prtd->cap_samp_rate);
 
 		ret = -EINVAL;
 	}
@@ -1307,6 +1303,13 @@ static int msm_voip_rate_config_put(struct snd_kcontrol *kcontrol,
 					__func__, ret);
 
 				goto done;
+			}
+
+			ret = voc_update_amr_vocoder_rate(
+					voc_get_session_id(VOIP_SESSION_NAME));
+			if (ret) {
+				pr_err("%s:Failed to update AMR rate, ret=%d\n",
+					__func__, ret);
 			}
 		}
 	}

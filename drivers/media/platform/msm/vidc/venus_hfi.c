@@ -1084,24 +1084,28 @@ static inline int venus_hfi_clk_enable(struct venus_hfi_device *device)
 		return 0;
 	}
 
-	for (i = 0; i <= device->clk_gating_level; i++) {
+	for (i = VCODEC_CLK; i <= device->clk_gating_level; i++) {
 		cl = &device->resources.clock[i];
 		rc = clk_enable(cl->clk);
 		if (rc) {
-			dprintk(VIDC_ERR, "Failed to enable clocks\n");
+			dprintk(VIDC_ERR, "%s: Failed to enable %s clock\n",
+				__func__, cl->name);
 			goto fail_clk_enable;
 		} else {
-			dprintk(VIDC_DBG, "Clock: %s enabled\n", cl->name);
+			dprintk(VIDC_DBG, "%s: Clock: %s enabled\n",
+				__func__, cl->name);
 		}
 	}
 	device->clk_state = ENABLED_PREPARED;
 	++device->clk_cnt;
 	return 0;
 fail_clk_enable:
-	for (i--; i >= 0; i--) {
+	for (i--; i >= VCODEC_CLK; i--) {
 		cl = &device->resources.clock[i];
 		usleep(100);
 		clk_disable(cl->clk);
+		dprintk(VIDC_ERR, "%s: Clock: %s disabled\n",
+			__func__, cl->name);
 	}
 	device->clk_state = DISABLED_PREPARED;
 	return rc;
@@ -1131,10 +1135,12 @@ static inline void venus_hfi_clk_disable(struct venus_hfi_device *device)
 	if (rc)
 		dprintk(VIDC_WARN, "Failed to set clock rate to min: %d\n", rc);
 
-	for (i = 0; i <= device->clk_gating_level; i++) {
+	for (i = VCODEC_CLK; i <= device->clk_gating_level; i++) {
 		cl = &device->resources.clock[i];
 		usleep(100);
 		clk_disable(cl->clk);
+		dprintk(VIDC_DBG, "%s: Clock: %s disabled\n",
+			__func__, cl->name);
 	}
 	device->clk_state = DISABLED_PREPARED;
 	--device->clk_cnt;
@@ -1658,7 +1664,7 @@ static int venus_hfi_get_qdss_iommu_virtual_addr(struct hfi_mem_map *mem_map,
 {
 	int i;
 	int rc = 0;
-	unsigned long iova = 0;
+	dma_addr_t iova = 0;
 	int num_entries = sizeof(venus_qdss_entries)/(2 * sizeof(u32));
 
 	for (i = 0; i < num_entries; i++) {
@@ -1672,7 +1678,7 @@ static int venus_hfi_get_qdss_iommu_virtual_addr(struct hfi_mem_map *mem_map,
 			rc = -ENOMEM;
 			break;
 		}
-		mem_map[i].virtual_addr = (u32) iova;
+		mem_map[i].virtual_addr = iova;
 		mem_map[i].physical_addr = venus_qdss_entries[i][0];
 		mem_map[i].size = venus_qdss_entries[i][1];
 		mem_map[i].attr = 0x0;
@@ -3094,7 +3100,7 @@ static inline int venus_hfi_init_clocks(struct msm_vidc_platform_resources *res,
 			  );
 	}
 
-	for (i = 0; i < VCODEC_MAX_CLKS; i++) {
+	for (i = VCODEC_CLK; i < VCODEC_MAX_CLKS; i++) {
 		if (i == VCODEC_OCMEM_CLK && !res->ocmem_size)
 			continue;
 		cl = &device->resources.clock[i];
@@ -3110,7 +3116,7 @@ static inline int venus_hfi_init_clocks(struct msm_vidc_platform_resources *res,
 	}
 
 	if (i < VCODEC_MAX_CLKS) {
-		for (--i; i >= 0; i--) {
+		for (--i; i >= VCODEC_CLK; i--) {
 			if (i == VCODEC_OCMEM_CLK && !res->ocmem_size)
 				continue;
 			cl = &device->resources.clock[i];
@@ -3129,7 +3135,7 @@ static inline void venus_hfi_deinit_clocks(struct venus_hfi_device *device)
 		return;
 	}
 
-	for (i = 0; i < VCODEC_MAX_CLKS; i++) {
+	for (i = VCODEC_CLK; i < VCODEC_MAX_CLKS; i++) {
 		if (i == VCODEC_OCMEM_CLK && !device->res->ocmem_size)
 			continue;
 		clk_put(device->resources.clock[i].clk);
@@ -3154,6 +3160,8 @@ static inline void venus_hfi_disable_unprepare_clks(
 			cl = &device->resources.clock[i];
 			usleep(100);
 			clk_disable(cl->clk);
+			dprintk(VIDC_DBG, "%s: Clock: %s disabled\n",
+				__func__, cl->name);
 		}
 	} else {
 		for (i = device->clk_gating_level + 1;
@@ -3161,6 +3169,8 @@ static inline void venus_hfi_disable_unprepare_clks(
 			cl = &device->resources.clock[i];
 			usleep(100);
 			clk_disable(cl->clk);
+			dprintk(VIDC_DBG, "%s: Clock: %s disabled\n",
+				__func__, cl->name);
 		}
 	}
 	for (i = VCODEC_CLK; i < VCODEC_MAX_CLKS; i++) {
@@ -3168,6 +3178,8 @@ static inline void venus_hfi_disable_unprepare_clks(
 			continue;
 		cl = &device->resources.clock[i];
 		clk_unprepare(cl->clk);
+		dprintk(VIDC_DBG, "%s: Clock: %s unprepared\n",
+			__func__, cl->name);
 	}
 	device->clk_state = DISABLED_UNPREPARED;
 	--device->clk_cnt;
@@ -3194,20 +3206,24 @@ static inline int venus_hfi_prepare_enable_clks(struct venus_hfi_device *device)
 		cl = &device->resources.clock[i];
 		rc = clk_prepare_enable(cl->clk);
 		if (rc) {
-			dprintk(VIDC_ERR, "Failed to enable clocks\n");
+			dprintk(VIDC_ERR, "%s: Failed to enable %s clock\n",
+				__func__, cl->name);
 			goto fail_clk_enable;
 		} else {
-			dprintk(VIDC_DBG, "Clock: %s enabled\n", cl->name);
+			dprintk(VIDC_DBG, "%s: Clock: %s prepare and enabled\n",
+				__func__, cl->name);
 		}
 	}
 	device->clk_state = ENABLED_PREPARED;
 	++device->clk_cnt;
 	return rc;
 fail_clk_enable:
-	for (; i >= 0; i--) {
+	for (; i >= VCODEC_CLK; i--) {
 		cl = &device->resources.clock[i];
 		usleep(100);
 		clk_disable_unprepare(cl->clk);
+		dprintk(VIDC_ERR, "%s: Clock: %s disable and unprepared\n",
+			__func__, cl->name);
 	}
 	device->clk_state = DISABLED_UNPREPARED;
 	return rc;
@@ -3547,8 +3563,7 @@ static int venus_hfi_load_fw(void *dev)
 			__func__, device);
 		return -EINVAL;
 	}
-	device->clk_gating_level = VCODEC_CLK;
-
+	device->clk_gating_level = VCODEC_NONE;
 	rc = venus_hfi_iommu_attach(device);
 	if (rc) {
 		dprintk(VIDC_ERR, "Failed to attach iommu");
@@ -3773,9 +3788,15 @@ int venus_hfi_get_core_capabilities(void)
 			&smem_block_size);
 	if (smem_table_ptr &&
 			((smem_image_index_venus + version_string_size) <=
-			smem_block_size))
+			smem_block_size)) {
 		memcpy(version_info, smem_table_ptr + smem_image_index_venus,
 				version_string_size);
+	} else {
+		dprintk(VIDC_ERR,
+			"%s: failed to read version info from smem table\n",
+			__func__);
+		return -EINVAL;
+	}
 
 	while (version_info[i++] != 'V' && i < version_string_size)
 		;
@@ -3792,6 +3813,29 @@ int venus_hfi_get_core_capabilities(void)
 			HAL_VIDEO_ENCODER_SCALING_CAPABILITY |
 			HAL_VIDEO_ENCODER_DEINTERLACE_CAPABILITY |
 			HAL_VIDEO_DECODER_MULTI_STREAM_CAPABILITY;
+	return rc;
+}
+
+int venus_hfi_capability_check(u32 fourcc, u32 width,
+				u32 *max_width, u32 *max_height)
+{
+	int rc = 0;
+	if (!max_width || !max_height) {
+		dprintk(VIDC_ERR, "%s - invalid parameter\n", __func__);
+		return -EINVAL;
+	}
+
+	if (msm_vp8_low_tier && fourcc == V4L2_PIX_FMT_VP8) {
+		*max_width = DEFAULT_WIDTH;
+		*max_height = DEFAULT_HEIGHT;
+	}
+
+	if (width > *max_width) {
+		dprintk(VIDC_ERR,
+			"Unsupported width = %u supported max width = %u\n",
+			width, *max_width);
+		rc = -ENOTSUPP;
+	}
 	return rc;
 }
 
@@ -3957,6 +4001,7 @@ static void venus_init_hfi_callbacks(struct hfi_device *hdev)
 	hdev->get_info = venus_hfi_get_info;
 	hdev->get_stride_scanline = venus_hfi_get_stride_scanline;
 	hdev->get_core_capabilities = venus_hfi_get_core_capabilities;
+	hdev->capability_check = venus_hfi_capability_check;
 	hdev->power_enable = venus_hfi_power_enable;
 }
 
