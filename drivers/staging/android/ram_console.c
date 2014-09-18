@@ -183,5 +183,5 @@ static int __init ram_console_late_init(void)
 	return 0;
 }
 
-late_initcall(ram_console_late_init);
+device_initcall(ram_console_late_init);
 postcore_initcall(ram_console_module_init);
