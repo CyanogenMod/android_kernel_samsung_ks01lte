@@ -960,6 +960,7 @@ int mdss_mdp_overlay_start(struct msm_fb_data_type *mfd)
 	if (ctl->power_on) {
 		if (!mdp5_data->mdata->batfet)
 			mdss_mdp_batfet_ctrl(mdp5_data->mdata, true);
+		mdss_mdp_release_splash_pipe(mfd);
 		return 0;
 	}
 
@@ -1002,63 +1003,7 @@ int mdss_mdp_overlay_start(struct msm_fb_data_type *mfd)
 		goto ctl_error;
 	}
 
-	if (mfd->panel_info->cont_splash_enabled) {
-		if (mdp5_data->handoff) {
-			/*
-			 * Set up border-fill on the handed off pipes.
-			 * This is needed to ensure that there are no memory
-			 * accesses prior to attaching iommu during continuous
-			 * splash screen case. However, for command mode
-			 * displays, this is not necessary since the panels can
-			 * refresh from their internal memory if no data is sent
-			 * out on the dsi lanes.
-			 */
-			if (ctl && ctl->is_video_mode) {
-				rc = mdss_mdp_display_commit(ctl, NULL);
-				if (!IS_ERR_VALUE(rc)) {
-					mdss_mdp_display_wait4comp(ctl);
-				} else {
-					/*
-					 * Since border-fill setup failed, we
-					 * need to ensure that we turn off the
-					 * MDP timing generator before attaching
-					 * iommu
-					 */
-					pr_err("failed to set BF at handoff\n");
-					mdp5_data->handoff = false;
-					rc = 0;
-				}
-			}
-
-			/* Add all the handed off pipes to the cleanup list */
-			mdss_mdp_handoff_cleanup_pipes(mfd,
-				MDSS_MDP_PIPE_TYPE_RGB);
-			mdss_mdp_handoff_cleanup_pipes(mfd,
-				MDSS_MDP_PIPE_TYPE_VIG);
-			mdss_mdp_handoff_cleanup_pipes(mfd,
-				MDSS_MDP_PIPE_TYPE_DMA);
-		} else {
-			/* Add all the handed off pipes to the cleanup list */
-			mdss_mdp_handoff_cleanup_pipes(mfd,
-				MDSS_MDP_PIPE_TYPE_RGB);
-			mdss_mdp_handoff_cleanup_pipes(mfd,
-				MDSS_MDP_PIPE_TYPE_VIG);
-			mdss_mdp_handoff_cleanup_pipes(mfd,
-				MDSS_MDP_PIPE_TYPE_DMA);
-		}
-		rc = mdss_mdp_ctl_splash_finish(ctl, mdp5_data->handoff);
-		/*
-		 * Remove the vote for footswitch even if above function
-		 * returned error
-		 */
-		mdss_mdp_footswitch_ctrl_splash(0);
-		if (rc)
-			goto ctl_error;
-
-		if (!is_mdss_iommu_attached())
-			mdss_iommu_attach(mdss_res);
-	}
-
+	rc = mdss_mdp_splash_cleanup(mfd, true);
 	if (!rc)
 		goto end;
 
@@ -3110,6 +3055,7 @@ int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd)
 	mdp5_interface->panel_register_done = mdss_panel_register_done;
 	mdp5_interface->kickoff_fnc = mdss_mdp_overlay_kickoff;
 	mdp5_interface->get_sync_fnc = mdss_mdp_rotator_sync_pt_get;
+	mdp5_interface->splash_init_fnc = mdss_mdp_splash_init;
 
 	mdp5_data = kmalloc(sizeof(struct mdss_overlay_private), GFP_KERNEL);
 	if (!mdp5_data) {

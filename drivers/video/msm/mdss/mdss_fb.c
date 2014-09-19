@@ -54,6 +54,7 @@
 #include <mach/msm_memtypes.h>
 
 #include "mdss_fb.h"
+#include "mdss_mdp_splash_logo.h"
 
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
@@ -599,6 +600,9 @@ static int mdss_fb_probe(struct platform_device *pdev)
 		mfd->mdp_sync_pt_data.retire_threshold = 0;
 		break;
 	}
+
+	if (mfd->mdp.splash_init_fnc)
+		mfd->mdp.splash_init_fnc(mfd);
 
 	INIT_DELAYED_WORK(&mfd->idle_notify_work, __mdss_fb_idle_notify_work);
 

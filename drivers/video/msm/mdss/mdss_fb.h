@@ -21,6 +21,7 @@
 #include <linux/notifier.h>
 
 #include "mdss_panel.h"
+#include "mdss_mdp_splash_logo.h"
 
 #define MSM_FB_DEFAULT_PAGE_SIZE 2
 #define MFD_KEY  0x11161126
@@ -223,6 +224,8 @@ struct msm_fb_data_type {
 	wait_queue_head_t idle_wait_q;
 	wait_queue_head_t kickoff_wait_q;
 	bool shutdown_pending;
+
+	struct msm_fb_splash_info splash_info;
 
 	wait_queue_head_t ioctl_q;
 	atomic_t ioctl_ref_cnt;
