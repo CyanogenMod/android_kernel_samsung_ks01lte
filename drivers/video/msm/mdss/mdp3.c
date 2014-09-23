@@ -1404,7 +1404,7 @@ out:
  * need to map buffers ourseleve to add extra padding
  */
 int mdp3_self_map_iommu(struct ion_client *client, struct ion_handle *handle,
-	unsigned long align, unsigned long padding, unsigned long *iova,
+	unsigned long align, unsigned long padding, dma_addr_t *iova,
 	unsigned long *buffer_size, unsigned long flags,
 	unsigned long iommu_flags)
 {

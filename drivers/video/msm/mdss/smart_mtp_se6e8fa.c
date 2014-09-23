@@ -34,7 +34,6 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #include "smart_mtp_se6e8fa.h"
 #include "smart_mtp_2p2_gamma.h"
 #include "smart_dimming.h"
-#include "mdss_samsung_dsi_panel.h"
 /*
 #define SMART_DIMMING_DEBUG
 */
@@ -116,9 +115,37 @@ extern int v23_val[3];
 extern int v11_val[3];
 extern int v3_val[3];
 
+enum mipi_samsung_cmd_list {
+
+        PANEL_READY_TO_ON,
+        PANEL_DISP_OFF,
+        PANEL_DISPLAY_ON,
+        PANEL_DISPLAY_OFF,
+        PANEL_DISPLAY_UNBLANK,
+        PANEL_DISPLAY_BLANK,
+        PANEL_ALL_PIXEL_OFF,
+        PANEL_BRIGHT_CTRL,
+        PANEL_MTP_ENABLE,
+        PANEL_MTP_DISABLE,
+        PANEL_NEED_FLIP,
+        PANEL_ACL_OFF,
+        PANEL_ACL_ON,
+        PANEL_LATE_ON,
+        PANEL_EARLY_OFF,
+        PANEL_TOUCHSENSING_ON,
+        PANEL_TOUCHSENSING_OFF,
+        PANEL_TEAR_ON,
+        PANEL_TEAR_OFF,
+        PANEL_LDI_FPS_CHANGE,
+        PANEL_LDI_SET_VDDM_OFFSET, /*LDI_ADJ_VDDM_OFFSET*/
+        PANEL_PARTIAL_ON,
+        PANEL_PARTIAL_OFF,
+        PANEl_FORCE_500CD
+};
+
 extern int mipi_samsung_disp_send_cmd(
-		enum mipi_samsung_cmd_list cmd,
-		unsigned char lock);
+	enum mipi_samsung_cmd_list cmd,
+	unsigned char lock);
 
 void panel_load_colors(void)
 {
@@ -2534,10 +2561,6 @@ static void gamma_init_evt1(
 
 		bl_index[S6E8FA_TABLE_MAX - cnt] +=
 			gradation_offset[table_index][cnt - 1];
-
-		/* THERE IS M-GRAY0 target */
-		if (bl_index[S6E8FA_TABLE_MAX - cnt] == 0)
-			bl_index[S6E8FA_TABLE_MAX - cnt] = 1;
 	}
 
 #ifdef SMART_DIMMING_DEBUG
@@ -2877,10 +2900,6 @@ static void gamma_init_evt1_second(
 
 		bl_index[S6E8FA_TABLE_MAX - cnt] +=
 			gradation_offset_evt1_second[table_index][cnt - 1];
-
-		/* THERE IS M-GRAY0 target */
-		if (bl_index[S6E8FA_TABLE_MAX - cnt] == 0)
-			bl_index[S6E8FA_TABLE_MAX - cnt] = 1;
 	}
 
 #ifdef SMART_DIMMING_DEBUG
@@ -3201,10 +3220,6 @@ static void gamma_init_evt1_third(
 
 		bl_index[S6E8FA_TABLE_MAX - cnt] +=
 			gradation_offset_evt1_third[table_index][cnt - 1];
-
-		/* THERE IS M-GRAY0 target */
-		if (bl_index[S6E8FA_TABLE_MAX - cnt] == 0)
-			bl_index[S6E8FA_TABLE_MAX - cnt] = 1;
 	}
 
 #ifdef SMART_DIMMING_DEBUG

@@ -31,15 +31,10 @@
 #define SAMSUNG_DSI_PANEL_H
 #define MAX_PANEL_NAME_SIZE 100
 #define RECOVERY_BRIGHTNESS 180
-#define LCD_DEBUG(X, ...) pr_debug("[LCD]%s:"X, __func__, ## __VA_ARGS__);
+#define LCD_DEBUG(X, ...) pr_info("[LCD]%s:"X, __func__, ## __VA_ARGS__);
 
 #include "smart_dimming.h"
-#if defined(CONFIG_FB_MSM_MIPI_MAGNA_OCTA_VIDEO_720P_PT_PANEL) \
-	|| defined(CONFIG_FB_MSM_MDSS_MAGNA_OCTA_VIDEO_720P_PANEL) 
-#include "smart_mtp_ea8061v.h"
-#else
-#include "smart_mtp_ea8061.h"
-#endif
+#include "smart_mtp_se6e3fa.h"
 
 enum mipi_samsung_cmd_list {
 
@@ -66,8 +61,7 @@ enum mipi_samsung_cmd_list {
 	PANEL_LDI_SET_VDDM_OFFSET, /*LDI_ADJ_VDDM_OFFSET*/
 	PANEL_PARTIAL_ON,
 	PANEL_PARTIAL_OFF,
-	PANEl_FORCE_500CD,
-	PANEL_NV_MTP_READ_REGISTER_SET_CMDS,
+	PANEl_FORCE_500CD
 };
 enum {
 	MIPI_RESUME_STATE,
@@ -145,10 +139,6 @@ enum {
 	PANEL_WVGA_OCTA_S6E88A0,
 #endif
 	PANEL_720P_OCTA_D53D6EA8061V,
-	PANEL_720P_OCTA_S6E8AA0,
-	PANEL_720P_OCTA_EA8061_VIDEO,
-	PANEL_720P_OCTA_S6E8AA4_VIDEO,
-	PANEL_720P_OCTA_D53D6EA8061V_VIDEO,
 };
 
 struct panel_hrev {
