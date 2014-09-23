@@ -1908,14 +1908,12 @@
 		compatible = "qcom,msm-pcm-dsp";
 		qcom,msm-pcm-dsp-id = <1>;
 		qcom,msm-pcm-low-latency;
-		qcom,latency-level = "regular";
 	};
 
 	qcom,msm-pcm-jack-low-latency {
 		compatible = "qcom,msm-pcm-dsp";
 		qcom,msm-pcm-dsp-id = <2>;
 		qcom,msm-pcm-low-latency;
-		qcom,latency-level = "regular";
 	};
 
 	qcom,msm-pcm-routing {

@@ -1099,6 +1099,3 @@
 	};
 };
 
-&pm8941_l22 {
-	regulator-always-on;
-};
