@@ -1871,6 +1871,8 @@ extern int task_free_unregister(struct notifier_block *n);
 #define used_math() tsk_used_math(current)
 
 /* Per-process atomic flags. */
+#define PFA_SPREAD_PAGE  1      /* Spread page cache over cpuset */
+#define PFA_SPREAD_SLAB  2      /* Spread some slab caches over cpuset */
 
 #define PFA_NO_NEW_PRIVS 0x00000001	/* May not gain new privileges. */
 
