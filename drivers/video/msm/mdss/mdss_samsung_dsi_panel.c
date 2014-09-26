@@ -3713,17 +3713,20 @@ int mdss_dsi_panel_init(struct device_node *node, struct mdss_dsi_ctrl_pdata *ct
 #if defined(CONFIG_BACKLIGHT_CLASS_DEVICE)
 	struct backlight_device *bd = NULL;
 #endif
+	struct mdss_panel_info *pinfo = &(ctrl_pdata->panel_data.panel_info);
 	pr_debug("%s:%d", __func__, __LINE__);
 
 	if (!node)
 		return -ENODEV;
 
 	panel_name = of_get_property(node, "label", NULL);
-	if (!panel_name)
+	if (!panel_name) {
 		pr_info("%s:%d, panel name not specified\n",
 						__func__, __LINE__);
-	else
+	} else {
 		pr_info("%s: Panel Name = %s\n", __func__, panel_name);
+		strlcpy(&pinfo->panel_name[0], panel_name, MDSS_MAX_PANEL_LEN);
+	}
 
 	if(is_panel_supported(panel_name)) {
 		LCD_DEBUG("Panel : %s is not supported:",panel_name);
