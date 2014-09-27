@@ -882,7 +882,7 @@ static struct dsi_cmd get_gamma_control_set(int candella)
 {
 	struct dsi_cmd gamma_control = {0,};
 	/* Just a safety check to ensure smart dimming data is initialised well */
-	if (msd.sdimconf == NULL) msd.sdimconf = smart_S6E3FA0_get_conf();
+	if (msd.sdimconf == NULL) msd.sdimconf = smart_S6E8FA0_get_conf();
 	BUG_ON(msd.sdimconf->generate_gamma == NULL);
 	msd.sdimconf->generate_gamma(candella, &gamma_cmds_list.cmd_desc[0].payload[1]);
 
