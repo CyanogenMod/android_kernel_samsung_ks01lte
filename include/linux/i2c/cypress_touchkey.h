@@ -52,6 +52,8 @@ extern struct class *sec_class;
 
 #define NUM_OF_KEY		4
 
+#define TK_KEYPAD_ENABLE
+
 #ifdef TK_INFORM_CHARGER
 struct touchkey_callbacks {
 	void (*inform_charger)(struct touchkey_callbacks *, bool);
@@ -128,6 +130,9 @@ struct cypress_touchkey_info {
 	int glove_value;
 #endif
 
+#ifdef TK_KEYPAD_ENABLE
+	atomic_t keypad_enable;
+#endif
 };
 
 void touchkey_charger_infom(bool en);
