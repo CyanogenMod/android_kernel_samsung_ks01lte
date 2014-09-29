@@ -792,11 +792,8 @@ static int msm_thermal_get_freq_table(void)
 
 	while (table[i].frequency != CPUFREQ_TABLE_END)
 		i++;
-//#ifdef CONFIG_SEC_PM
-//	limit_idx_low = 7;
-//#else
+
 	limit_idx_low = 0;
-//#endif
 	limit_idx_high = limit_idx = i - 1;
 	BUG_ON(limit_idx_high <= 0 || limit_idx_high <= limit_idx_low);
 fail:
@@ -1212,11 +1209,6 @@ static void do_freq_control(long temp)
 		if (limit_idx < limit_idx_low)
 			limit_idx = limit_idx_low;
 		max_freq = table[limit_idx].frequency;
-
-#ifdef CONFIG_SEC_PM_DEBUG
-		pr_info("%s: down Limit=%d Temp: %ld\n",
-				KBUILD_MODNAME, limit_idx, temp);
-#endif
 	} else if (temp < msm_thermal_info.limit_temp_degC -
 		 msm_thermal_info.temp_hysteresis_degC) {
 		if (limit_idx == limit_idx_high)
@@ -1228,11 +1220,6 @@ static void do_freq_control(long temp)
 			max_freq = UINT_MAX;
 		} else
 			max_freq = table[limit_idx].frequency;
-
-#ifdef CONFIG_SEC_PM_DEBUG
-		pr_info("%s: up Limit=%d Temp: %ld\n",
-				KBUILD_MODNAME, limit_idx, temp);
-#endif
 	}
 
 	if (max_freq == cpus[cpu].limited_max_freq)
@@ -1834,14 +1821,7 @@ static void __ref disable_msm_thermal(void)
 	uint32_t cpu = 0;
 
 	/* make sure check_temp is no longer running */
-	/* kor_ts@sec
-	 * flush_scheduled_work () should be avoided.
-	 */
 	cancel_delayed_work_sync(&check_temp_work);
-	/*
-	cancel_delayed_work(&check_temp_work);
-	flush_scheduled_work();
-	*/
 
 	get_online_cpus();
 	for_each_possible_cpu(cpu) {
@@ -2139,6 +2119,18 @@ int msm_thermal_init(struct msm_thermal_data *pdata)
 	int ret = 0;
 	uint32_t cpu;
 
+	for_each_possible_cpu(cpu) {
+		cpus[cpu].cpu = cpu;
+		cpus[cpu].offline = 0;
+		cpus[cpu].user_offline = 0;
+		cpus[cpu].hotplug_thresh_clear = false;
+		cpus[cpu].max_freq = false;
+		cpus[cpu].user_max_freq = UINT_MAX;
+		cpus[cpu].user_min_freq = 0;
+		cpus[cpu].limited_max_freq = UINT_MAX;
+		cpus[cpu].limited_min_freq = 0;
+		cpus[cpu].freq_thresh_clear = false;
+	}
 	BUG_ON(!pdata);
 	memcpy(&msm_thermal_info, pdata, sizeof(struct msm_thermal_data));
 
@@ -2812,10 +2804,6 @@ static int probe_cc(struct device_node *node, struct msm_thermal_data *data,
 	}
 
 	for_each_possible_cpu(cpu) {
-		cpus[cpu].cpu = cpu;
-		cpus[cpu].offline = 0;
-		cpus[cpu].user_offline = 0;
-		cpus[cpu].hotplug_thresh_clear = false;
 		ret = of_property_read_string_index(node, key, cpu,
 				&cpus[cpu].sensor_type);
 		if (ret)
@@ -2849,7 +2837,6 @@ static int probe_freq_mitigation(struct device_node *node,
 {
 	char *key = NULL;
 	int ret = 0;
-	uint32_t cpu;
 
 	key = "qcom,freq-mitigation-temp";
 	ret = of_property_read_u32(node, key, &data->freq_mitig_temp_degc);
@@ -2873,14 +2860,6 @@ static int probe_freq_mitigation(struct device_node *node,
 		goto PROBE_FREQ_EXIT;
 
 	freq_mitigation_enabled = 1;
-	for_each_possible_cpu(cpu) {
-		cpus[cpu].max_freq = false;
-		cpus[cpu].user_max_freq = UINT_MAX;
-		cpus[cpu].user_min_freq = 0;
-		cpus[cpu].limited_max_freq = UINT_MAX;
-		cpus[cpu].limited_min_freq = 0;
-		cpus[cpu].freq_thresh_clear = false;
-	}
 
 PROBE_FREQ_EXIT:
 	if (ret) {
@@ -2960,17 +2939,11 @@ static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
 	 * Need to make sure sysfs node is created again
 	 */
 	if (psm_nodes_called) {
-		ret = msm_thermal_add_psm_nodes();
-		if (ret)
-			pr_err("%s:%d msm_thermal_add_psm_nodes err",
-					__func__, __LINE__);
+		msm_thermal_add_psm_nodes();
 		psm_nodes_called = false;
 	}
 	if (vdd_rstr_nodes_called) {
-		ret = msm_thermal_add_vdd_rstr_nodes();
-		if (ret)
-			pr_err("%s:%d msm_thermal_add_vdd_rstr_nodes err",
-					__func__, __LINE__);
+		msm_thermal_add_vdd_rstr_nodes();
 		vdd_rstr_nodes_called = false;
 	}
 	if (ocr_nodes_called) {
