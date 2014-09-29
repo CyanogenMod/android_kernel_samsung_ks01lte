@@ -1829,6 +1829,7 @@
 		qcom,dwc-hsphy-init = <0x00D194E4>;
 		qcom,misc-ref = <&pm8941_misc>;
 		dwc_usb3-adc_tm = <&pm8941_adc_tm>;
+		qcom,utmi-clk-rate = <24000000>;
 		qcom,otg-capability = <1>;
 		qcom,dwc-usb3-msm-tx-fifo-size = <29696>;
 		qcom,dwc-usb3-msm-qdss-tx-fifo-size = <8192>;
