@@ -351,7 +351,6 @@ static inline unsigned int cpufreq_quick_get_max(unsigned int cpu)
 }
 #endif
 
-#if defined (CONFIG_SEC_DVFS) || defined (CONFIG_CPU_FREQ_LIMIT_USERSPACE)
 enum {
 	BOOT_CPU = 0,
 };
@@ -376,10 +375,7 @@ enum {
 	DVFS_MAX_ID
 };
 
-
 int set_freq_limit(unsigned long id, unsigned int freq);
-#endif
-
 
 /*********************************************************************
  *                       CPUFREQ DEFAULT GOVERNOR                    *
