@@ -23,6 +23,11 @@
                         qcom,ion-heap-type = "DMA";
                 };
 
+		qcom,ion-heap@20 {
+			reg = <20>;
+			qcom,ion-heap-type = "SYSTEM";
+		};
+
 		qcom,ion-heap@25 {
 			reg = <25>;
 			qcom,ion-heap-type = "SYSTEM";
