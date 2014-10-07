@@ -83,6 +83,7 @@ struct msm_actuator_ctrl_t {
 	uint16_t i2c_tbl_index;
 	enum cci_i2c_master_t cci_master;
 	uint32_t subdev_id;
+	struct msm_camera_gpio_conf *gpio_conf;
 };
 
 #endif
