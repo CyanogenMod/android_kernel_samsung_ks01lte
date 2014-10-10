@@ -34,6 +34,7 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #include "smart_mtp_se6e8fa.h"
 #include "smart_mtp_2p2_gamma.h"
 #include "smart_dimming.h"
+#include "mdss_samsung_dsi_panel.h"
 /*
 #define SMART_DIMMING_DEBUG
 */

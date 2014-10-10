@@ -505,7 +505,7 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	u32 ystride, bpp, data, dst_bpp;
 	u32 dummy_xres = 0, dummy_yres = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	u32 hsync_period, vsync_period;
+	u32 hsync_period, vsync_period, tmp;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -649,24 +649,20 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	mdss_dsi_sw_reset(pdata);
 	mdss_dsi_host_init(mipi, pdata);
 	// LP11
-	{
-		u32 tmp;
-		tmp = MIPI_INP((ctrl_pdata->ctrl_base) + 0xac);
-		tmp &= ~(1<<28);
-		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
-		wmb();
-		msleep(20);
-	}
+	tmp = MIPI_INP((ctrl_pdata->ctrl_base) + 0xac);
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, 0x1F << 16);
+	wmb();
+	msleep(20);
 	// LP11
 
-    ctrl_pdata->panel_reset(pdata, 1);
+	ctrl_pdata->panel_reset(pdata, 1);
+
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
 
 	if (pdata->panel_info.mipi.init_delay)
 		usleep(pdata->panel_info.mipi.init_delay);
 
 	if (mipi->force_clk_lane_hs) {
-		u32 tmp;
-
 		tmp = MIPI_INP((ctrl_pdata->ctrl_base) + 0xac);
 		tmp |= (1<<28);
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
@@ -1022,17 +1018,11 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		}
 		break;
 	case MDSS_EVENT_CONT_SPLASH_FINISH:
+		if (ctrl_pdata->off_cmds.link_state == DSI_LP_MODE)
+			rc = mdss_dsi_blank(pdata);
 		ctrl_pdata->ctrl_state &= ~CTRL_STATE_MDP_ACTIVE;
 		ctrl_pdata->mdp_tg_on = 0;
-
-		if (1){ //(ctrl_pdata->on_cmds.link_state == DSI_LP_MODE) {
-			rc = mdss_dsi_cont_splash_on(pdata);
-		} else {
-			pr_debug("%s:event=%d, Dsi On not called: ctrl_state: %d\n",
-				 __func__, event,
-				 ctrl_pdata->dsi_on_state);
-			rc = -EINVAL;
-		}
+		rc = mdss_dsi_cont_splash_on(pdata);
 		break;
 	case MDSS_EVENT_PANEL_CLK_CTRL:
 #ifdef DSI_CLK_DEBUG
@@ -1086,7 +1076,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		if(ctrl_pdata->event_handler)
 			rc = ctrl_pdata->event_handler(event);
 		else
-		pr_debug("%s: unhandled event=%d\n", __func__, event);
+			pr_debug("%s: unhandled event=%d\n", __func__, event);
 		break;
 	}
 	pr_debug("%s-:event=%d, rc=%d\n", __func__, event, rc);
