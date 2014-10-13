@@ -72,9 +72,7 @@
 #ifdef WLMEDIA_HTSF
 extern void htsf_update(struct dhd_info *dhd, void *data);
 #endif
-#ifdef DHD_DEBUG
 int dhd_msg_level = DHD_ERROR_VAL;
-#endif
 
 
 #include <wl_iw.h>
@@ -361,9 +359,7 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, uint32 actionid, const ch
 			wl_cfg80211_enable_trace(FALSE, WL_DBG_DBG);
 		if (!(int_val & DHD_WL_VAL2))
 #endif /* WL_CFG80211 */
-#ifdef DHD_DEBUG
 		dhd_msg_level = int_val;
-#endif
 		break;
 	case IOV_GVAL(IOV_BCMERRORSTR):
 		bcm_strncpy_s((char *)arg, len, bcmerrorstr(dhd_pub->bcmerror), BCME_STRLEN);
@@ -2396,7 +2392,7 @@ wl_iw_parse_channel_list_tlv(char** list_str, uint16* channel_list,
  *  SSIDs list parsing from cscan tlv list
  */
 int
-wl_iw_parse_ssid_list_tlv(char** list_str, wlc_ssid_ext_t* ssid, int max, int *bytes_left)
+wl_iw_parse_ssid_list_tlv(char** list_str, wlc_ssid_t* ssid, int max, int *bytes_left)
 {
 	char* str;
 	int idx = 0;
@@ -2444,7 +2440,6 @@ wl_iw_parse_ssid_list_tlv(char** list_str, wlc_ssid_ext_t* ssid, int max, int *b
 
 			*bytes_left -= ssid[idx].SSID_len;
 			str += ssid[idx].SSID_len;
-			ssid[idx].hidden = TRUE;
 
 			DHD_TRACE(("%s :size=%d left=%d\n",
 				(char*)ssid[idx].SSID, ssid[idx].SSID_len, *bytes_left));
