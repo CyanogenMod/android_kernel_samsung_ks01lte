@@ -1209,6 +1209,7 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
 	char *string = NULL;
 	char *tmp_end, *value;
 	char delim;
+	char *convp = NULL;
 
 	separator[0] = ',';
 	separator[1] = 0;
@@ -1919,7 +1920,7 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
         	if (!vol->UNC)
                 	goto out_nomem;
 
-		char *convp = vol->UNC;
+		convp = vol->UNC;
 		while ((convp = strchr(convp, '/')))
 			*convp = '\\';
 
