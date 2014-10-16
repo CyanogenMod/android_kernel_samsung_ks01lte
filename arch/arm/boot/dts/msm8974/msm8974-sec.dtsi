@@ -101,11 +101,11 @@
 			label = "audio_mem";
 		};
 
-		peripheral_mem: peripheral_region@5d00000 {
+		peripheral_mem: peripheral_region@6c00000 {
 			linux,reserve-contiguous-region;
 			linux,reserve-region;
 			linux,remove-completely;
-			reg = <0x6c00000 0xa600000>;
+			reg = <0x6c00000 0x9600000>;
 			label = "peripheral_mem";
 		};
 
@@ -929,10 +929,6 @@
 		qcom,sec-auxpcm-gpio-sync = <&msmgpio 80 0>;
 		qcom,sec-auxpcm-gpio-din  = <&msmgpio 81 0>;
 		qcom,sec-auxpcm-gpio-dout = <&msmgpio 82 0>;
-		qcom,sec-auxpcm-gpio-clk_duos  = <&msmgpio 58 0>;
-		qcom,sec-auxpcm-gpio-sync_duos = <&msmgpio 59 0>;
-		qcom,sec-auxpcm-gpio-din_duos  = <&msmgpio 60 0>;
-		qcom,sec-auxpcm-gpio-dout_duos = <&msmgpio 61 0>;
 	};
 
 	spmi_bus: qcom,spmi@fc4c0000 {
@@ -1753,7 +1749,6 @@
 	};
 
 	cpubw: qcom,cpubw {
-		reg = <0 4>;
 		compatible = "qcom,devbw";
 		governor = "cpufreq";
 		qcom,src-dst-ports = <1 512>, <2 512>;
@@ -1936,20 +1931,18 @@
 		compatible = "qcom,msm-pcm-dsp";
 		qcom,msm-pcm-dsp-id = <1>;
 		qcom,msm-pcm-low-latency;
+		qcom,latency-level = "regular";
 	};
 
-	qcom,msm-pcm-jack-low-latency {
+	qcom,msm-pcm-ultra-low-latency {
 		compatible = "qcom,msm-pcm-dsp";
 		qcom,msm-pcm-dsp-id = <2>;
 		qcom,msm-pcm-low-latency;
+		qcom,latency-level = "ultra";
 	};
 
 	qcom,msm-pcm-routing {
 		compatible = "qcom,msm-pcm-routing";
-	};
-
-	qcom,msm-pcm-lpa {
-		compatible = "qcom,msm-pcm-lpa";
 	};
 
 	qcom,msm-compr-dsp {
