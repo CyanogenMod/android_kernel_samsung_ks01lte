@@ -66,8 +66,12 @@
 #endif
 
 static int restart_mode;
-#ifndef CONFIG_SEC_DEBUG
 void *restart_reason;
+
+#ifdef CONFIG_USER_RESET_DEBUG
+#define RESET_CAUSE_LPM_REBOOT 0x95
+void *reboot_cause;
+extern int poweroff_charging;
 #endif
 
 int pmic_reset_irq;
@@ -129,10 +133,6 @@ static void enable_emergency_dload_mode(void)
 		__raw_writel(EMERGENCY_DLOAD_MAGIC3,
 				emergency_dload_mode_addr +
 				(2 * sizeof(unsigned int)));
-
-		/* Need disable the pmic wdt, then the emergency dload mode
-		 * will not auto reset. */
-		qpnp_pon_wd_config(0);
 		mb();
 	}
 }
@@ -200,7 +200,7 @@ static void __msm_power_off(int lower_pshold)
 {
 	printk(KERN_CRIT "Powering off the SoC\n");
 
-#ifdef USE_RESTART_REASSON_DDR
+#ifdef CONFIG_RESTART_REASON_DDR
 	if(restart_reason_ddr_address) {
 		/* Clear the stale magic number present in DDR restart reason address*/
 		__raw_writel(0x00000000, restart_reason_ddr_address);
@@ -278,7 +278,7 @@ static irqreturn_t resout_irq_handler(int irq, void *dev_id)
 static void msm_restart_prepare(const char *cmd)
 {
 	unsigned long value;
-#ifdef USE_RESTART_REASSON_DDR
+#ifdef CONFIG_RESTART_REASON_DDR
 	unsigned int save_restart_reason;
 #endif
 
@@ -329,27 +329,21 @@ static void msm_restart_prepare(const char *cmd)
 #else
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
 #endif
-#ifdef CONFIG_SEC_DEBUG
 		if (!restart_reason)
 			restart_reason = ioremap_nocache((unsigned long)(MSM_IMEM_BASE \
 							+ RESTART_REASON_ADDR), SZ_4K);
-#endif
 
 	if (cmd != NULL) {
 		if (!strncmp(cmd, "bootloader", 10)) {
 			__raw_writel(0x77665500, restart_reason);
 		} else if (!strncmp(cmd, "recovery", 8)) {
 			__raw_writel(0x77665502, restart_reason);
-		} else if (!strcmp(cmd, "rtc")) {
-			__raw_writel(0x77665503, restart_reason);
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			code = simple_strtoul(cmd + 4, NULL, 16) & 0xff;
 			__raw_writel(0x6f656d00 | code, restart_reason);
-#ifdef CONFIG_SEC_DEBUG
 		} else if (!strncmp(cmd, "sec_debug_hw_reset", 18)) {
 			__raw_writel(0x776655ee, restart_reason);
-#endif
 		} else if (!strncmp(cmd, "download", 8)) {
 			__raw_writel(0x12345671, restart_reason);
 		} else if (!strncmp(cmd, "sud", 3)) {
@@ -389,14 +383,18 @@ static void msm_restart_prepare(const char *cmd)
 		printk(KERN_NOTICE "%s : restart_reason = 0x%x\n",
 				__func__, __raw_readl(restart_reason));
 	}
-#ifdef CONFIG_SEC_DEBUG
 	else {
 		printk(KERN_NOTICE "%s: clear reset flag\n", __func__);
+#ifdef CONFIG_USER_RESET_DEBUG
+		if(poweroff_charging) {
+			reboot_cause = MSM_IMEM_BASE + 0x66C;
+			__raw_writel(RESET_CAUSE_LPM_REBOOT, reboot_cause);
+		}
+#endif
 		__raw_writel(0x12345678, restart_reason);
 	}
-#endif
 
-#ifdef USE_RESTART_REASSON_DDR
+#ifdef CONFIG_RESTART_REASON_DDR
 	if(restart_reason_ddr_address) {
 		 save_restart_reason = __raw_readl(restart_reason);
 		/* Writting NORMAL BOOT magic number to DDR address*/
@@ -440,7 +438,6 @@ void msm_restart(char mode, const char *cmd)
 	printk(KERN_ERR "Restarting has failed\n");
 }
 
-#ifdef CONFIG_SEC_DEBUG
 static int dload_mode_normal_reboot_handler(struct notifier_block *nb,
 				unsigned long l, void *p)
 {
@@ -451,7 +448,6 @@ static int dload_mode_normal_reboot_handler(struct notifier_block *nb,
 static struct notifier_block dload_reboot_block = {
 	.notifier_call = dload_mode_normal_reboot_handler
 };
-#endif
 
 static int __init msm_pmic_restart_init(void)
 {
@@ -480,9 +476,7 @@ static int __init msm_restart_init(void)
 #ifdef CONFIG_MSM_DLOAD_MODE
 	atomic_notifier_chain_register(&panic_notifier_list, &panic_blk);
 	dload_mode_addr = MSM_IMEM_BASE + DLOAD_MODE_ADDR;
-#ifdef CONFIG_SEC_DEBUG
 	register_reboot_notifier(&dload_reboot_block);
-#endif
 #ifdef CONFIG_SEC_DEBUG_LOW_LOG
 	if (!sec_debug_is_enabled()) {
 		set_dload_mode(0);
@@ -493,9 +487,7 @@ static int __init msm_restart_init(void)
 	set_dload_mode(download_mode);
 #endif
 	msm_tmr0_base = msm_timer_get_timer0_base();
-#ifndef CONFIG_SEC_DEBUG
 	restart_reason = MSM_IMEM_BASE + RESTART_REASON_ADDR;
-#endif
 	pm_power_off = msm_power_off;
 
 	if (scm_is_call_available(SCM_SVC_PWR, SCM_IO_DISABLE_PMIC_ARBITER) > 0)

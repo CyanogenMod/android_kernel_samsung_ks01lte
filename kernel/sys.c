@@ -49,6 +49,9 @@
 #include <linux/user_namespace.h>
 
 #include <linux/kmsg_dump.h>
+#ifdef CONFIG_SEC_DEBUG
+#include <mach/sec_debug.h>
+#endif
 /* Move somewhere else to avoid recompiling? */
 #include <generated/utsrelease.h>
 
@@ -414,6 +417,9 @@ EXPORT_SYMBOL(unregister_reboot_notifier);
  */
 void kernel_restart(char *cmd)
 {
+#ifdef CONFIG_SEC_MONITOR_BATTERY_REMOVAL
+	kernel_sec_set_normal_pwroff(1);
+#endif
 	kernel_restart_prepare(cmd);
 	if (!cmd)
 		printk(KERN_EMERG "Restarting system.\n");
@@ -455,6 +461,9 @@ EXPORT_SYMBOL_GPL(kernel_halt);
  */
 void kernel_power_off(void)
 {
+#ifdef CONFIG_SEC_MONITOR_BATTERY_REMOVAL
+	kernel_sec_set_normal_pwroff(1);
+#endif
 	kernel_shutdown_prepare(SYSTEM_POWER_OFF);
 	if (pm_power_off_prepare)
 		pm_power_off_prepare();
