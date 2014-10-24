@@ -403,6 +403,28 @@ fail:
 	return;
 }
 
+static void bluesleep_abnormal_stop(void)
+{
+	BT_ERR("bluesleep_abnormal_stop");
+
+	if (!test_bit(BT_PROTO, &flags)) {
+		BT_ERR("(bluesleep_abnormal_stop) proto is not set. Failed to stop bluesleep");
+		bsi->uport = NULL;
+		return;
+	}
+
+	del_timer(&tx_timer);
+	clear_bit(BT_PROTO, &flags);
+
+#if BT_ENABLE_IRQ_WAKE
+	if (disable_irq_wake(bsi->host_wake_irq))
+		BT_ERR("Couldn't disable hostwake IRQ wakeup mode\n");
+#endif
+	wake_lock_timeout(&bsi->wake_lock, HZ / 2);
+
+	clear_bit(BT_TXDATA, &flags);
+	bsi->uport = NULL;
+}
 
 /**
  * Stops the Sleep-Mode Protocol on the Host.
@@ -453,7 +475,7 @@ static int bluesleep_read_proc_lpm(char *page, char **start, off_t offset,
 					int count, int *eof, void *data)
 {
 	*eof = 1;
-	return snprintf(page, count, "unsupported to read\n" );
+	return snprintf(page, count, "lpm: %u\n", has_lpm_enabled?1:0 );
 }
 
 static int bluesleep_write_proc_lpm(struct file *file, const char *buffer,
@@ -473,7 +495,7 @@ static int bluesleep_write_proc_lpm(struct file *file, const char *buffer,
 		bluesleep_stop();
 		has_lpm_enabled = false;
 		//bsi->uport = NULL;
-	} else {
+	} else if (b == '1') {
 		BT_ERR("(bluesleep_write_proc_lpm) Reg HCI notifier.");
 		/* HCI_DEV_REG */
 		if (!has_lpm_enabled) {
@@ -481,6 +503,12 @@ static int bluesleep_write_proc_lpm(struct file *file, const char *buffer,
 			bsi->uport = bluesleep_get_uart_port();
 			/* if bluetooth started, start bluesleep*/
 			bluesleep_start();
+		}
+	} else if (b == '2') {
+		BT_ERR("(bluesleep_write_proc_lpm) don`t control ext_wake & uart clk");
+		if(has_lpm_enabled) {
+			has_lpm_enabled = false;
+			bluesleep_abnormal_stop();
 		}
 	}
 
