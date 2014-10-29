@@ -66,7 +66,9 @@
 #endif
 
 static int restart_mode;
+#ifndef CONFIG_SEC_DEBUG
 void *restart_reason;
+#endif
 
 #ifdef CONFIG_USER_RESET_DEBUG
 #define RESET_CAUSE_LPM_REBOOT 0x95
