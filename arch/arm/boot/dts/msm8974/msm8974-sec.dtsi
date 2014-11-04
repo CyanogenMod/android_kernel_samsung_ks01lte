@@ -72,7 +72,7 @@
 	memory {
 		secure_mem: secure_region {
 			linux,reserve-contiguous-region;
-			reg = <0 0xFC00000>;
+			reg = <0 0xB500000>;
 			label = "secure_mem";
 		};
 
@@ -88,12 +88,6 @@
 			label = "qseecom_mem";
 		};
 
-		fb_mem: fb_region {
-			linux,reserve-contiguous-region;
-			reg = <0 0x800000>;
-			label = "fb_mem";
-		};
-
 		audio_mem: audio_region {
 			linux,reserve-contiguous-region;
 			linux,reserve-region;
@@ -101,12 +95,19 @@
 			label = "audio_mem";
 		};
 
-		peripheral_mem: peripheral_region@6c00000 {
+		peripheral_mem: peripheral_mem@6c00000 {
 			linux,reserve-contiguous-region;
 			linux,reserve-region;
 			linux,remove-completely;
 			reg = <0x6c00000 0x9600000>;
 			label = "peripheral_mem";
+		};
+
+		external_image_mem: external_image_region@f500000 {
+			linux,reserve-contiguous-region;
+			linux,reserve-region;
+			linux,remove-completely;
+			reg = <0xf500000 0x500000>;
 		};
 
 		camera_mem: camera_region {
@@ -1759,10 +1760,16 @@
 			<  762 /* 762 MHz */ >,
 			< 1144 /* 150 MHz */ >,
 			< 1525 /* 200 MHz */ >,
+			< 1906 /* 250 MHz */ >,
 			< 2342 /* 307 MHz */ >,
+			< 2723 /* 357 MHz */ >,
+			< 3104 /* */ >,
 			< 3509 /* 460 MHz */ >,
+			< 4085 /* */ >,
 			< 4684 /* 614 MHz */ >,
+			< 5394 /* */ >,
 			< 6103 /* 800 MHz */ >,
+			< 6602 /* */ >,
 			< 7102 /* 931 MHz */ >;
 	};
 
@@ -1779,11 +1786,17 @@
 				<  300000  572 >,
 				<  422400 1144 >,
 				<  652800 1525 >,
+				<  729600 1906 >,
 				<  883200 2342 >,
+				<  960000 2723 >,
+				< 1036800 3104 >,
 				< 1190400 3509 >,
+				< 1267200 4085 >,
 				< 1497600 4684 >,
+				< 1574400 5394 >,
 				< 1728000 6103 >,
-				< 2457600 7102 >;
+				< 1958400 6602 >,
+				< 2265600 7102 >;
 		};
 		cache-cpufreq {
 			target-dev = <&cache>;
@@ -1798,7 +1811,7 @@
 				< 1497600 1497600 >,
 				< 1574400 1574400 >,
 				< 1728000 1651200 >,
-				< 2457600 1728000 >;
+				< 2265600 1728000 >;
 		};
 	};
 
