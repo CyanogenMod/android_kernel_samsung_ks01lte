@@ -95,7 +95,7 @@
 			label = "audio_mem";
 		};
 
-		peripheral_mem: peripheral_mem@6c00000 {
+		peripheral_mem: peripheral_region@6c00000 {
 			linux,reserve-contiguous-region;
 			linux,reserve-region;
 			linux,remove-completely;
