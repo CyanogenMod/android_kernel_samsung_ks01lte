@@ -207,8 +207,8 @@ struct sec_debug_core_t {
 };
 
 /* enable sec_debug feature */
-static unsigned enable = 1;
-static unsigned enable_user = 1;
+static unsigned enable = 0;
+static unsigned enable_user = 0;
 static unsigned reset_reason = 0xFFEEFFEE;
 static char sec_build_info[100];
 static unsigned int secdbg_paddr;
