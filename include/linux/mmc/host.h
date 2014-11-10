@@ -142,6 +142,7 @@ struct mmc_host_ops {
 
 	/* The tuning command opcode value is different for SD and eMMC cards */
 	int	(*execute_tuning)(struct mmc_host *host, u32 opcode);
+	void	(*enable_preset_value)(struct mmc_host *host, bool enable);
 	int	(*select_drive_strength)(unsigned int max_dtr, int host_drv, int card_drv);
 	void	(*hw_reset)(struct mmc_host *host);
 	unsigned long (*get_max_frequency)(struct mmc_host *host);
@@ -305,7 +306,7 @@ struct mmc_host {
 
 #define MMC_CAP2_HS400_1_8V	(1 << 21)        /* can support */
 #define MMC_CAP2_HS400_1_2V	(1 << 22)        /* can support */
-#define MMC_CAP2_CORE_PM	(1 << 23)       /* use PM framework */
+#define MMC_CAP2_CORE_PM	(1 << 23)	/* use PM framework */
 #define MMC_CAP2_HS400		(MMC_CAP2_HS400_1_8V | \
 				 MMC_CAP2_HS400_1_2V)
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
@@ -424,8 +425,6 @@ struct mmc_host {
 		bool		enable;
 		bool		initialized;
 		bool		in_progress;
-		/* freq. transitions are not allowed in invalid state */
-		bool		invalid_state;
 		struct delayed_work work;
 		enum mmc_load	state;
 	} clk_scaling;
