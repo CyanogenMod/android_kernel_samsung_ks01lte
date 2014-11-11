@@ -2,7 +2,7 @@
  * drivers/mmc/host/sdhci-msm.c - Qualcomm MSM SDHCI Platform
  * driver source file
  *
- * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -2667,7 +2667,7 @@ static void sdhci_msm_toggle_cdr(struct sdhci_host *host, bool enable)
 
 static unsigned int sdhci_msm_max_segs(void)
 {
-	return SDHCI_MSM_MAX_SEGMENTS / 16;
+	return SDHCI_MSM_MAX_SEGMENTS;
 }
 
 static unsigned int sdhci_msm_get_min_clock(struct sdhci_host *host)
@@ -2852,6 +2852,12 @@ static void sdhci_msm_set_clock(struct sdhci_host *host, unsigned int clock)
 	bool curr_pwrsave;
 
 	if (!clock) {
+		/*
+		 * disable pwrsave to ensure clock is not auto-gated until
+		 * the rate is >400KHz (initialization complete).
+		 */
+		writel_relaxed(readl_relaxed(host->ioaddr + CORE_VENDOR_SPEC) &
+			~CORE_CLK_PWRSAVE, host->ioaddr + CORE_VENDOR_SPEC);
 		sdhci_msm_prepare_clocks(host, false);
 		host->clock = clock;
 		return;
@@ -3607,6 +3613,9 @@ static int __devinit sdhci_msm_probe(struct platform_device *pdev)
 					MMC_CAP_SET_XPC_330;
 
 	msm_host->mmc->caps2 |= msm_host->pdata->caps2;
+	msm_host->mmc->caps2 |= MMC_CAP2_CORE_RUNTIME_PM;
+	msm_host->mmc->caps2 |= MMC_CAP2_PACKED_WR;
+	msm_host->mmc->caps2 |= MMC_CAP2_PACKED_WR_CONTROL;
 	msm_host->mmc->caps2 |= (MMC_CAP2_BOOTPART_NOACC |
 				MMC_CAP2_DETECT_ON_ERR);
 	msm_host->mmc->caps2 |= MMC_CAP2_CACHE_CTRL;
@@ -3616,6 +3625,7 @@ static int __devinit sdhci_msm_probe(struct platform_device *pdev)
 #else
 	msm_host->mmc->caps2 |= MMC_CAP2_CLK_SCALE;
 #endif
+	msm_host->mmc->caps2 |= MMC_CAP2_STOP_REQUEST;
 	msm_host->mmc->caps2 |= MMC_CAP2_ASYNC_SDIO_IRQ_4BIT_MODE;
 	msm_host->mmc->caps2 |= MMC_CAP2_CORE_PM;
 	msm_host->mmc->pm_caps |= MMC_PM_KEEP_POWER;
