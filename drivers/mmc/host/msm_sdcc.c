@@ -1806,15 +1806,25 @@ static void msmsdcc_do_cmdirq(struct msmsdcc_host *host, uint32_t status)
 		cmd->error = -ETIMEDOUT;
 	} else if ((status & MCI_CMDCRCFAIL && cmd->flags & MMC_RSP_CRC) &&
 			!host->tuning_in_progress) {
+#if defined(CONFIG_BCM4335) || defined(CONFIG_BCM4335_MODULE) || defined(CONFIG_BCM4339) || defined(CONFIG_BCM4339_MODULE) || defined(CONFIG_BCM4339) || defined(CONFIG_BCM4354)
+		if( host->pdev->id == 2){
+			printk("%s: Run tuning for BCM4335 if needed.\n",mmc_hostname(host->mmc));
+			if (host->tuning_needed) {
+				host->tuning_done = false;
+			}
+		} else {
+			pr_err("%s: CMD%d: Command CRC error\n",
+				mmc_hostname(host->mmc), cmd->opcode);
+			msmsdcc_dump_sdcc_state(host);
+			/* Execute full tuning in case of CRC errors */
+			host->saved_tuning_phase = INVALID_TUNING_PHASE;
+			if (host->tuning_needed)
+				host->tuning_done = false;
+		}
+#else
 		pr_err("%s: CMD%d: Command CRC error\n",
 			mmc_hostname(host->mmc), cmd->opcode);
 		msmsdcc_dump_sdcc_state(host);
-
-#if defined(CONFIG_BCM4335) || defined(CONFIG_BCM4335_MODULE) || defined(CONFIG_BCM4339) || defined(CONFIG_BCM4339_MODULE) || defined(CONFIG_BCM4339) || defined(CONFIG_BCM4354)
-		if( host->pdev->id == 2){
-			printk("%s: Skipped tuning.\n",mmc_hostname(host->mmc));
-		}
-#else
 		/* Execute full tuning in case of CRC errors */
 		host->saved_tuning_phase = INVALID_TUNING_PHASE;
 		if (host->tuning_needed)
