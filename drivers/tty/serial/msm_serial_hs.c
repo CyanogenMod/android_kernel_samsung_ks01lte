@@ -301,7 +301,6 @@ static struct uart_ops msm_hs_ops;
 static void msm_hs_start_rx_locked(struct uart_port *uport);
 static void msm_serial_hs_rx_tlet(unsigned long tlet_ptr);
 static void flip_insert_work(struct work_struct *work);
-static void msm_hs_bus_voting(struct msm_hs_port *msm_uport, unsigned int vote);
 
 #define UARTDM_TO_MSM(uart_port) \
 	container_of((uart_port), struct msm_hs_port, uport)
@@ -423,20 +422,6 @@ static inline int is_gsbi_uart(struct msm_hs_port *msm_uport)
 static unsigned int is_blsp_uart(struct msm_hs_port *msm_uport)
 {
 	return (msm_uport->uart_type == BLSP_HSUART);
-}
-
-static void msm_hs_bus_voting(struct msm_hs_port *msm_uport, unsigned int vote)
-{
-	int ret;
-
-	if (is_blsp_uart(msm_uport) && msm_uport->bus_perf_client) {
-		pr_debug("Bus voting:%d\n", vote);
-		ret = msm_bus_scale_client_update_request(
-				msm_uport->bus_perf_client, vote);
-		if (ret)
-			pr_err("%s(): Failed for Bus voting: %d\n",
-							__func__, vote);
-	}
 }
 
 static inline unsigned int msm_hs_read(struct uart_port *uport,
@@ -1940,10 +1925,6 @@ static int msm_hs_check_clock_off(struct uart_port *uport)
 	case CLK_REQ_OFF_RXSTALE_ISSUED:
 	case CLK_REQ_OFF_FLUSH_ISSUED:
 		spin_unlock_irqrestore(&uport->lock, flags);
-		if (is_blsp_uart(msm_uport)) {
-			msm_uport->clk_req_off_state =
-				CLK_REQ_OFF_RXSTALE_FLUSHED;
-		}
 		mutex_unlock(&msm_uport->clk_mutex);
 		return 0;  /* RXSTALE flush not complete - retry */
 	case CLK_REQ_OFF_RXSTALE_FLUSHED:
@@ -1991,11 +1972,7 @@ static int msm_hs_check_clock_off(struct uart_port *uport)
 	wake_unlock(&msm_uport->dma_wake_lock);
 
 	spin_unlock_irqrestore(&uport->lock, flags);
-
-	/* Reset PNOC Bus Scaling */
-	msm_hs_bus_voting(msm_uport, BUS_RESET);
 	mutex_unlock(&msm_uport->clk_mutex);
-
 	return 1;
 }
 
@@ -3271,6 +3248,9 @@ static int __devinit msm_hs_probe(struct platform_device *pdev)
 
 	ret = uartdm_init_port(uport);
 	if (unlikely(ret)) {
+		clk_disable_unprepare(msm_uport->clk);
+		if (msm_uport->pclk)
+			clk_disable_unprepare(msm_uport->pclk);
 		goto destroy_mutex;
 	}
 
@@ -3294,6 +3274,10 @@ static int __devinit msm_hs_probe(struct platform_device *pdev)
 			UARTDM_MR2_RX_ERROR_CHAR_OFF);
 	msm_hs_write(uport, UART_DM_MR2, data);
 	mb();
+
+	clk_disable_unprepare(msm_uport->clk);
+	if (msm_uport->pclk)
+		clk_disable_unprepare(msm_uport->pclk);
 
 	msm_uport->clk_state = MSM_HS_CLK_PORT_OFF;
 	hrtimer_init(&msm_uport->clk_off_timer, CLOCK_MONOTONIC,
