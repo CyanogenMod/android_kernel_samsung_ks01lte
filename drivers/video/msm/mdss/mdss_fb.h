@@ -47,6 +47,9 @@
  *
  * @MDP_NOTIFY_FRAME_BEGIN:	Frame update has started, the frame is about to
  *				be programmed into hardware.
+ * @MDP_NOTIFY_FRAME_CFG_DONE:	Frame configuration is done.
+ * @MDP_NOTIFY_FRAME_CTX_DONE:	Frame has finished accessing sw context.
+ *				Next frame can start preparing.
  * @MDP_NOTIFY_FRAME_READY:	Frame ready to be kicked off, this can be used
  *				as the last point in time to synchronized with
  *				source buffers before kickoff.
@@ -62,6 +65,8 @@
  */
 enum mdp_notify_event {
 	MDP_NOTIFY_FRAME_BEGIN = 1,
+	MDP_NOTIFY_FRAME_CFG_DONE,
+	MDP_NOTIFY_FRAME_CTX_DONE,
 	MDP_NOTIFY_FRAME_READY,
 	MDP_NOTIFY_FRAME_FLUSHED,
 	MDP_NOTIFY_FRAME_DONE,
@@ -87,6 +92,8 @@ struct msm_sync_pt_data {
 	char *fence_name;
 	u32 acq_fen_cnt;
 	struct sync_fence *acq_fen[MDP_MAX_FENCE_FD];
+	u32 temp_fen_cnt;
+	struct sync_fence *temp_fen[MDP_MAX_FENCE_FD];
 
 	struct sw_sync_timeline *timeline;
 	int timeline_value;
@@ -112,7 +119,8 @@ struct msm_mdp_interface {
 	int (*on_fnc)(struct msm_fb_data_type *mfd);
 	int (*off_fnc)(struct msm_fb_data_type *mfd);
 	/* called to release resources associated to the process */
-	int (*release_fnc)(struct msm_fb_data_type *mfd, bool release_all);
+	int (*release_fnc)(struct msm_fb_data_type *mfd, bool release_all,
+				uint32_t pid);
 	int (*kickoff_fnc)(struct msm_fb_data_type *mfd,
 					struct mdp_display_commit *data);
 	int (*ioctl_handler)(struct msm_fb_data_type *mfd, u32 cmd, void *arg);
@@ -129,6 +137,7 @@ struct msm_mdp_interface {
 	struct msm_sync_pt_data *(*get_sync_fnc)(struct msm_fb_data_type *mfd,
 				const struct mdp_buf_sync *buf_sync);
 	void (*check_dsi_status)(struct work_struct *work, uint32_t interval);
+	int (*configure_panel)(struct msm_fb_data_type *mfd, int mode);
 	void *private1;
 };
 
@@ -196,7 +205,7 @@ struct msm_fb_data_type {
 	u32 bl_min_lvl;
 	u32 unset_bl_level;
 	u32 bl_updated;
-	u32 bl_level_old;
+	u32 bl_level_scaled;
 	struct mutex bl_lock;
 
 	struct platform_device *pdev;
@@ -211,17 +220,6 @@ struct msm_fb_data_type {
 
 	struct msm_sync_pt_data mdp_sync_pt_data;
 
-	u32 acq_fen_cnt;
-	struct sync_fence *acq_fen[MDP_MAX_FENCE_FD];
-	int cur_rel_fen_fd;
-	struct sync_pt *cur_rel_sync_pt;
-	struct sync_fence *cur_rel_fence;
-	struct sync_fence *last_rel_fence;
-	struct sw_sync_timeline *timeline;
-	int timeline_value;
-	u32 last_acq_fen_cnt;
-	struct sync_fence *last_acq_fen[MDP_MAX_FENCE_FD];
-	struct mutex sync_mutex;
 	/* for non-blocking */
 	struct task_struct *disp_thread;
 	atomic_t commits_pending;
@@ -247,9 +245,10 @@ struct msm_fb_data_type {
 	struct ion_handle *fb_ion_handle;
 	struct dma_buf *fbmem_buf;
 
-	u32 wait_for_kickoff;
+	bool mdss_fb_split_stored;
 
 	int blank_mode;
+	u32 wait_for_kickoff;
 };
 
 static inline void mdss_fb_update_notify_update(struct msm_fb_data_type *mfd)
@@ -274,31 +273,11 @@ static inline void mdss_fb_update_notify_update(struct msm_fb_data_type *mfd)
 extern u8 csc_update;
 extern u8 pre_csc_update;
 #endif
-#if defined (CONFIG_FB_MSM_MDSS_DBG_SEQ_TICK)
 
-enum{
-	COMMIT,
-	KICKOFF,
-	PP_DONE
-};
-
-struct mdss_tick_debug {
-	u64 commit[10];
-	u64 kickoff[10];
-	u64 pingpong_done[10];
-	u8 commit_cnt;
-	u8 kickoff_cnt;
-	u8 pingpong_done_cnt;
-};
-void mdss_dbg_tick_save(int op_name);
-
-#endif
-
-extern int boot_mode_lpm, boot_mode_recovery;
 int mdss_fb_get_phys_info(dma_addr_t *start, unsigned long *len, int fb_num);
 void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl);
 void mdss_fb_update_backlight(struct msm_fb_data_type *mfd);
-void mdss_fb_wait_for_fence(struct msm_sync_pt_data *sync_pt_data);
+int mdss_fb_wait_for_fence(struct msm_sync_pt_data *sync_pt_data);
 void mdss_fb_signal_timeline(struct msm_sync_pt_data *sync_pt_data);
 struct sync_fence *mdss_fb_sync_get_fence(struct sw_sync_timeline *timeline,
 				const char *fence_name, int val);

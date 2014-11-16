@@ -44,8 +44,6 @@ static struct workqueue_struct  *wq_bootlogo;
 static struct delayed_work w_bootlogo;
 #endif
 
-int get_lcd_attached(void);
-
 static void memset16(void *_ptr, unsigned short val, unsigned count)
 {
 	unsigned short *ptr = _ptr;
@@ -280,12 +278,6 @@ int load_samsung_boot_logo(void)
 		return 0;
 #endif
 
-	if (get_lcd_attached() == 0)
-	{
-		pr_err("%s: get_lcd_attached(0)!\n",__func__);
-		return -ENODEV;
-	}
-
 	pr_info("%s:+\n",__func__);
 	ret = samsung_mdss_allocate_framebuffer(info);
 	
@@ -328,12 +320,6 @@ static void bootlogo_work(struct work_struct *work)
 	struct msm_fb_data_type *mfd = NULL ;
 	static int bootlogo_displayed = 0;
 
-	if (get_lcd_attached() == 0)
-	{
-		pr_err("%s: get_lcd_attached(0)!\n",__func__);
-		return ;
-	}
-
 	if(!registered_fb[0]) {
 			queue_delayed_work(wq_bootlogo, &w_bootlogo, msecs_to_jiffies(200));
 			return;
@@ -364,12 +350,6 @@ static int __init boot_logo_init(void) {
 	if(poweroff_charging)
 		return 0;
 #endif
-
-	if (get_lcd_attached() == 0)
-	{
-		pr_err("%s: get_lcd_attached(0)!\n",__func__);
-		return -ENODEV;
-	}
 
 	pr_info("%s:+\n",__func__);
 	wq_bootlogo =	create_singlethread_workqueue("bootlogo");

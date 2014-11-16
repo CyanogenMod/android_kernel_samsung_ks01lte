@@ -81,6 +81,8 @@
 #define MSMFB_ASYNC_BLIT              _IOW(MSMFB_IOCTL_MAGIC, 168, unsigned int)
 #define MSMFB_OVERLAY_PREPARE		_IOWR(MSMFB_IOCTL_MAGIC, 169, \
 						struct mdp_overlay_list)
+#define MSMFB_LPM_ENABLE       _IOWR(MSMFB_IOCTL_MAGIC, 170, unsigned int)
+
 #define FB_TYPE_3D_PANEL 0x10101010
 #define MDP_IMGTYPE2_START 0x10000
 #define MSMFB_DRIVER_VERSION	0xF9E8D701
@@ -840,6 +842,15 @@ struct mdp_calib_dcm_state {
 	uint32_t dcm_state;
 };
 
+struct mdp_pp_init_data {
+	uint32_t init_request;
+};
+
+enum {
+	MDP_PP_DISABLE,
+	MDP_PP_ENABLE,
+};
+
 enum {
 	DCM_UNINIT,
 	DCM_UNBLANK,
@@ -953,6 +964,7 @@ enum {
 	mdp_op_calib_mode,
 	mdp_op_calib_buffer,
 	mdp_op_calib_dcm_state,
+	mdp_op_pp_init_cfg,
 	mdp_op_max,
 };
 
@@ -985,6 +997,7 @@ struct msmfb_mdp_pp {
 		struct mdss_ad_input ad_input;
 		struct mdp_calib_config_buffer calib_buffer;
 		struct mdp_calib_dcm_state calib_dcm;
+		struct mdp_pp_init_data init_data;
 	} data;
 };
 
@@ -1061,7 +1074,8 @@ struct mdp_display_commit {
 	uint32_t flags;
 	uint32_t wait_for_finish;
 	struct fb_var_screeninfo var;
-	struct mdp_rect roi;
+	struct mdp_rect l_roi;
+	struct mdp_rect r_roi;
 };
 
 /**
@@ -1119,6 +1133,9 @@ enum {
 	MDP_WRITEBACK_MIRROR_PAUSE,
 	MDP_WRITEBACK_MIRROR_RESUME,
 };
+
+/* let users know that we have the new struct formats */
+#define DUAL_DSI
 
 #ifdef __KERNEL__
 int msm_fb_get_iommu_domain(struct fb_info *info, int domain);

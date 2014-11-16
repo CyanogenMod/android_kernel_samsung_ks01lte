@@ -75,17 +75,6 @@
 
 	qcom,mdss_dsi@fd922800 {
 		qcom,dsi-pref-prim-pan = <&dsi_samsung_fhd_ks01>;
-		qcom,platform-supply-entry1 {
-				qcom,supply-name = "vdd";
-				qcom,supply-min-voltage = <3000000>;
-				qcom,supply-max-voltage = <3000000>;
-				qcom,supply-enable-load = <100000>;
-				qcom,supply-disable-load = <100>;
-				qcom,supply-pre-on-sleep = <0>;
-				qcom,supply-post-on-sleep = <20>;
-				qcom,supply-pre-off-sleep = <0>;
-				qcom,supply-post-off-sleep = <0>;
-		};
 	};
 
 	qcom,mdss_mdp@fd900000 {
@@ -93,7 +82,7 @@
 		mdss_fb0: qcom,mdss_fb_primary {
 			qcom,memory-reservation-size = <0x1F40000>;	/* 32 MB allocaed for fb0 */
 			qcom,memory-alt-reservation-size = <0x1F40000>;	 /* Framebuffer reservation only for LPM or recovery boot mode */
-			qcom,memblock-reserve = <0x03200000 0x01F00000>;
+			qcom,memblock-reserve = <0x03200000 0x01E00000>;
 		};
 	};
 

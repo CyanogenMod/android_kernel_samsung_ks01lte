@@ -404,6 +404,7 @@ static struct mdss_mdp_wb_data *get_user_node(struct msm_fb_data_type *mfd,
 	struct mdss_mdp_wb *wb = mfd_to_wb(mfd);
 	struct mdss_mdp_wb_data *node;
 	struct mdss_mdp_img_data *buf;
+	u32 flags = 0;
 	int ret;
 
 	if (!list_empty(&wb->register_queue)) {
@@ -424,22 +425,28 @@ static struct mdss_mdp_wb_data *get_user_node(struct msm_fb_data_type *mfd,
 	}
 
 	node->user_alloc = true;
-	node->buf_data.num_planes = 1;
-	buf = &node->buf_data.p[0];
 	if (wb->is_secure)
-		buf->flags |= MDP_SECURE_OVERLAY_SESSION;
+		flags |= MDP_SECURE_OVERLAY_SESSION;
+
+	ret = mdss_mdp_data_get(&node->buf_data, data, 1, flags);
+	if (IS_ERR_VALUE(ret)) {
+		pr_err("error getting buffer info\n");
+		goto register_fail;
+	}
 
 	ret = mdss_iommu_ctrl(1);
 	if (IS_ERR_VALUE(ret)) {
 		pr_err("IOMMU attach failed\n");
-		goto register_fail;
+		goto fail_freebuf;
 	}
-	ret = mdss_mdp_get_img(data, buf);
+
+	ret = mdss_mdp_data_map(&node->buf_data);
 	if (IS_ERR_VALUE(ret)) {
-		pr_err("error getting buffer info\n");
+		pr_err("error mapping buffer\n");
 		mdss_iommu_ctrl(0);
-		goto register_fail;
+		goto fail_freebuf;
 	}
+
 	mdss_iommu_ctrl(0);
 
 	memcpy(&node->buf_info, data, sizeof(*data));
@@ -447,14 +454,16 @@ static struct mdss_mdp_wb_data *get_user_node(struct msm_fb_data_type *mfd,
 	ret = mdss_mdp_wb_register_node(wb, node);
 	if (IS_ERR_VALUE(ret)) {
 		pr_err("error registering wb node\n");
-		goto register_fail;
+		goto fail_freebuf;
 	}
 
-	pr_debug("register node mem_id=%d offset=%u addr=0x%pa len=%d\n",
+	buf = &node->buf_data.p[0];
+	pr_debug("register node mem_id=%d offset=%u addr=0x%pa len=%u\n",
 		 data->memory_id, data->offset, &buf->addr, buf->len);
 
 	return node;
-
+fail_freebuf:
+	mdss_mdp_data_free(&node->buf_data);
 register_fail:
 	kfree(node);
 	return NULL;
@@ -471,7 +480,7 @@ static void mdss_mdp_wb_free_node(struct mdss_mdp_wb_data *node)
 				node->buf_info.offset,
 				&buf->addr);
 
-		mdss_mdp_put_img(&node->buf_data.p[0]);
+		mdss_mdp_data_free(&node->buf_data);
 		node->user_alloc = false;
 	}
 }
@@ -548,10 +557,16 @@ static int mdss_mdp_wb_dequeue(struct msm_fb_data_type *mfd,
 {
 	struct mdss_mdp_wb *wb = mfd_to_wb(mfd);
 	struct mdss_mdp_wb_data *node = NULL;
+	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
 	int ret;
 
 	if (!wb) {
 		pr_err("unable to dequeue, writeback is not initialized\n");
+		return -ENODEV;
+	}
+
+	if (!ctl) {
+		pr_err("unable to dequeue, ctl is not initialized\n");
 		return -ENODEV;
 	}
 
@@ -564,6 +579,7 @@ static int mdss_mdp_wb_dequeue(struct msm_fb_data_type *mfd,
 	mutex_lock(&wb->lock);
 	if (wb->state == WB_STOPING) {
 		pr_debug("wfd stopped\n");
+		mdss_mdp_display_wait4comp(ctl);
 		wb->state = WB_STOP;
 		ret = -ENOBUFS;
 	} else if (!list_empty(&wb->busy_queue)) {
@@ -634,6 +650,7 @@ int mdss_mdp_wb_kickoff(struct msm_fb_data_type *mfd)
 		pr_err("error on commit ctl=%d\n", ctl->num);
 		goto kickoff_fail;
 	}
+	mdss_mdp_display_wait4comp(ctl);
 
 	if (wb && node) {
 		mutex_lock(&wb->lock);
@@ -677,77 +694,30 @@ int mdss_mdp_wb_set_mirr_hint(struct msm_fb_data_type *mfd, int hint)
 int mdss_mdp_wb_get_format(struct msm_fb_data_type *mfd,
 					struct mdp_mixer_cfg *mixer_cfg)
 {
-	int dst_format;
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
 
 	if (!ctl) {
 		pr_err("No panel data!\n");
 		return -EINVAL;
+	} else {
+		mixer_cfg->writeback_format = ctl->dst_format;
 	}
 
-	switch (ctl->dst_format) {
-	case MDP_RGB_888:
-		dst_format = WB_FORMAT_RGB_888;
-		break;
-	case MDP_RGB_565:
-		dst_format = WB_FORMAT_RGB_565;
-		break;
-	case MDP_XRGB_8888:
-		dst_format = WB_FORMAT_xRGB_8888;
-		break;
-	case MDP_ARGB_8888:
-		dst_format = WB_FORMAT_ARGB_8888;
-		break;
-	case MDP_BGRA_8888:
-		dst_format = WB_FORMAT_BGRA_8888;
-		break;
-	case MDP_BGRX_8888:
-		dst_format = WB_FORMAT_BGRX_8888;
-		break;
-	case MDP_Y_CBCR_H2V2_VENUS:
-		dst_format = WB_FORMAT_NV12;
-		break;
-	default:
-		return -EINVAL;
-	}
-	mixer_cfg->writeback_format = dst_format;
 	return 0;
 }
 
-int mdss_mdp_wb_set_format(struct msm_fb_data_type *mfd, int dst_format)
+int mdss_mdp_wb_set_format(struct msm_fb_data_type *mfd, u32 dst_format)
 {
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
 
 	if (!ctl) {
 		pr_err("No panel data!\n");
 		return -EINVAL;
-	}
-
-	switch (dst_format) {
-	case WB_FORMAT_RGB_888:
-		ctl->dst_format = MDP_RGB_888;
-		break;
-	case WB_FORMAT_RGB_565:
-		ctl->dst_format = MDP_RGB_565;
-		break;
-	case WB_FORMAT_xRGB_8888:
-		ctl->dst_format = MDP_XRGB_8888;
-		break;
-	case WB_FORMAT_ARGB_8888:
-		ctl->dst_format = MDP_ARGB_8888;
-		break;
-	case WB_FORMAT_BGRA_8888:
-		ctl->dst_format = MDP_BGRA_8888;
-		break;
-	case WB_FORMAT_BGRX_8888:
-		ctl->dst_format = MDP_BGRX_8888;
-		break;
-	case WB_FORMAT_NV12:
-		ctl->dst_format = MDP_Y_CBCR_H2V2_VENUS;
-		break;
-	default:
-		pr_err("wfd format not supported\n");
+	} else if (dst_format >= MDP_IMGTYPE_LIMIT2) {
+		pr_err("Invalid dst format=%u\n", dst_format);
 		return -EINVAL;
+	} else {
+		ctl->dst_format = dst_format;
 	}
 
 	pr_debug("wfd format %d\n", ctl->dst_format);
@@ -789,13 +759,11 @@ int mdss_mdp_wb_ioctl_handler(struct msm_fb_data_type *mfd, u32 cmd,
 		}
 		break;
 	case MSMFB_WRITEBACK_TERMINATE:
-		ret = mdss_iommu_ctrl(1);
 		if (IS_ERR_VALUE(ret)) {
 			pr_err("IOMMU attach failed\n");
 			return ret;
 		}
 		ret = mdss_mdp_wb_terminate(mfd);
-		mdss_iommu_ctrl(0);
 		break;
 	case MSMFB_WRITEBACK_SET_MIRRORING_HINT:
 		if (!copy_from_user(&hint, arg, sizeof(hint))) {

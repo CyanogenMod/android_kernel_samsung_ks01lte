@@ -10,7 +10,4 @@
  * GNU General Public License for more details.
  */
 
-/include/ "dsi_panel_samsung_2560p_video_R63319.dtsi"
-/include/ "dsi_panel_samsung_octa_1080p_cmd_s6e3fa0.dtsi"
-/include/ "dsi_panel_samsung_octa_1080p_cmd_s6e3fa2.dtsi"
 /include/ "dsi_panel_samsung_octa_1080p_video.dtsi"
