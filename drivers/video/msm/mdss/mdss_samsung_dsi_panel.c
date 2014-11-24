@@ -478,7 +478,6 @@ u32 mdss_dsi_dcs_read(struct mdss_dsi_ctrl_pdata *ctrl,
 int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	struct mdss_panel_info *pinfo = NULL;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -487,8 +486,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
-
-	pinfo = &(ctrl_pdata->panel_data.panel_info);
 
 	if (!gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
 		pr_debug("%s:%d, enable line not configured\n",
@@ -997,8 +994,6 @@ end:
 }
 #endif
 
-static int mipi_samsung_read_nv_mem(struct mdss_panel_data *pdata, struct dsi_cmd *nv_read_cmds, char *buffer);
-
 static struct dsi_cmd get_gamma_control_set(int candella)
 {
 	struct dsi_cmd gamma_control = {0,};
@@ -1437,6 +1432,7 @@ static ssize_t mipi_samsung_disp_siop_store(struct device *dev,
 static unsigned int current_ldi_fps=0;
 static unsigned int current_ldi_fps_otp=0;
 unsigned int current_change_ldi_fps=0;
+static int mipi_samsung_read_nv_mem(struct mdss_panel_data *pdata, struct dsi_cmd *nv_read_cmds, char *buffer);
 
 int ldi_fps(unsigned int input_fps)
 {
@@ -1906,7 +1902,7 @@ static int mipi_samsung_read_nv_mem(struct mdss_panel_data *pdata, struct dsi_cm
 {
 	int nv_size = 0;
 	int nv_read_cnt = 0;
-	int i = 0;
+	int i = 0, j = 0;
 
 	mipi_samsung_disp_send_cmd(PANEL_MTP_ENABLE, true);
 
@@ -1917,9 +1913,12 @@ static int mipi_samsung_read_nv_mem(struct mdss_panel_data *pdata, struct dsi_cm
 		int count = 0;
 		int read_size = nv_read_cmds->read_size[i];
 		int read_startoffset = nv_read_cmds->read_startoffset[i];
-
-		count = samsung_nv_read(&(nv_read_cmds->cmd_desc[i]),
-				&buffer[nv_read_cnt], read_size, pdata, read_startoffset);
+		do {
+			count = samsung_nv_read(&(nv_read_cmds->cmd_desc[i]),
+					&buffer[nv_read_cnt], read_size, pdata, read_startoffset);
+			if (j++ == 5)
+				break;
+		} while(buffer[0] != 0x0 && buffer[0] != 0x1);
 		nv_read_cnt += count;
 		if (count != read_size)
 			pr_err("Error reading LCD NV data !!!!\n");
@@ -2013,7 +2012,7 @@ static unsigned int mipi_samsung_manufacture_id(struct mdss_panel_data *pdata)
 {
 	struct dsi_buf *rp, *tp;
 
-	unsigned int id = 0 ;
+	unsigned int id = 0x408047 ;
 
 	if (!manufacture_id_cmds.num_of_cmds)
 		return 0;
@@ -2362,15 +2361,6 @@ static int mdss_dsi_panel_dimming_init(struct mdss_panel_data *pdata)
 	char vol_ref_buffer;
 #endif
 
-#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_FULL_HD_PT_PANEL)
-	char *p_buffer;
-	const int mtp_block_size = 7;
-	const int mtp_reg_size = 33;
-	int mtp_fail_cnt;
-	int mtp_ok;
-	int i;
-#endif
-
 	/* If the ID is not read yet, then read it*/
 	if (!msd.manufacture_id)
 		msd.manufacture_id = mipi_samsung_manufacture_id(pdata);
@@ -2412,28 +2402,8 @@ static int mdss_dsi_panel_dimming_init(struct mdss_panel_data *pdata)
 		/* Just a safety check to ensure smart dimming data is initialised well */
 		BUG_ON(msd.sdimconf == NULL);
 
-#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_FULL_HD_PT_PANEL)
-		/* Set the mtp read buffer pointer and read the NVM value for prevent mis-reading MTP values*/
-		mtp_fail_cnt = 3;
-		do {
-			mipi_samsung_read_nv_mem(pdata, &nv_mtp_read_cmds, msd.sdimconf->mtp_buffer);
-			p_buffer = msd.sdimconf->mtp_buffer;
-			mtp_ok = true;
-			for( i = mtp_block_size; i < mtp_reg_size; i++ ) {
-				if( i % mtp_block_size == 0 ) {
-					if( !mtp_ok ) break;
-					mtp_ok = false;
-				}
-				if(p_buffer[i-mtp_block_size] != p_buffer[i]) mtp_ok = true;
-			}
-			if(mtp_ok) break;
-		} while(--mtp_fail_cnt);
-		if( mtp_fail_cnt == 0 )	panic("MTP is not safety\n");
-#else
-
 		/* Set the mtp read buffer pointer and read the NVM value*/
 		mipi_samsung_read_nv_mem(pdata, &nv_mtp_read_cmds, msd.sdimconf->mtp_buffer);
-#endif
 
 #ifdef LDI_FPS_CHANGE
 		if(msd.id3 >= 0x21) {
