@@ -78,7 +78,7 @@
 		mdss_fb0: qcom,mdss_fb_primary {
 			qcom,memory-reservation-size = <0x1F40000>;	/* 32 MB allocaed for fb0 */
 			qcom,memory-alt-reservation-size = <0x1F40000>;	 /* Framebuffer reservation only for LPM or recovery boot mode */
-			qcom,memblock-reserve = <0x03200000 0x01E00000>;
+			qcom,memblock-reserve = <0x03200000 0x01F00000>;
 		};
 	};
 

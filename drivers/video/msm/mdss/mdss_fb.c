@@ -365,32 +365,16 @@ static inline int mdss_fb_validate_split(int left, int right,
 	return rc;
 }
 
-static void mdss_fb_parse_dt(struct msm_fb_data_type *mfd)
+static void mdss_fb_parse_dt_split(struct msm_fb_data_type *mfd)
 {
 	u32 data[2];
-	int coeff = 1;
 	struct platform_device *pdev = mfd->pdev;
 
-	if (of_property_read_u32_array(pdev->dev.of_node, "qcom,mdss-fb-split",
-				       data, 2))
-		return;
+	of_property_read_u32_array(pdev->dev.of_node,
+		"qcom,mdss-fb-split", data, 2);
 
-#if defined(CONFIG_FB_MSM_EDP_SAMSUNG)
-	coeff = 1;
-#else
-	coeff = 2;
-#endif
-
-	if (data[0] && data[1] &&
-			    (mfd->panel_info->xres * coeff == (data[0] + data[1]))) {
-		mfd->split_fb_left = data[0];
-		mfd->split_fb_right = data[1];
-		pr_info("split framebuffer left=%d right=%d\n",
-			mfd->split_fb_left, mfd->split_fb_right);
-	} else {
-		mfd->split_fb_left = 0;
-		mfd->split_fb_right = 0;
-	}
+	if (!mdss_fb_validate_split(data[0], data[1], mfd))
+		pr_debug("dt split_left=%d split_right=%d\n", data[0], data[1]);
 }
 
 static ssize_t mdss_fb_store_split(struct device *dev,
@@ -428,7 +412,7 @@ static void mdss_fb_get_split(struct msm_fb_data_type *mfd)
 		return;
 
 	if (!mfd->mdss_fb_split_stored)
-		mdss_fb_parse_dt(mfd);
+		mdss_fb_parse_dt_split(mfd);
 
 	if (mfd->split_fb_left || mfd->split_fb_right)
 		pr_debug("split framebuffer left=%d right=%d\n",
@@ -1620,8 +1604,8 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 	var->grayscale = 0,	/* No graylevels */
 	var->nonstd = 0,	/* standard pixel format */
 	var->activate = FB_ACTIVATE_VBL,	/* activate it at vsync */
-	var->height = -1,	/* height of picture in mm */
-	var->width = -1,	/* width of picture in mm */
+	var->height = 111,	/* height of picture in mm */
+	var->width = 62,	/* width of picture in mm */
 	var->accel_flags = 0,	/* acceleration flags */
 	var->sync = 0,	/* see FB_SYNC_* */
 	var->rotate = 0,	/* angle we rotate counter clockwise */
@@ -1781,8 +1765,6 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 	mfd->ref_cnt = 0;
 	mfd->panel_power_on = false;
 	mfd->dcm_state = DCM_UNINIT;
-
-	mdss_fb_parse_dt(mfd);
 
 	if (mdss_fb_alloc_fbmem(mfd))
 		pr_warn("unable to allocate fb memory in fb register\n");

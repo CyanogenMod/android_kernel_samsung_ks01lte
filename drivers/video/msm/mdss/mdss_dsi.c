@@ -53,6 +53,7 @@ static int mdss_dsi_regulator_init(struct platform_device *pdev)
 			pr_err("%s: failed to init vregs for %s\n",
 				__func__, __mdss_dsi_pm_name(i));
 	}
+
 	return rc;
 }
 
@@ -101,8 +102,13 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
 			}
 		}
 	} else {
-		ctrl_pdata->panel_reset(pdata, 0);
-		
+		ret = mdss_dsi_panel_reset(pdata, 0);
+		if (ret) {
+			pr_err("%s: Panel reset failed. rc=%d\n",
+					__func__, ret);
+			goto error;
+		}
+
 		for (i = DSI_MAX_PM - 1; i >= 0; i--) {
 			/*
 			 * Core power module will be disabled when the
@@ -118,6 +124,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
 					__func__, __mdss_dsi_pm_name(i));
 		}
 	}
+
 error_enable:
 	if (ret) {
 		for (; i >= 0; i--)
@@ -575,32 +582,29 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	mipi = &pdata->panel_info.mipi;
 
 	ret = mdss_dsi_panel_power_on(pdata, 1);
-	pdata->panel_info.panel_power_on = 1;
-
-	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 1);
 	if (ret) {
 		pr_err("%s:Failed to enable vregs. rc=%d\n", __func__, ret);
-		mdss_dsi_panel_power_on(pdata, 0);
-		pdata->panel_info.panel_power_on = 0;
 		return ret;
 	}
 
-	mdss_dsi_phy_sw_reset((ctrl_pdata->ctrl_base));
-	mdss_dsi_phy_init(pdata);
-	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 0);
+	/*
+	 * Enable DSI clocks.
+	 * This is also enable the DSI core power block and reset/setup
+	 * DSI phy
+	 */
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
-	mdss_dsi_ctrl_setup(pdata);
+	pdata->panel_info.panel_power_on = 1;
 
 	mdss_dsi_sw_reset(pdata);
 	mdss_dsi_host_init(pdata);
 
-	// LP11
+	/* LP11 */
 	tmp = MIPI_INP((ctrl_pdata->ctrl_base) + 0xac);
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, 0x1F << 16);
 	wmb();
 	msleep(20);
-	// LP11
-	ctrl_pdata->panel_reset(pdata, 1);
+	/* LP11 */
+	mdss_dsi_panel_reset(pdata, 1);
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
 
 	if (mipi->init_delay)
@@ -682,7 +686,7 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata)
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
 
 	if (pdata->panel_info.type == MIPI_VIDEO_PANEL &&
-			ctrl_pdata->off_cmds.link_state == DSI_LP_MODE) {
+			ctrl_pdata->on_cmds.link_state == DSI_LP_MODE) {
 		mdss_dsi_sw_reset(pdata);
 		mdss_dsi_host_init(pdata);
 	}
@@ -934,7 +938,8 @@ static int mdss_dsi_ctl_partial_roi(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-/*	Not implemented */
+	if (ctrl_pdata->set_col_page_addr)
+		rc = ctrl_pdata->set_col_page_addr(pdata);
 
 	return rc;
 }
@@ -1088,7 +1093,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		break;
 	case MDSS_EVENT_DSI_DYNAMIC_SWITCH:
 		rc = mdss_dsi_update_panel_config(ctrl_pdata,
-				(int)(unsigned long) arg);
+					(int)(unsigned long) arg);
 		break;
 	default:
 		if(ctrl_pdata->event_handler)
@@ -1242,7 +1247,7 @@ static int __devinit mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		pdev->id = 1;
 	else
 		pdev->id = 2;
-		
+
 	rc = of_platform_populate(pdev->dev.of_node,
 				  NULL, NULL, &pdev->dev);
 	if (rc) {
@@ -1406,8 +1411,7 @@ int dsi_panel_device_register(struct device_node *pan_node,
 				struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
 	struct mipi_panel_info *mipi;
-	int rc;
-	int  i, len;
+	int rc, i, len;
 	struct device_node *dsi_ctrl_np = NULL;
 	struct platform_device *ctrl_pdev = NULL;
 	bool dynamic_fps;
@@ -1478,6 +1482,52 @@ int dsi_panel_device_register(struct device_node *pan_node,
 	ctrl_pdata->shared_pdata.broadcast_enable = of_property_read_bool(
 		pan_node, "qcom,mdss-dsi-panel-broadcast-mode");
 */
+
+	data = of_get_property(ctrl_pdev->dev.of_node,
+		"qcom,platform-strength-ctrl", &len);
+	if ((!data) || (len != 2)) {
+		pr_err("%s:%d, Unable to read Phy Strength ctrl settings",
+			__func__, __LINE__);
+		return -EINVAL;
+	}
+	pinfo->mipi.dsi_phy_db.strength[0] = data[0];
+	pinfo->mipi.dsi_phy_db.strength[1] = data[1];
+
+	data = of_get_property(ctrl_pdev->dev.of_node,
+		"qcom,platform-regulator-settings", &len);
+	if ((!data) || (len != 7)) {
+		pr_err("%s:%d, Unable to read Phy regulator settings",
+			__func__, __LINE__);
+		return -EINVAL;
+	}
+	for (i = 0; i < len; i++) {
+		pinfo->mipi.dsi_phy_db.regulator[i]
+			= data[i];
+	}
+
+	rc = of_property_read_u32(ctrl_pdev->dev.of_node,
+			"qcom,mmss-ulp-clamp-ctrl-offset",
+			&ctrl_pdata->ulps_clamp_ctrl_off);
+	if (!rc) {
+		rc = of_property_read_u32(ctrl_pdev->dev.of_node,
+				"qcom,mmss-phyreset-ctrl-offset",
+				&ctrl_pdata->ulps_phyrst_ctrl_off);
+	}
+	if (rc && pinfo->ulps_feature_enabled) {
+		pr_err("%s: dsi ulps clamp register settings missing\n",
+				__func__);
+		return -EINVAL;
+	}
+
+	ctrl_pdata->cmd_sync_wait_broadcast = of_property_read_bool(
+		pan_node, "qcom,cmd-sync-wait-broadcast");
+
+	ctrl_pdata->cmd_sync_wait_trigger = of_property_read_bool(
+		pan_node, "qcom,cmd-sync-wait-trigger");
+
+	pr_debug("%s: cmd_sync_wait_enable=%d trigger=%d\n", __func__,
+				ctrl_pdata->cmd_sync_wait_broadcast,
+				ctrl_pdata->cmd_sync_wait_trigger);
 
 	dynamic_fps = of_property_read_bool(pan_node,
 					  "qcom,mdss-dsi-pan-enable-dynamic-fps");
@@ -1676,11 +1726,8 @@ int dsi_panel_device_register(struct device_node *pan_node,
 		}
 
 		mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
-#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_FULL_HD_PT_PANEL)
-		ctrl_pdata->ctrl_state |= (CTRL_STATE_PANEL_INIT | CTRL_STATE_MDP_ACTIVE);
-#else
-		ctrl_pdata->ctrl_state |= CTRL_STATE_MDP_ACTIVE;
-#endif
+		ctrl_pdata->ctrl_state |=
+			(CTRL_STATE_PANEL_INIT | CTRL_STATE_MDP_ACTIVE);
 	} else {
 		pinfo->panel_power_on = 0;
 	}

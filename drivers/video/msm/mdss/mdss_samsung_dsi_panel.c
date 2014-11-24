@@ -1806,7 +1806,6 @@ void mdss_dsi_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl, struct dsi_cmd_desc *c
 	cmdreq.cmds_cnt = cnt;
 	cmdreq.rlen = 0;
 	cmdreq.cb = NULL;
-
 	BUG_ON(msd.ctrl_pdata == NULL);
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
@@ -1822,12 +1821,7 @@ u32 mdss_dsi_cmd_receive(struct mdss_dsi_ctrl_pdata *ctrl, struct dsi_cmd_desc *
         cmdreq.rbuf = ctrl->rx_buf.data;
         cmdreq.rlen = rlen;
         cmdreq.cb = NULL; /* call back */
-        /*
-    	 * This mutex is to sync up with dynamic FPS changes
-    	 * so that DSI lockups shall not happen
-    	 */
     	BUG_ON(msd.ctrl_pdata == NULL);
-
         mdss_dsi_cmdlist_put(ctrl, &cmdreq);
         /*
          * blocked here, untill call back called
@@ -3397,7 +3391,7 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		pinfo->fbc.target_bpp =
 			pinfo->bpp;
 	}
-#if 1
+
 	mdss_samsung_parse_panel_cmd(np, &display_qcom_on_cmds,
 				"qcom,panel-on-cmds");
 
@@ -3427,8 +3421,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 							__func__);
 		ctrl_pdata->off_cmds.link_state = DSI_LP_MODE;
 	}
-
-#endif
 
 	mdss_samsung_parse_panel_cmd(np, &nv_mtp_read_cmds,
 				"samsung,panel-nv-mtp-read-cmds");
@@ -4009,7 +4001,6 @@ int mdss_dsi_panel_init(struct device_node *node, struct mdss_dsi_ctrl_pdata *ct
 	ctrl_pdata->off = mdss_dsi_panel_off;
 	ctrl_pdata->bl_fnc = mdss_dsi_panel_bl_ctrl;
 	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;
-	ctrl_pdata->panel_reset = mdss_dsi_panel_reset;
 	ctrl_pdata->registered = mdss_dsi_panel_registered;
 	ctrl_pdata->dimming_init = mdss_dsi_panel_dimming_init;
 	ctrl_pdata->event_handler = samsung_dsi_panel_event_handler;

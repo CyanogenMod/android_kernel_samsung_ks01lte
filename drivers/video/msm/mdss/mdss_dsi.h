@@ -261,13 +261,13 @@ struct mdss_dsi_ctrl_pdata {
 	int (*on) (struct mdss_panel_data *pdata);
 	int (*off) (struct mdss_panel_data *pdata);
 	int (*partial_update_fnc) (struct mdss_panel_data *pdata);
+	int (*set_col_page_addr) (struct mdss_panel_data *pdata);
 	int (*check_status) (struct mdss_dsi_ctrl_pdata *pdata);
 	int (*cmdlist_commit)(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp);
 	int (*registered) (struct mdss_panel_data *pdata);
 	int (*dimming_init) (struct mdss_panel_data *pdata);
 	int (*event_handler) (int e);
 	int (*panel_blank) (struct mdss_panel_data *pdata, int blank);
-	int (*panel_reset) (struct mdss_panel_data *pdata, int enable);
 	int (*panel_extra_power) (struct mdss_panel_data *pdata, int enable);
 	void (*bl_fnc) (struct mdss_panel_data *pdata, u32 level);
 	void (*switch_mode) (struct mdss_panel_data *pdata, int mode);

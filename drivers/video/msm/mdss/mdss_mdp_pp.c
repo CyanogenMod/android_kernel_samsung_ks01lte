@@ -837,8 +837,9 @@ static int pp_vig_pipe_setup(struct mdss_mdp_pipe *pipe, u32 *op)
 			 * TODO: Allow pipe to be programmed whenever new CSC is
 			 * applied (i.e. dirty bit)
 			 */
-			mdss_mdp_csc_setup_data(MDSS_MDP_BLOCK_SSPP, pipe->num,
-					1, &pipe->pp_cfg.csc_cfg);
+			if (pipe->play_cnt == 0)
+				mdss_mdp_csc_setup_data(MDSS_MDP_BLOCK_SSPP,
+				  pipe->num, 1, &pipe->pp_cfg.csc_cfg);
 	} else {
 		if (pipe->src_fmt->is_yuv)
 			opmode |= (0 << 19) |	/* DST_DATA=RGB */

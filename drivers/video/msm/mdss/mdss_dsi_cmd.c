@@ -674,7 +674,6 @@ int mdss_dsi_cmdlist_put(struct mdss_dsi_ctrl_pdata *ctrl,
 		clist->get %= CMD_REQ_MAX;
 		clist->tot--;
 	}
-	mutex_unlock(&ctrl->cmd_mutex);
 
 	pr_debug("%s: tot=%d put=%d get=%d\n", __func__,
 		clist->tot, clist->put, clist->get);
@@ -685,6 +684,8 @@ int mdss_dsi_cmdlist_put(struct mdss_dsi_ctrl_pdata *ctrl,
 		else
 			ret = ctrl->cmdlist_commit(ctrl, 0);
 	}
+	mutex_unlock(&ctrl->cmd_mutex);
+
 	return ret;
 }
 
