@@ -1012,7 +1012,6 @@ int mdss_dsi_cmds_single_tx(struct mdss_dsi_ctrl_pdata *pdata,
 		 struct dsi_cmd_desc *cmds, int cnt)
 {
 	struct dsi_cmd_desc *cm;
-	unsigned int dsi_ctrl;
 
 	int i, j = 0, k = 0, cmd_len = 0;
 	char *cmds_tx;
