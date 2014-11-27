@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,7 +13,6 @@
 
 #include <linux/delay.h>
 #include <linux/sched.h>
-#include <linux/ratelimit.h>
 #include <mach/socinfo.h>
 
 #include "kgsl.h"
@@ -640,6 +639,7 @@ static void a3xx_fatal_err_callback(struct adreno_device *adreno_dev, int bit)
 static void a3xx_err_callback(struct adreno_device *adreno_dev, int bit)
 {
 	struct kgsl_device *device = &adreno_dev->dev;
+	const char *err = "";
 
 	switch (bit) {
 	case A3XX_INT_RBBM_AHB_ERROR: {
@@ -660,41 +660,34 @@ static void a3xx_err_callback(struct adreno_device *adreno_dev, int bit)
 
 		/* Clear the error */
 		kgsl_regwrite(device, A3XX_RBBM_AHB_CMD, (1 << 3));
-		break;
+		return;
 	}
 	case A3XX_INT_RBBM_REG_TIMEOUT:
-		KGSL_DRV_CRIT_RATELIMIT(device, "RBBM: AHB register timeout\n");
+		err = "RBBM: AHB register timeout";
 		break;
 	case A3XX_INT_RBBM_ME_MS_TIMEOUT:
-		KGSL_DRV_CRIT_RATELIMIT(device,
-			"RBBM: ME master split timeout\n");
+		err = "RBBM: ME master split timeout";
 		break;
 	case A3XX_INT_RBBM_PFP_MS_TIMEOUT:
-		KGSL_DRV_CRIT_RATELIMIT(device,
-			"RBBM: PFP master split timeout\n");
+		err = "RBBM: PFP master split timeout";
 		break;
 	case A3XX_INT_RBBM_ATB_BUS_OVERFLOW:
-		KGSL_DRV_CRIT(device,
-			"RBBM: ATB bus oveflow\n");
+		err = "RBBM: ATB bus oveflow";
 		break;
 	case A3XX_INT_VFD_ERROR:
-		KGSL_DRV_CRIT(device,
-			"VFD: Out of bounds access\n");
+		err = "VFD: Out of bounds access";
 		break;
 	case A3XX_INT_CP_T0_PACKET_IN_IB:
-		KGSL_DRV_CRIT(device,
-			"ringbuffer TO packet in IB interrupt\n");
+		err = "ringbuffer TO packet in IB interrupt";
 		break;
 	case A3XX_INT_CP_OPCODE_ERROR:
-		KGSL_DRV_CRIT(device,
-			"ringbuffer opcode error interrupt\n");
+		err = "ringbuffer opcode error interrupt";
 		break;
 	case A3XX_INT_CP_RESERVED_BIT_ERROR:
-		KGSL_DRV_CRIT_RATELIMIT(device,
-				"ringbuffer reserved bit error interrupt\n");
+		err = "ringbuffer reserved bit error interrupt";
 		break;
 	case A3XX_INT_CP_HW_FAULT:
-		KGSL_DRV_CRIT(device, "ringbuffer hardware fault\n");
+		err = "ringbuffer hardware fault";
 		break;
 	case A3XX_INT_CP_REG_PROTECT_FAULT: {
 		unsigned int reg;
@@ -704,16 +697,17 @@ static void a3xx_err_callback(struct adreno_device *adreno_dev, int bit)
 			"CP | Protected mode error| %s | addr=%x\n",
 			reg & (1 << 24) ? "WRITE" : "READ",
 			(reg & 0x1FFFF) >> 2);
-		break;
 	}
 	case A3XX_INT_CP_AHB_ERROR_HALT:
-		KGSL_DRV_CRIT(device, "ringbuffer AHB error interrupt\n");
+		err = "ringbuffer AHB error interrupt";
 		break;
 	case A3XX_INT_UCHE_OOB_ACCESS:
-		KGSL_DRV_CRIT_RATELIMIT(device,
-			"UCHE:  Out of bounds access\n");
+		err = "UCHE:  Out of bounds access";
 		break;
+	default:
+		return;
 	}
+	KGSL_DRV_CRIT(device, "%s\n", err);
 }
 
 static void a3xx_cp_callback(struct adreno_device *adreno_dev, int irq)
