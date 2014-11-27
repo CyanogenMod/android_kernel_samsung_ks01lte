@@ -2859,11 +2859,12 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 			    (command != MMC_SEND_TUNING_BLOCK_HS200) &&
 			    (command != MMC_SEND_TUNING_BLOCK)) {
 				pr_msg = true;
-				if (intmask & SDHCI_INT_DATA_CRC)
+				if (intmask & SDHCI_INT_DATA_CRC) {
 				    if (host->quirks2 & SDHCI_QUIRK2_IGNORE_CMDCRC_FOR_TUNING)
 					pr_msg = true;
 				    else
 					host->flags |= SDHCI_NEEDS_RETUNING;
+				}
 			}
 		} else {
 			pr_msg = true;

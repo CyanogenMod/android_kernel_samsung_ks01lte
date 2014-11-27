@@ -1142,7 +1142,6 @@ unsigned int msm_hs_tx_empty(struct uart_port *uport)
 {
 	unsigned int data;
 	unsigned int ret = 0;
-	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
 
 	data = msm_hs_read(uport, UART_DM_SR);
 	if (data & UARTDM_SR_TXEMT_BMSK)
