@@ -76,7 +76,6 @@
 #define VIRTUAL_GAMMA
 #endif
 
-
 #define DT_CMD_HDR 6
 
 static struct dsi_buf dsi_panel_tx_buf;
@@ -1806,8 +1805,14 @@ void mdss_dsi_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl, struct dsi_cmd_desc *c
 	cmdreq.cmds_cnt = cnt;
 	cmdreq.rlen = 0;
 	cmdreq.cb = NULL;
+	/*
+	 * This mutex is to sync up with dynamic FPS changes
+	 * so that DSI lockups shall not happen
+	 */
 	BUG_ON(msd.ctrl_pdata == NULL);
+	mutex_lock(&msd.ctrl_pdata->dfps_mutex);
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	mutex_unlock(&msd.ctrl_pdata->dfps_mutex);
 }
 
 u32 mdss_dsi_cmd_receive(struct mdss_dsi_ctrl_pdata *ctrl, struct dsi_cmd_desc *cmd, int rlen)
@@ -1821,8 +1826,14 @@ u32 mdss_dsi_cmd_receive(struct mdss_dsi_ctrl_pdata *ctrl, struct dsi_cmd_desc *
         cmdreq.rbuf = ctrl->rx_buf.data;
         cmdreq.rlen = rlen;
         cmdreq.cb = NULL; /* call back */
+	/*
+    	 * This mutex is to sync up with dynamic FPS changes
+    	 * so that DSI lockups shall not happen
+    	 */
     	BUG_ON(msd.ctrl_pdata == NULL);
+	mutex_lock(&msd.ctrl_pdata->dfps_mutex);
         mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	mutex_unlock(&msd.ctrl_pdata->dfps_mutex);
         /*
          * blocked here, untill call back called
          */
@@ -1896,7 +1907,7 @@ static int mipi_samsung_read_nv_mem(struct mdss_panel_data *pdata, struct dsi_cm
 {
 	int nv_size = 0;
 	int nv_read_cnt = 0;
-	int i = 0, j = 0;
+	int i = 0;
 
 	mipi_samsung_disp_send_cmd(PANEL_MTP_ENABLE, true);
 
@@ -1907,12 +1918,8 @@ static int mipi_samsung_read_nv_mem(struct mdss_panel_data *pdata, struct dsi_cm
 		int count = 0;
 		int read_size = nv_read_cmds->read_size[i];
 		int read_startoffset = nv_read_cmds->read_startoffset[i];
-		do {
-			count = samsung_nv_read(&(nv_read_cmds->cmd_desc[i]),
-					&buffer[nv_read_cnt], read_size, pdata, read_startoffset);
-			if (j++ == 5)
-				break;
-		} while(buffer[0] != 0x0 && buffer[0] != 0x1);
+		count = samsung_nv_read(&(nv_read_cmds->cmd_desc[i]),
+				&buffer[nv_read_cnt], read_size, pdata, read_startoffset);
 		nv_read_cnt += count;
 		if (count != read_size)
 			pr_err("Error reading LCD NV data !!!!\n");
@@ -4000,7 +4007,6 @@ int mdss_dsi_panel_init(struct device_node *node, struct mdss_dsi_ctrl_pdata *ct
 	ctrl_pdata->on = mdss_dsi_panel_on;
 	ctrl_pdata->off = mdss_dsi_panel_off;
 	ctrl_pdata->bl_fnc = mdss_dsi_panel_bl_ctrl;
-	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;
 	ctrl_pdata->registered = mdss_dsi_panel_registered;
 	ctrl_pdata->dimming_init = mdss_dsi_panel_dimming_init;
 	ctrl_pdata->event_handler = samsung_dsi_panel_event_handler;

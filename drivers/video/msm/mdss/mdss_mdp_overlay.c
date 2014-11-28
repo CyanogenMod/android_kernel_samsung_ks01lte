@@ -2897,13 +2897,6 @@ static struct mdss_mdp_ctl *__mdss_mdp_overlay_ctl_init(
 					mdss_mdp_overlay_handle_vsync;
 	ctl->vsync_handler.cmd_post_flush = false;
 
-	ctl->recover_underrun_handler.vsync_handler =
-			mdss_mdp_recover_underrun_handler;
-	ctl->recover_underrun_handler.cmd_post_flush = false;
-
-	INIT_WORK(&ctl->remove_underrun_handler,
-				remove_underrun_vsync_handler);
-
 	if (mfd->split_display && pdata->next) {
 		/* enable split display */
 		rc = mdss_mdp_ctl_split_display_setup(ctl, pdata->next);
