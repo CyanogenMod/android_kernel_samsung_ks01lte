@@ -620,12 +620,12 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 
 	/* LP11 */
 	tmp = MIPI_INP((ctrl_pdata->ctrl_base) + 0xac);
-	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, 0x1F << 16);
+	tmp &= ~(1<<28);
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
 	wmb();
 	msleep(20);
 	/* LP11 */
 	mdss_dsi_panel_reset(pdata, 1);
-	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
 
 	if (mipi->init_delay)
 		usleep(mipi->init_delay);

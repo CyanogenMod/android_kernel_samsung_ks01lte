@@ -223,7 +223,6 @@ void sending_tuning_cmd(void)
 	pdata = mdnie_msd->mpd;
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 						panel_data);
-
 	mutex_lock(&mdnie_msd->lock);
 
 	if (mfd->resume_state == MIPI_SUSPEND_STATE) {
@@ -288,7 +287,6 @@ void mDNIe_Set_Mode(enum Lcd_mDNIe_UI mode)
 	if (mdnie_tun_state.blind == COLOR_BLIND)
 		mode = mDNIE_BLINE_MODE;
 
-#if !defined(CONFIG_SEC_MATISSE_PROJECT)
 	switch (mode) {
 #if defined (CONFIG_FB_MSM_MDSS_SDC_WXGA_PANEL)
 	case mDNIe_UI_MODE:
@@ -505,7 +503,6 @@ void mDNIe_Set_Mode(enum Lcd_mDNIe_UI mode)
 		DPRINT("[%s] no option (%d)\n", __func__, mode);
 		return;
 	}
-#endif
 	sending_tuning_cmd();
 	free_tun_cmd();
 
@@ -525,9 +522,7 @@ void is_negative_on(void)
 		/* check the mode and tuning again when wake up*/
 		DPRINT("negative off when resume, tuning again!\n");
 		mdss_negative_color(mdnie_tun_state.negative);
-#if !defined(CONFIG_SEC_MATISSE_PROJECT)
 		mDNIe_Set_Mode(mdnie_tun_state.scenario);
-#endif
 	}
 }
 
@@ -556,7 +551,7 @@ void is_play_speed_1_5(int enable)
  * #	3. Natural
  * #
  * ##########################################################*/
-#if !defined(CONFIG_SEC_MATISSE_PROJECT)
+
 static ssize_t mode_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -568,8 +563,6 @@ static ssize_t mode_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	int value;
-	struct msm_fb_data_type *mfd;
-	mfd = mdnie_msd->mfd;
 
 	sscanf(buf, "%d", &value);
 	DPRINT("set background mode : %d\n", value);
@@ -588,9 +581,8 @@ static ssize_t mode_store(struct device *dev,
 	} else {
 		DPRINT(" %s, input background(%d)\n",
 			__func__, value);
-		mutex_lock(&mfd->power_state);
+
 		mDNIe_Set_Mode(mdnie_tun_state.scenario);
-		mutex_unlock(&mfd->power_state);
 	}
 
 	return size;
@@ -616,8 +608,6 @@ static ssize_t scenario_store(struct device *dev,
 					  const char *buf, size_t size)
 {
 	int value;
-	struct msm_fb_data_type *mfd;
-	mfd = mdnie_msd->mfd;
 
 	sscanf(buf, "%d", &value);
 
@@ -707,9 +697,7 @@ static ssize_t scenario_store(struct device *dev,
 			mdnie_tun_state.negative, mdnie_tun_state.scenario);
 	} else {
 		DPRINT(" %s, input value = %d\n", __func__, value);
-		mutex_lock(&mfd->power_state);
 		mDNIe_Set_Mode(mdnie_tun_state.scenario);
-		mutex_unlock(&mfd->power_state);
 	}
 	return size;
 }
@@ -760,8 +748,6 @@ static ssize_t mdnieset_init_file_cmd_store(struct device *dev,
 					    const char *buf, size_t size)
 {
 	int value;
-	struct msm_fb_data_type *mfd;
-	mfd = mdnie_msd->mfd;
 
 	sscanf(buf, "%d", &value);
 	DPRINT("mdnieset_init_file_cmd_store  : value(%d)\n", value);
@@ -777,9 +763,7 @@ static ssize_t mdnieset_init_file_cmd_store(struct device *dev,
 		       value);
 		break;
 	}
-	mutex_lock(&mfd->power_state);
 	mDNIe_Set_Mode(mdnie_tun_state.scenario);
-	mutex_unlock(&mfd->power_state);
 
 	return size;
 }
@@ -801,8 +785,6 @@ static ssize_t outdoor_store(struct device *dev,
 					       const char *buf, size_t size)
 {
 	int value;
-	struct msm_fb_data_type *mfd;
-	mfd = mdnie_msd->mfd;
 
 	sscanf(buf, "%d", &value);
 
@@ -820,15 +802,45 @@ static ssize_t outdoor_store(struct device *dev,
 		DPRINT("already negative mode(%d), do not outdoor mode(%d)\n",
 			mdnie_tun_state.negative, mdnie_tun_state.outdoor);
 	} else {
-		mutex_lock(&mfd->power_state);
 		mDNIe_Set_Mode(mdnie_tun_state.scenario);
-		mutex_unlock(&mfd->power_state);
 	}
 
 	return size;
 }
 
 static DEVICE_ATTR(outdoor, 0664, outdoor_show, outdoor_store);
+
+static ssize_t negative_show(struct device *dev,
+					      struct device_attribute *attr,
+					      char *buf)
+{
+	DPRINT("called %s\n", __func__);
+	return snprintf(buf, 256, "Current negative Value : %s\n",
+		(mdnie_tun_state.negative == 0) ? "Disabled" : "Enabled");
+}
+
+static ssize_t negative_store(struct device *dev,
+					       struct device_attribute *attr,
+					       const char *buf, size_t size)
+{
+	int value;
+
+	sscanf(buf, "%d", &value);
+
+	DPRINT
+	    ("negative_store, input value = %d\n",
+	     value);
+
+	mdnie_tun_state.negative = value;
+
+	mDNIe_set_negative(mdnie_tun_state.negative);
+
+	return size;
+}
+
+static DEVICE_ATTR(negative, 0664,
+		   negative_show,
+		   negative_store);
 
 static ssize_t playspeed_show(struct device *dev,
 			struct device_attribute *attr,
@@ -853,6 +865,67 @@ static ssize_t playspeed_store(struct device *dev,
 static DEVICE_ATTR(playspeed, 0664,
 			playspeed_show,
 			playspeed_store);
+
+static ssize_t accessibility_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	DPRINT("called %s\n", __func__);
+	return snprintf(buf, 256, "%d\n", play_speed_1_5);
+}
+
+static ssize_t accessibility_store(struct device *dev,
+			struct device_attribute *attr,
+			const char *buf, size_t size)
+{
+	int cmd_value;
+	char buffer[MDNIE_COLOR_BLINDE_CMD] = {0,};
+	int buffer2[MDNIE_COLOR_BLINDE_CMD/2] = {0,};
+	int loop;
+	char temp;
+
+	sscanf(buf, "%d %x %x %x %x %x %x %x %x %x", &cmd_value,
+		&buffer2[0], &buffer2[1], &buffer2[2], &buffer2[3], &buffer2[4],
+		&buffer2[5], &buffer2[6], &buffer2[7], &buffer2[8]);
+
+	for(loop = 0; loop < MDNIE_COLOR_BLINDE_CMD/2; loop++) {
+		buffer2[loop] = buffer2[loop] & 0xFFFF;
+
+		buffer[loop * 2] = (buffer2[loop] & 0xFF00) >> 8;
+		buffer[loop * 2 + 1] = buffer2[loop] & 0xFF;
+	}
+
+	for(loop = 0; loop < MDNIE_COLOR_BLINDE_CMD; loop+=2) {
+		temp = buffer[loop];
+		buffer[loop] = buffer[loop + 1];
+		buffer[loop + 1] = temp;
+	}
+
+	if (cmd_value == NEGATIVE) {
+		mdnie_tun_state.negative = mDNIe_NEGATIVE_ON;
+		mdnie_tun_state.blind = ACCESSIBILITY_OFF;
+	} else if (cmd_value == COLOR_BLIND) {
+		mdnie_tun_state.negative = mDNIe_NEGATIVE_OFF;
+		mdnie_tun_state.blind = COLOR_BLIND;
+
+		memcpy(&COLOR_BLIND_2[MDNIE_COLOR_BLINDE_CMD],
+				buffer, MDNIE_COLOR_BLINDE_CMD);
+	} else if (cmd_value == ACCESSIBILITY_OFF) {
+		mdnie_tun_state.blind = ACCESSIBILITY_OFF;
+		mdnie_tun_state.negative = mDNIe_NEGATIVE_OFF;
+	} else
+		pr_info("%s ACCESSIBILITY_MAX", __func__);
+	is_negative_on();
+	pr_info("%s cmd_value : %d", __func__, cmd_value);
+
+	return size;
+}
+
+static DEVICE_ATTR(accessibility, 0664,
+			accessibility_show,
+			accessibility_store);
+
+
 
 static ssize_t cabc_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -886,125 +959,7 @@ static ssize_t cabc_store(struct device *dev,
 
 }
 static DEVICE_ATTR(cabc, 0664, cabc_show, cabc_store);
-#endif
 
-static ssize_t negative_show(struct device *dev,
-					      struct device_attribute *attr,
-					      char *buf)
-{
-	DPRINT("called %s\n", __func__);
-	return snprintf(buf, 256, "Current negative Value : %s\n",
-		(mdnie_tun_state.negative == 0) ? "Disabled" : "Enabled");
-}
-
-static ssize_t negative_store(struct device *dev,
-					       struct device_attribute *attr,
-					       const char *buf, size_t size)
-{
-	int value;
-
-	sscanf(buf, "%d", &value);
-
-	DPRINT
-	    ("negative_store, input value = %d\n",
-	     value);
-
-	mdnie_tun_state.negative = value;
-
-	mDNIe_set_negative(mdnie_tun_state.negative);
-	DPRINT
-	    ("negative_store, input value11 = %d\n",
-	     value);
-	return size;
-}
-
-static DEVICE_ATTR(negative, 0664,
-		   negative_show,
-		   negative_store);
-static ssize_t accessibility_show(struct device *dev,
-			struct device_attribute *attr,
-			char *buf)
-{
-	DPRINT("called %s\n", __func__);
-	return snprintf(buf, 256, "%d\n", play_speed_1_5);
-}
-
-#if defined(CONFIG_SEC_MATISSE_PROJECT)
-static ssize_t accessibility_store(struct device *dev,
-			struct device_attribute *attr,
-			const char *buf, size_t size)
-{
-	int cmd_value;
-
-	sscanf(buf, "%d", &cmd_value);
-
-	if (cmd_value == NEGATIVE) {
-		mdnie_tun_state.negative = mDNIe_NEGATIVE_ON;
-		mdnie_tun_state.blind = ACCESSIBILITY_OFF;
-	} else if (cmd_value == ACCESSIBILITY_OFF) {
-		mdnie_tun_state.blind = ACCESSIBILITY_OFF;
-		mdnie_tun_state.negative = mDNIe_NEGATIVE_OFF;
-	} else
-		pr_info("%s ACCESSIBILITY_MAX", __func__);
-	is_negative_on();
-	return size;
-}
-#else
-static ssize_t accessibility_store(struct device *dev,
-			struct device_attribute *attr,
-			const char *buf, size_t size)
-{
-	int cmd_value;
-	char buffer[MDNIE_COLOR_BLINDE_CMD] = {0,};
-	int buffer2[MDNIE_COLOR_BLINDE_CMD/2] = {0,};
-	int loop;
-	char temp;
-	struct msm_fb_data_type *mfd;
-	mfd = mdnie_msd->mfd;
-
-	sscanf(buf, "%d %x %x %x %x %x %x %x %x %x", &cmd_value,
-		&buffer2[0], &buffer2[1], &buffer2[2], &buffer2[3], &buffer2[4],
-		&buffer2[5], &buffer2[6], &buffer2[7], &buffer2[8]);
-
-	for(loop = 0; loop < MDNIE_COLOR_BLINDE_CMD/2; loop++) {
-		buffer2[loop] = buffer2[loop] & 0xFFFF;
-
-		buffer[loop * 2] = (buffer2[loop] & 0xFF00) >> 8;
-		buffer[loop * 2 + 1] = buffer2[loop] & 0xFF;
-	}
-
-	for(loop = 0; loop < MDNIE_COLOR_BLINDE_CMD; loop+=2) {
-		temp = buffer[loop];
-		buffer[loop] = buffer[loop + 1];
-		buffer[loop + 1] = temp;
-	}
-
-	if (cmd_value == NEGATIVE) {
-		mdnie_tun_state.negative = mDNIe_NEGATIVE_ON;
-		mdnie_tun_state.blind = ACCESSIBILITY_OFF;
-	} else if (cmd_value == COLOR_BLIND) {
-		mdnie_tun_state.negative = mDNIe_NEGATIVE_OFF;
-		mdnie_tun_state.blind = COLOR_BLIND;
-
-		memcpy(&COLOR_BLIND_2[MDNIE_COLOR_BLINDE_CMD],
-				buffer, MDNIE_COLOR_BLINDE_CMD);
-	} else if (cmd_value == ACCESSIBILITY_OFF) {
-		mdnie_tun_state.blind = ACCESSIBILITY_OFF;
-		mdnie_tun_state.negative = mDNIe_NEGATIVE_OFF;
-	} else
-		pr_info("%s ACCESSIBILITY_MAX", __func__);
-	mutex_lock(&mfd->power_state);
-	is_negative_on();
-	mutex_unlock(&mfd->power_state);
-	pr_info("%s cmd_value : %d", __func__, cmd_value);
-
-	return size;
-}
-#endif
-
-static DEVICE_ATTR(accessibility, 0664,
-			accessibility_show,
-			accessibility_store);
 
 
 static struct class *mdnie_class;
@@ -1025,7 +980,6 @@ void init_mdnie_class(void)
 	if (IS_ERR(tune_mdnie_dev))
 		pr_err("Failed to create device(mdnie)!\n");
 
-#if !defined(CONFIG_SEC_MATISSE_PROJECT)
 	if (device_create_file
 	    (tune_mdnie_dev, &dev_attr_scenario) < 0)
 		pr_err("Failed to create device file(%s)!\n",
@@ -1053,25 +1007,23 @@ void init_mdnie_class(void)
 	       dev_attr_outdoor.attr.name);
 
 	if (device_create_file
-		(tune_mdnie_dev, &dev_attr_playspeed) < 0)
-		pr_err("Failed to create device file(%s)!=n",
-			dev_attr_playspeed.attr.name);
-
-	if (device_create_file(tune_mdnie_dev, &dev_attr_cabc) < 0) {
-		pr_info("[mipi2lvds:ERROR] device_create_file(%s)\n",\
-			dev_attr_cabc.attr.name);
-	}
-#endif
-	if (device_create_file
-		(tune_mdnie_dev, &dev_attr_accessibility) < 0)
-		pr_err("Failed to create device file(%s)!=n",
-			dev_attr_accessibility.attr.name);
-
-	if (device_create_file
 		(tune_mdnie_dev, &dev_attr_negative) < 0)
 		pr_err("Failed to create device file(%s)!\n",
 			dev_attr_negative.attr.name);
 
+	if (device_create_file
+		(tune_mdnie_dev, &dev_attr_playspeed) < 0)
+		pr_err("Failed to create device file(%s)!=n",
+			dev_attr_playspeed.attr.name);
+
+	if (device_create_file
+		(tune_mdnie_dev, &dev_attr_accessibility) < 0)
+		pr_err("Failed to create device file(%s)!=n",
+			dev_attr_accessibility.attr.name);
+	if (device_create_file(tune_mdnie_dev, &dev_attr_cabc) < 0) {
+		pr_info("[mipi2lvds:ERROR] device_create_file(%s)\n",\
+			dev_attr_cabc.attr.name);
+	}
 	mdnie_tun_state.mdnie_enable = true;
 
 	DPRINT("end!\n");
