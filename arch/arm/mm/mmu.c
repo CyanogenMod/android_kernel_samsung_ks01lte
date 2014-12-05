@@ -492,6 +492,12 @@ static void __init build_mem_type_table(void)
 	vecs_pgprot = kern_pgprot = user_pgprot = cp->pte;
 
 	/*
+	 * Only use write-through for non-SMP systems
+	 */
+	if (!is_smp() && cpu_arch >= CPU_ARCH_ARMv5 && cachepolicy > CPOLICY_WRITETHROUGH)
+		vecs_pgprot = cache_policies[CPOLICY_WRITETHROUGH].pte;
+
+	/*
 	 * ARMv6 and above have extended page tables.
 	 */
 	if (cpu_arch >= CPU_ARCH_ARMv6 && (cr & CR_XP)) {
@@ -1506,6 +1512,7 @@ static void __init map_lowmem(void)
 		vm->flags |= VM_ARM_MTYPE(type);
 		vm->caller = map_lowmem;
 		add_static_vm_early(svm++);
+		mark_vmalloc_reserved_area(vm->addr, vm->size);
 	}
 }
 
