@@ -750,9 +750,6 @@ static int mdss_fb_probe(struct platform_device *pdev)
 
 	mdss_fb_set_mdp_sync_pt_threshold(mfd);
 
-	if (mfd->mdp.splash_init_fnc)
-		mfd->mdp.splash_init_fnc(mfd);
-
 	INIT_DELAYED_WORK(&mfd->idle_notify_work, __mdss_fb_idle_notify_work);
 
 	return rc;

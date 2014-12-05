@@ -97,8 +97,8 @@ void mdss_dsi_ctrl_init(struct device *ctrl_dev,
 	mutex_init(&ctrl->mutex);
 	mutex_init(&ctrl->cmd_mutex);
 	mutex_init(&ctrl->dfps_mutex);
-	mdss_dsi_buf_alloc(&ctrl->tx_buf, SZ_4K);
-	mdss_dsi_buf_alloc(&ctrl->rx_buf, SZ_4K);
+	mdss_dsi_buf_alloc(ctrl_dev, &ctrl->tx_buf, SZ_4K);
+	mdss_dsi_buf_alloc(ctrl_dev, &ctrl->rx_buf, SZ_4K);
 	ctrl->cmdlist_commit = mdss_dsi_cmdlist_commit;
 
 
@@ -522,7 +522,7 @@ void mdss_dsi_controller_cfg(int enable,
 void mdss_dsi_op_mode_config(int mode,
 			     struct mdss_panel_data *pdata)
 {
-	u32 dsi_ctrl, intr_ctrl, dma_ctrl;
+	u32 dsi_ctrl, intr_ctrl;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 
 	if (pdata == NULL) {
@@ -771,15 +771,14 @@ int mdss_dsi_cmds_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 
 			mctrl->cmd_cfg_restore =
 					__mdss_dsi_cmd_mode_config(mctrl, 1);
-		} else if (!ctrl->do_unicast) {
+		} else {
 			/* broadcast cmds, let cmd_trigger do it */
 			return 0;
-
 		}
 	}
 
-	pr_debug("%s: ctrl=%d do_unicast=%d\n", __func__,
-				ctrl->ndx, ctrl->do_unicast);
+	pr_debug("%s: ctrl=%d\n", __func__,
+				ctrl->ndx);
 
 do_send:
 	ctrl->cmd_cfg_restore = __mdss_dsi_cmd_mode_config(ctrl, 1);
@@ -790,16 +789,14 @@ do_send:
 		cnt = -EINVAL;
 	}
 
-	if (!ctrl->do_unicast) {
-		if (mctrl && mctrl->cmd_cfg_restore) {
-			__mdss_dsi_cmd_mode_config(mctrl, 0);
-			mctrl->cmd_cfg_restore = false;
-		}
+	if (mctrl && mctrl->cmd_cfg_restore) {
+		__mdss_dsi_cmd_mode_config(mctrl, 0);
+		mctrl->cmd_cfg_restore = false;
+	}
 
-		if (ctrl->cmd_cfg_restore) {
-			__mdss_dsi_cmd_mode_config(ctrl, 0);
-			ctrl->cmd_cfg_restore = false;
-		}
+	if (ctrl->cmd_cfg_restore) {
+		__mdss_dsi_cmd_mode_config(ctrl, 0);
+		ctrl->cmd_cfg_restore = false;
 	}
 
 	return cnt;
@@ -1053,14 +1050,14 @@ int mdss_dsi_cmds_single_tx(struct mdss_dsi_ctrl_pdata *pdata,
 
 			mctrl->cmd_cfg_restore =
 					__mdss_dsi_cmd_mode_config(mctrl, 1);
-		} else if (!ctrl->do_unicast) {
+		} else {
 			/* broadcast cmds, let cmd_trigger do it */
 			return 0;
 		}
 	}
 
-	pr_debug("%s: ctrl=%d do_unicast=%d\n", __func__,
-				ctrl->ndx, ctrl->do_unicast);
+	pr_debug("%s: ctrl=%d\n", __func__,
+				ctrl->ndx);
 
 do_send:
 	ctrl->cmd_cfg_restore = __mdss_dsi_cmd_mode_config(ctrl, 1);
@@ -1085,16 +1082,14 @@ do_send:
 	mdss_dsi_cmd_dma_tx(ctrl, tp);
 	kfree(cmds_tx);
 
-	if (!ctrl->do_unicast) {
-		if (mctrl && mctrl->cmd_cfg_restore) {
-			__mdss_dsi_cmd_mode_config(mctrl, 0);
-			mctrl->cmd_cfg_restore = false;
-		}
+	if (mctrl && mctrl->cmd_cfg_restore) {
+		__mdss_dsi_cmd_mode_config(mctrl, 0);
+		mctrl->cmd_cfg_restore = false;
+	}
 
-		if (ctrl->cmd_cfg_restore) {
-			__mdss_dsi_cmd_mode_config(ctrl, 0);
-			ctrl->cmd_cfg_restore = false;
-		}
+	if (ctrl->cmd_cfg_restore) {
+		__mdss_dsi_cmd_mode_config(ctrl, 0);
+		ctrl->cmd_cfg_restore = false;
 	}
 
 	return cnt;
@@ -1153,16 +1148,8 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	MIPI_OUTP((ctrl->ctrl_base) + 0x090, 0x01);
 	wmb();
 
-	if (ctrl->do_unicast) {
-		/* let cmd_trigger to kickoff later */
-		pr_debug("%s: SKIP, ndx=%d do_unicast=%d\n", __func__,
-					ctrl->ndx, ctrl->do_unicast);
-		ret = tp->len;
-		goto end;
-	}
-
 	ret = wait_for_completion_timeout(&ctrl->dma_comp,
-				msecs_to_jiffies(1000));
+				msecs_to_jiffies(DMA_TX_TIMEOUT));
 	if (ret == 0)
 		ret = -ETIMEDOUT;
 	else
@@ -1309,14 +1296,6 @@ int mdss_dsi_cmdlist_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 {
 	int ret, ret_val = -EINVAL;
 
-
-	if (mdss_dsi_sync_wait_enable(ctrl)) {
-		ctrl->do_unicast = false;
-		 if (!ctrl->cmd_sync_wait_trigger &&
-					req->flags & CMD_REQ_UNICAST)
-			ctrl->do_unicast = true;
-	}
-
 	ret = mdss_dsi_cmds_tx(ctrl, req->cmds, req->cmds_cnt);
 
 	if (!IS_ERR_VALUE(ret))
@@ -1356,7 +1335,8 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 	int ret = -EINVAL;
 	int rc = 0;
 
-	mutex_lock(&ctrl->cmd_mutex);
+	if (from_mdp)
+		mutex_lock(&ctrl->cmd_mutex);
 
 	req = mdss_dsi_cmdlist_get(ctrl);
 
@@ -1381,10 +1361,12 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 	 * fetch dcs commands from axi bus
 	 */
 	mdss_bus_bandwidth_ctrl(1);
+	mdss_bus_scale_set_quota(MDSS_HW_DSI0, SZ_1M, SZ_1M);
 
 	pr_debug("%s:  from_mdp=%d pid=%d\n", __func__, from_mdp, current->pid);
 	mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 1);
 
+	rc = mdss_iommu_ctrl(1);
 	if (IS_ERR_VALUE(rc)) {
 		pr_err("IOMMU attach failed\n");
 		mutex_unlock(&ctrl->cmd_mutex);
@@ -1404,7 +1386,9 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 	if (req->flags & CMD_REQ_HS_MODE)
 		mdss_dsi_set_tx_power_mode(1, &ctrl->panel_data);
 
+	mdss_iommu_ctrl(0);
 	mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);
+	mdss_bus_scale_set_quota(MDSS_HW_DSI0, 0, 0);
 	mdss_bus_bandwidth_ctrl(0);
 need_lock:
 
@@ -1427,8 +1411,8 @@ need_lock:
 		if (!roi || (roi->w != 0 || roi->h != 0))
 			mdss_dsi_cmd_mdp_start(ctrl);
 
+		mutex_unlock(&ctrl->cmd_mutex);
 	}
-	mutex_unlock(&ctrl->cmd_mutex);
 
 	pr_debug("%s : -- \n",__func__);
 	return ret;
@@ -1488,24 +1472,30 @@ static int dsi_event_thread(void *data)
 			mdss_dsi_pll_relock(ctrl);
 
 		if (todo & DSI_EV_MDP_FIFO_UNDERFLOW) {
+			mutex_lock(&ctrl->mutex);
 			if (ctrl->recovery) {
+				mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 1);
 				mdss_dsi_sw_reset_restore(ctrl);
 				ctrl->recovery->fxn(ctrl->recovery->data);
+				mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);
 			}
+			mutex_unlock(&ctrl->mutex);
 		}
 
 		if (todo & DSI_EV_DSI_FIFO_EMPTY)
 			mdss_dsi_sw_reset_restore(ctrl);
 
 		if (todo & DSI_EV_MDP_BUSY_RELEASE) {
-			spin_lock(&ctrl->mdp_lock);
+			spin_lock_irqsave(&ctrl->mdp_lock, flag);
 			ctrl->mdp_busy = false;
 			mdss_dsi_disable_irq_nosync(ctrl, DSI_MDP_TERM);
 			complete(&ctrl->mdp_comp);
-			spin_unlock(&ctrl->mdp_lock);
+			spin_unlock_irqrestore(&ctrl->mdp_lock, flag);
 
 			/* enable dsi error interrupt */
+			mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 1);
 			mdss_dsi_err_intr_ctrl(ctrl, DSI_INTR_ERROR_MASK, 1);
+			mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);
 		}
 
 	}
@@ -1524,7 +1514,7 @@ void mdss_dsi_ack_err_status(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	if (status) {
 		MIPI_OUTP(base + 0x0068, status);
-		pr_err("%s: status=%x\n", __func__, status);
+		pr_err("%s: status=%x\n", __func__, status);		
 	}
 }
 

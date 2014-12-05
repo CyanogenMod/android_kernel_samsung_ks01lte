@@ -3060,7 +3060,7 @@ static void gamma_init_evt1_third(
 				(pSmart->brightness_level >= AOR_ADJUST_CD)) {
 		/* 180CD ~ 110CD */
 		if (pSmart->brightness_level == 111)
-			bl_level = 181;
+			bl_level = 184;
 		else if (pSmart->brightness_level == 119)
 			bl_level = 192;
 		else if (pSmart->brightness_level == 126)
@@ -3085,7 +3085,7 @@ static void gamma_init_evt1_third(
 		for (cnt = 0; cnt < S6E8FA_TABLE_MAX; cnt++) {
 			point_index = S6E8FA_ARRAY[cnt+1];
 			temp_cal_data =
-			((long long)(candela_coeff_2p15[point_index])) *
+			((long long)(candela_coeff_2p05[point_index])) *
 			((long long)(bl_level));
 			candela_level[cnt] = temp_cal_data;
 		}
@@ -3095,7 +3095,7 @@ static void gamma_init_evt1_third(
 		for (cnt = 0; cnt < S6E8FA_TABLE_MAX; cnt++) {
 			point_index = S6E8FA_ARRAY[cnt+1];
 			temp_cal_data =
-			((long long)(candela_coeff_2p1[point_index])) *
+			((long long)(candela_coeff_2p05[point_index])) *
 			((long long)(bl_level));
 			candela_level[cnt] = temp_cal_data;
 		}
@@ -3105,7 +3105,7 @@ static void gamma_init_evt1_third(
 		for (cnt = 0; cnt < S6E8FA_TABLE_MAX; cnt++) {
 			point_index = S6E8FA_ARRAY[cnt+1];
 			temp_cal_data =
-			((long long)(candela_coeff_2p15[point_index])) *
+			((long long)(candela_coeff_2p05[point_index])) *
 			((long long)(bl_level));
 			candela_level[cnt] = temp_cal_data;
 		}
@@ -3115,7 +3115,7 @@ static void gamma_init_evt1_third(
 		for (cnt = 0; cnt < S6E8FA_TABLE_MAX; cnt++) {
 			point_index = S6E8FA_ARRAY[cnt+1];
 			temp_cal_data =
-			((long long)(candela_coeff_2p1[point_index])) *
+			((long long)(candela_coeff_2p05[point_index])) *
 			((long long)(bl_level));
 			candela_level[cnt] = temp_cal_data;
 		}
@@ -3125,7 +3125,7 @@ static void gamma_init_evt1_third(
 		for (cnt = 0; cnt < S6E8FA_TABLE_MAX; cnt++) {
 			point_index = S6E8FA_ARRAY[cnt+1];
 			temp_cal_data =
-			((long long)(candela_coeff_2p05[point_index])) *
+			((long long)(candela_coeff_2p0[point_index])) *
 			((long long)(bl_level));
 			candela_level[cnt] = temp_cal_data;
 		}
@@ -3154,7 +3154,7 @@ static void gamma_init_evt1_third(
 		for (cnt = 0; cnt < S6E8FA_TABLE_MAX; cnt++) {
 			point_index = S6E8FA_ARRAY[cnt+1];
 			temp_cal_data =
-			((long long)(candela_coeff_2p2[point_index])) *
+			((long long)(candela_coeff_2p1[point_index])) *
 			((long long)(bl_level));
 			candela_level[cnt] = temp_cal_data;
 		}
