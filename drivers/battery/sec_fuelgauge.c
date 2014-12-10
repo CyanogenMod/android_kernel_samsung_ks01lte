@@ -9,6 +9,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+#define DEBUG
 #include <linux/battery/sec_fuelgauge.h>
 #include <linux/battery/sec_charger.h>
 #include <linux/battery/sec_battery.h>
@@ -66,7 +67,7 @@ static void sec_fg_get_atomic_capacity(
 		SEC_FUELGAUGE_CAPACITY_TYPE_SKIP_ABNORMAL) {
 		if (!fuelgauge->is_charging &&
 			fuelgauge->capacity_old < val->intval) {
-			WARN_ONCE(&fuelgauge->client->dev,
+			dev_err(&fuelgauge->client->dev,
 				"%s: capacity (old %d : new %d)\n",
 				__func__, fuelgauge->capacity_old, val->intval);
 			val->intval = fuelgauge->capacity_old;

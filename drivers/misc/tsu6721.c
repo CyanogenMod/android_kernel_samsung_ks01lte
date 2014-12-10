@@ -593,6 +593,9 @@ int check_jig_state(void)
 }
 EXPORT_SYMBOL(check_jig_state);
 
+#if defined(CONFIG_TOUCHSCREEN_MMS144)
+extern void tsp_charger_infom(bool en);
+#endif
 
 static int tsu6721_attach_dev(struct tsu6721_usbsw *usbsw)
 {
@@ -602,6 +605,9 @@ static int tsu6721_attach_dev(struct tsu6721_usbsw *usbsw)
 	struct i2c_client *client = usbsw->client;
 #if defined(CONFIG_VIDEO_MHL_V2)
 	/*u8 mhl_ret = 0;*/
+#endif
+#if defined(CONFIG_TOUCHSCREEN_MMS144)
+	int tsp_noti_ignore = 0;
 #endif
 	val1 = i2c_smbus_read_byte_data(client, REG_DEVICE_TYPE1);
 	if (val1 < 0) {
@@ -716,6 +722,14 @@ static int tsu6721_attach_dev(struct tsu6721_usbsw *usbsw)
 		pdata->callback(CABLE_TYPE_INCOMPATIBLE,
 				TSU6721_ATTACHED);
 	}
+#if defined(CONFIG_TOUCHSCREEN_MMS144)
+	else{
+		tsp_noti_ignore = 1;
+		printk("[TSP] attached, but don't noti \n");
+	}
+	if(!tsp_noti_ignore)
+		tsp_charger_infom(1);
+#endif
 	usbsw->dev1 = val1;
 	usbsw->dev2 = val2;
 	usbsw->dev3 = val3;
@@ -727,6 +741,9 @@ static int tsu6721_attach_dev(struct tsu6721_usbsw *usbsw)
 static int tsu6721_detach_dev(struct tsu6721_usbsw *usbsw)
 {
 	struct tsu6721_platform_data *pdata = usbsw->pdata;
+#if defined(CONFIG_TOUCHSCREEN_MMS144)
+	int tsp_noti_ignore = 0;
+#endif
 
 	/* USB */
 	if (usbsw->dev1 & DEV_USB ||
@@ -804,6 +821,14 @@ static int tsu6721_detach_dev(struct tsu6721_usbsw *usbsw)
 		pdata->callback(CABLE_TYPE_INCOMPATIBLE,
 				TSU6721_DETACHED);
 	}
+#if defined(CONFIG_TOUCHSCREEN_MMS144)
+	else{
+		tsp_noti_ignore = 1;
+		printk("[TSP] detached, but don't noti \n");
+	}
+	if(!tsp_noti_ignore)
+		tsp_charger_infom(0);
+#endif
 	usbsw->dev1 = 0;
 	usbsw->dev2 = 0;
 	usbsw->dev3 = 0;
@@ -916,14 +941,12 @@ static int tsu6721_parse_dt(struct device *dev, struct tsu6721_platform_data *pd
 	#if 0
         /* regulator info */
 	pdata->i2c_pull_up = of_property_read_bool(np, "tsu6721,i2c-pull-up");
-
-        /* reset, irq gpio info */
-        pdata->gpio_scl = of_get_named_gpio_flags(np, "tsu6721,scl-gpio",
-                               0, &pdata->scl_gpio_flags);
 	#endif
-        pdata->gpio_uart_on = of_get_named_gpio_flags(np, "tsu6721,uarton-gpio",
+        pdata->gpio_scl = of_get_named_gpio_flags(np, "tsu6721,gpio-scl",
+                               0, &pdata->scl_gpio_flags);
+	pdata->gpio_uart_on = of_get_named_gpio_flags(np, "tsu6721,uarton-gpio",
                                0, &pdata->uarton_gpio_flags);
-        pdata->gpio_sda = of_get_named_gpio_flags(np, "tsu6721,sda-gpio",
+        pdata->gpio_sda = of_get_named_gpio_flags(np, "tsu6721,gpio-sda",
                                0, &pdata->sda_gpio_flags);
         pdata->gpio_int = of_get_named_gpio_flags(np, "tsu6721,irq-gpio",
                 0, &pdata->irq_gpio_flags);
@@ -958,6 +981,10 @@ static int __devinit tsu6721_probe(struct i2c_client *client,
 		pdata->dock_init = tsu6721_dock_init;
 		pdata->oxp_callback = tsu6721_oxp_callback;
 		pdata->mhl_sel = NULL;
+		gpio_tlmm_config(GPIO_CFG(pdata->gpio_sda,  0, GPIO_CFG_INPUT,
+			GPIO_CFG_NO_PULL, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
+		gpio_tlmm_config(GPIO_CFG(pdata->gpio_scl,  0, GPIO_CFG_INPUT,
+			GPIO_CFG_NO_PULL, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
 		gpio_tlmm_config(GPIO_CFG(pdata->gpio_int,  0, GPIO_CFG_INPUT,
 			GPIO_CFG_NO_PULL, GPIO_CFG_2MA), GPIO_CFG_DISABLE);
 		gpio_tlmm_config(GPIO_CFG(pdata->gpio_uart_on,  0, GPIO_CFG_INPUT,
@@ -992,6 +1019,11 @@ static int __devinit tsu6721_probe(struct i2c_client *client,
 	mutex_init(&usbsw->mutex);
 
 	local_usbsw = usbsw;
+
+	/* tsu6721 soft reset*/
+	ret = i2c_smbus_write_byte_data(client,REG_RESET, 0x01);
+	if (ret < 0)
+		dev_err(&client->dev,"cannot soft reset, err %d\n", ret);
 
 	tsu6721_reg_init(usbsw);
 
@@ -1119,7 +1151,7 @@ static int __init tsu6721_init(void)
 #endif
 	return i2c_add_driver(&tsu6721_i2c_driver);
 }
-module_init(tsu6721_init);
+late_initcall(tsu6721_init);
 
 static void __exit tsu6721_exit(void)
 {

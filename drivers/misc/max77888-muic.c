@@ -95,6 +95,7 @@ enum {
 	ADC_DOCK_PLAY_PAUSE_KEY = 0x0d,
 	ADC_SMARTDOCK		= 0x10, /* 0x10000 40.2K ohm */
 	ADC_AUDIODOCK		= 0x12, /* 0x10010 64.9K ohm */
+	ADC_LANHUB		= 0x13, /* 0x10011 80.07K ohm */
 	ADC_CEA936ATYPE1_CHG	= 0x17,	/* 0x10111 200K ohm */
 	ADC_JIG_USB_OFF		= 0x18, /* 0x11000 255K ohm */
 	ADC_JIG_USB_ON		= 0x19, /* 0x11001 301K ohm */
@@ -366,6 +367,35 @@ static int max77888_muic_get_usb_path_pass2
 }
 #endif
 
+#ifdef CONFIG_MUIC_RESET_PIN_ENABLE
+void max77888_muic_regdump(void) {
+	u8 r_value[MAX77888_MUIC_REG_END];
+	int ret;
+
+	ret = max77888_bulk_read(gInfo->muic, MAX77888_MUIC_REG_ID, ARRAY_SIZE(r_value)-1, r_value);
+	max77888_read_reg(gInfo->muic, MAX77888_MUIC_REG_CTRL4, &r_value[ARRAY_SIZE(r_value)-1]);
+
+	pr_info("%s:MUIC REG DUMP\n", __func__);
+	pr_info("%s:READ MUIC REG ID : %02x", __func__, r_value[0]);
+	pr_info("%s:READ MUIC REG INT1 : %02x", __func__, r_value[1]);
+	pr_info("%s:READ MUIC REG INT2 : %02x", __func__, r_value[2]);
+	pr_info("%s:READ MUIC REG INT3 : %02x", __func__, r_value[3]);
+	pr_info("%s:READ MUIC REG STATUS1 : %02x", __func__, r_value[4]);
+	pr_info("%s:READ MUIC REG STATUS2 : %02x", __func__, r_value[5]);
+	pr_info("%s:READ MUIC REG STATUS3 : %02x", __func__, r_value[6]);
+	pr_info("%s:READ MUIC REG INTMASK1 : %02x", __func__, r_value[7]);
+	pr_info("%s:READ MUIC REG INTMASK2 : %02x", __func__, r_value[8]);
+	pr_info("%s:READ MUIC REG INTMASK3 : %02x", __func__, r_value[9]);
+	pr_info("%s:READ MUIC REG CDETCTRL1 : %02x", __func__, r_value[10]);
+	pr_info("%s:READ MUIC REG CDETCTRL2 : %02x", __func__, r_value[11]);
+	pr_info("%s:READ MUIC REG CTRL1 : %02x", __func__, r_value[12]);
+	pr_info("%s:READ MUIC REG CTRL2 : %02x", __func__, r_value[13]);
+	pr_info("%s:READ MUIC REG CTRL3  : %02x", __func__, r_value[14]);
+	pr_info("%s:READ MUIC REG CTRL4 : %02x", __func__, r_value[ARRAY_SIZE(r_value)-1]);
+}
+EXPORT_SYMBOL_GPL(max77888_muic_regdump);
+#endif
+
 static int max77888_muic_set_uart_path_pass2
 	(struct max77888_muic_info *info, int path)
 {
@@ -385,6 +415,13 @@ static int max77888_muic_set_uart_path_pass2
 
 	return ret;
 
+}
+
+static void max77888_muic_set_adc_mode(struct max77888_muic_info *info, int mode)
+{
+	max77888_update_reg(info->muic, MAX77888_MUIC_REG_CTRL4,
+		mode << CTRL4_ADCMODE_SHIFT, CTRL4_ADCMODE_MASK);
+	dev_info(info->dev, "func:%s, ADCMOE(0x%x)\n", __func__, mode);
 }
 
 #if 0 // unused
@@ -558,6 +595,8 @@ static ssize_t max77888_muic_show_device(struct device *dev,
 		return sprintf(buf, "OTG\n");
 	case CABLE_TYPE_TA_MUIC:
 		return sprintf(buf, "TA\n");
+	case CABLE_TYPE_LANHUB_MUIC:
+		return sprintf(buf, "LANHUB\n");
 	case CABLE_TYPE_DESKDOCK_MUIC:
 		return sprintf(buf, "Desk Dock\n");
 	case CABLE_TYPE_CARDOCK_MUIC:
@@ -1402,6 +1441,11 @@ static int max77888_muic_attach_usb_type(struct max77888_muic_info *info,
 	}
 
 	switch (adc) {
+	case ADC_LANHUB:
+		dev_info(info->dev, "%s:USB\n", __func__);
+		path = AP_USB_MODE;
+		info->is_otg_enable = false;
+		break;
 	case ADC_JIG_USB_OFF:
 		if (info->cable_type == CABLE_TYPE_JIG_USB_OFF_MUIC) {
 			dev_info(info->dev, "%s: duplicated(JIG USB OFF)\n",
@@ -1447,7 +1491,7 @@ static int max77888_muic_attach_usb_type(struct max77888_muic_info *info,
 		info->cable_type = CABLE_TYPE_NONE_MUIC;
 		return ret;
 	}
-#if 0
+
 #if defined(CONFIG_SWITCH_DUAL_MODEM)
 	if (mdata->sw_path == CP_USB_MODE ||
 		mdata->sw_path == CP_ESC_USB_MODE) {
@@ -1469,7 +1513,6 @@ static int max77888_muic_attach_usb_type(struct max77888_muic_info *info,
 		max77888_muic_set_usb_path(info, CP_USB_MODE);
 		return 0;
 	}
-#endif
 
 	max77888_muic_set_usb_path(info, path);
 
@@ -1497,6 +1540,21 @@ static int max77888_muic_attach_dock_type(struct max77888_muic_info *info,
 		return 0;
 
 	switch (adc) {
+	case ADC_LANHUB:
+		/* Lanhub */
+		if (info->cable_type == CABLE_TYPE_LANHUB_MUIC) {
+			dev_info(info->dev, "%s: dulpicated(Lanhub)\n",
+				__func__);
+			return 0;
+		}
+		dev_info(info->dev, "%s:Lanhub\n", __func__);
+		info->cable_type = CABLE_TYPE_LANHUB_MUIC;
+		info->is_otg_enable = false;
+		path = AP_USB_MODE;
+
+		if (mdata->usb_cb)
+			mdata->usb_cb(USB_LANHUB_ATTACHED);
+		break;
 	case ADC_DESKDOCK:
 		/* Desk Dock */
 		if (info->cable_type == CABLE_TYPE_DESKDOCK_MUIC) {
@@ -1714,13 +1772,17 @@ static void max77888_muic_handle_jig_uart(struct max77888_muic_info *info,
 				CTRL2_CPEn1_LOWPWD0,
 				CTRL2_CPEn_MASK | CTRL2_LOWPWD_MASK);
 
-	if (vbvolt & STATUS2_VBVOLT_MASK) {
-		if (mdata->host_notify_cb) {
-			if (mdata->host_notify_cb(1) == NOTIFY_TEST_MODE) {
-				is_otgtest = true;
-				dev_info(info->dev, "%s: OTG TEST\n", __func__);
-			}
+	if (mdata->host_notify_cb) {
+		if (mdata->host_notify_cb(1) == NOTIFY_TEST_MODE) {
+			is_otgtest = true;
+			dev_info(info->dev, "%s: OTG TEST\n", __func__);
 		}
+	}
+
+	if (vbvolt & STATUS2_VBVOLT_MASK) {
+		if (is_otgtest == false)
+			max77888_update_reg(info->muic, MAX77888_MUIC_REG_CTRL2,
+				(0 << CTRL2_ACCDET_SHIFT), CTRL2_ACCDET_MASK);
 
 		info->cable_type = CABLE_TYPE_JIG_UART_OFF_VB_MUIC;
 		max77888_muic_set_charging_type(info, is_otgtest);
@@ -1740,7 +1802,7 @@ static void max77888_muic_handle_jig_uart(struct max77888_muic_info *info,
 
 void max77888_otg_control(struct max77888_muic_info *info, int enable)
 {
-	u8 int_mask, ctrl3, cdetctrl1, chg_cnfg_00;
+	u8 int_mask, int_mask2, ctrl3, chg_cnfg_00;
 	int jig_state;
 	pr_info("%s: enable(%d)\n", __func__, enable);
 	
@@ -1767,12 +1829,12 @@ void max77888_otg_control(struct max77888_muic_info *info, int enable)
 		max77888_write_reg(info->max77888->i2c,
 			MAX77888_CHG_REG_CHG_INT_MASK, int_mask);
 
-		/* disable charger detection */
+		/* VB voltage interrupt Mask */
 		max77888_read_reg(info->max77888->muic,
-			MAX77888_MUIC_REG_CDETCTRL1, &cdetctrl1);
-		cdetctrl1 &= ~(1 << 0);
+			MAX77888_MUIC_REG_INTMASK2, &int_mask2);
+		int_mask2 &= ~(1 << 4);
 		max77888_write_reg(info->max77888->muic,
-			MAX77888_MUIC_REG_CDETCTRL1, cdetctrl1);
+			MAX77888_MUIC_REG_INTMASK2, int_mask2);
 
 		/* OTG on, boost on, DIS_MUIC_CTRL=1 */
 		max77888_read_reg(info->max77888->i2c,
@@ -1822,12 +1884,12 @@ void max77888_otg_control(struct max77888_muic_info *info, int enable)
 
 		mdelay(50);
 
-		/* enable charger detection */
+		/* VB voltage interrupt Unmask */
 		max77888_read_reg(info->max77888->muic,
-			MAX77888_MUIC_REG_CDETCTRL1, &cdetctrl1);
-		cdetctrl1 |= (1 << 0);
+			MAX77888_MUIC_REG_INTMASK2, &int_mask2);
+		int_mask2 |= (1 << 4);
 		max77888_write_reg(info->max77888->muic,
-			MAX77888_MUIC_REG_CDETCTRL1, cdetctrl1);
+			MAX77888_MUIC_REG_INTMASK2, int_mask2);
 
 		/* enable charger interrupt */
 		max77888_write_reg(info->max77888->i2c,
@@ -1839,8 +1901,8 @@ void max77888_otg_control(struct max77888_muic_info *info, int enable)
 		info->is_otg_enable = false;
 	}
 
-	pr_info("%s: INT_MASK(0x%x), CDETCTRL1(0x%x), CHG_CNFG_00(0x%x)\n",
-				__func__, int_mask, cdetctrl1, chg_cnfg_00);
+	pr_info("%s: INT_MASK(0x%x), INT_MASK2(0x%x), CHG_CNFG_00(0x%x)\n",
+				__func__, int_mask, int_mask2, chg_cnfg_00);
 }
 
 void max77888_powered_otg_control(struct max77888_muic_info *info, int enable)
@@ -2166,6 +2228,18 @@ static int max77888_muic_handle_attach(struct max77888_muic_info *info,
 			info->cable_type = CABLE_TYPE_NONE_MUIC;
 		}
 		break;
+	case CABLE_TYPE_LANHUB_MUIC:
+		if (adc != ADC_LANHUB) {
+			dev_warn(info->dev, "%s: assume lanhub detach\n",
+					__func__);
+			info->cable_type = CABLE_TYPE_NONE_MUIC;
+
+			max77888_muic_set_charging_type(info, false);
+			info->is_adc_open_prev = false;
+			if (mdata->usb_cb)
+				mdata->usb_cb(MAX77888_MUIC_DETACHED);
+		}
+		break;
 	case CABLE_TYPE_DESKDOCK_MUIC:
 		if (adc != ADC_DESKDOCK) {
 			dev_warn(info->dev, "%s: assume deskdock detach\n",
@@ -2278,6 +2352,16 @@ static int max77888_muic_handle_attach(struct max77888_muic_info *info,
 			ret = max77888_muic_set_charging_type(info, false);
 		}
 		break;
+	case ADC_LANHUB:
+		max77888_muic_attach_dock_type(info, adc, chgtyp);
+		if(chgtyp == CHGTYP_USB ||
+			chgtyp == CHGTYP_DOWNSTREAM_PORT ||
+			chgtyp == CHGTYP_DEDICATED_CHGR ||
+			chgtyp == CHGTYP_500MA || chgtyp == CHGTYP_1A)
+			ret = max77888_muic_set_charging_type(info, false);
+		else if (chgtyp == CHGTYP_NO_VOLTAGE && !chgdetrun)
+			ret = max77888_muic_set_charging_type(info, !vbvolt);
+		break;	
 #if defined(CONFIG_MUIC_MAX77888_SUPPORT_SMART_DOCK)
 	case ADC_SMARTDOCK:
 		max77888_muic_attach_smart_dock(info, adc, vbvolt, chgtyp);
@@ -2521,6 +2605,29 @@ static int max77888_muic_handle_detach(struct max77888_muic_info *info, int irq)
 		if (mdata->usb_cb && info->is_usb_ready)
 			mdata->usb_cb(USB_OTGHOST_DETACHED);
 		break;
+	case CABLE_TYPE_LANHUB_MUIC:
+		dev_info(info->dev, "%s: LANHUB\n", __func__);
+		if(gInfo->adc == ADC_LANHUB) {
+			dev_info(info->dev, "%s: duplicated LANHUB(PASS)\n", __func__);
+			break;
+		}
+
+		info->cable_type = CABLE_TYPE_NONE_MUIC;
+
+		ret = max77888_muic_set_charging_type(info, false);
+		if (ret) {
+			info->cable_type = CABLE_TYPE_LANHUB_MUIC;
+			break;
+		}
+
+		if (mdata->usb_cb && info->is_usb_ready) {
+			if(gInfo->adc == ADC_GND) {
+				mdata->usb_cb(USB_OTGHOST_ATTACHED);
+			} else {
+				mdata->usb_cb(USB_LANHUB_DETACHED);
+			}
+		}
+		break;
 	case CABLE_TYPE_USB_MUIC:
 	case CABLE_TYPE_JIG_USB_OFF_MUIC:
 	case CABLE_TYPE_JIG_USB_ON_MUIC:
@@ -2554,7 +2661,7 @@ static int max77888_muic_handle_detach(struct max77888_muic_info *info, int irq)
 			info->cable_type = CABLE_TYPE_DESKDOCK_MUIC;
 			break;
 		}
-		if (mdata->dock_cb)
+		if ((info->adc!=ADC_DESKDOCK) && mdata->dock_cb)
 			mdata->dock_cb(MAX77888_MUIC_DOCK_DETACHED);
 		break;
 	case CABLE_TYPE_CARDOCK_MUIC:
@@ -2722,6 +2829,12 @@ static int max77888_muic_filter_dev(struct max77888_muic_info *info,
 #else
 	case ADC_GND:
 		pr_info("%s:%s ADC_GND = OTG\n", DEV_NAME, __func__);
+		if (info->cable_type == CABLE_TYPE_LANHUB_MUIC)
+			intr = INT_DETACH;
+		break;
+	case ADC_LANHUB:
+		if ( vbvolt == 0)
+			intr = INT_DETACH;
 		break;
 #if !defined(CONFIG_MUIC_DET_JACK)
 	case ADC_MHL ... (ADC_SMARTDOCK - 1):
@@ -2731,7 +2844,7 @@ static int max77888_muic_filter_dev(struct max77888_muic_info *info,
 #if !defined(CONFIG_MUIC_MAX77888_SUPPORT_OTG_AUDIO_DOCK)
 	case ADC_AUDIODOCK:
 #endif /* !CONFIG_MUIC_MAX77888_SUPPORT_OTG_AUDIO_DOCK */
-	case (ADC_AUDIODOCK + 1) ... (ADC_CEA936ATYPE1_CHG - 1):
+	case (ADC_AUDIODOCK + 2) ... (ADC_CEA936ATYPE1_CHG - 1):
 #endif /* CONFIG_MACH_GC1 */
 		dev_warn(info->dev, "%s: unsupported ADC(0x%02x)\n",
 				__func__, adc);
@@ -2760,6 +2873,7 @@ static int max77888_muic_filter_dev(struct max77888_muic_info *info,
 				case CABLE_TYPE_OTG_MUIC:
 				case CABLE_TYPE_DESKDOCK_MUIC:
 				case CABLE_TYPE_CARDOCK_MUIC:
+				case CABLE_TYPE_LANHUB_MUIC:
 				case CABLE_TYPE_SMARTDOCK_MUIC:
 				case CABLE_TYPE_SMARTDOCK_TA_MUIC:
 				case CABLE_TYPE_SMARTDOCK_USB_MUIC:
@@ -2782,7 +2896,7 @@ static int max77888_muic_filter_dev(struct max77888_muic_info *info,
 static void max77888_muic_detect_dev(struct max77888_muic_info *info, int irq)
 {
 	struct i2c_client *client = info->muic;
-	u8 status[2];
+	u8 status[2], int_mask, int_mask2;
 	int ret;
 	u8 cntl1_val;
 	int intr = INT_ATTACH;
@@ -2796,6 +2910,25 @@ static void max77888_muic_detect_dev(struct max77888_muic_info *info, int irq)
 		dev_err(info->dev, "%s: fail to read muic reg(%d)\n", __func__,
 			ret);
 		return;
+	}
+
+	if((info->cable_type == CABLE_TYPE_OTG_MUIC) && status[0] == 0x33) {
+
+		/* VB voltage interrupt Unmask*/
+		max77888_read_reg(info->max77888->muic,
+			MAX77888_MUIC_REG_INTMASK2, &int_mask2);
+		int_mask2 |= (1 << 4);
+		max77888_write_reg(info->max77888->muic,
+			MAX77888_MUIC_REG_INTMASK2, int_mask2);
+
+		max77888_write_reg(info->max77888->i2c,
+			MAX77888_CHG_REG_CHG_CNFG_00, 0x05);
+
+		/* enable charger interrupt */
+		max77888_write_reg(info->max77888->i2c,
+			MAX77888_CHG_REG_CHG_INT_MASK, chg_int_state);
+		max77888_read_reg(info->max77888->i2c,
+			MAX77888_CHG_REG_CHG_INT_MASK, &int_mask);
 	}
 
 	dev_info(info->dev, "%s: STATUS1:0x%x, 2:0x%x\n", __func__,
@@ -3403,6 +3536,9 @@ static int __devinit max77888_muic_probe(struct platform_device *pdev)
 		info->muic_data->init_cb();
 
 	mutex_init(&info->mutex);
+
+	/* Set ADC Mode as  CONTINUOUS Mode*/
+	max77888_muic_set_adc_mode(info, 0);
 
 	/* Set ADC debounce time: 25ms */
 	max77888_muic_set_adcdbset(info, 2);

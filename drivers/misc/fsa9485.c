@@ -37,12 +37,16 @@
 #include <linux/input.h>
 #include <linux/of_gpio.h>
 
+extern int poweroff_charging;
+extern void fsa9485_set_mhl_cable(bool attached);
 
 int uart_connecting;
 EXPORT_SYMBOL(uart_connecting);
 
 int detached_status;
 EXPORT_SYMBOL(detached_status);
+
+static int jig_state;
 
 struct fsa9485_usbsw {
 	struct i2c_client		*client;
@@ -66,8 +70,10 @@ struct fsa9485_usbsw {
 	int	mhl_ready;
 	int	deskdock;
 	int	previous_key;
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 	unsigned int	previous_dock;
 	unsigned int	lanhub_ta_status;
+#endif
 
 #if !defined(CONFIG_MUIC_FSA9485_SUPPORT_CAR_DOCK)
 	bool	is_factory_start;
@@ -123,6 +129,7 @@ static void EnableFSA9485Interrupts(void)
 }
 #endif
 
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 /* RAW DATA Detection*/
 static void fsa9485_disable_rawdataInterrupts(void)
 {
@@ -153,6 +160,7 @@ static void fsa9485_enable_rawdataInterrupts(void)
 		dev_err(&client->dev, "%s: err %d\n", __func__, ret);
 
 }
+#endif
 
 #if defined(CONFIG_MACH_AEGIS2)
 void fsa9485_checkandhookaudiodockfornoise(int value)
@@ -263,15 +271,6 @@ static void fsa9485_reg_init(struct fsa9485_usbsw *usbsw)
 	ret = i2c_smbus_write_byte_data(client, FSA9485_REG_TIMING1, 0x0);
 	if (ret < 0)
 		dev_err(&client->dev, "%s: err %d\n", __func__, ret);
-
-	usbsw->mansw = i2c_smbus_read_byte_data(client, FSA9485_REG_MANSW1);
-	if (usbsw->mansw < 0)
-		dev_err(&client->dev, "%s: err %d\n", __func__, usbsw->mansw);
-
-	if (usbsw->mansw)
-		ctrl &= ~CON_MANUAL_SW;	/* Manual Switching Mode */
-	else
-		ctrl &= ~(CON_INT_MASK);
 
 	ret = i2c_smbus_write_byte_data(client, FSA9485_REG_CTRL, ctrl);
 	if (ret < 0)
@@ -649,6 +648,13 @@ void fsa9485_manual_switching(int path)
 }
 EXPORT_SYMBOL(fsa9485_manual_switching);
 
+int check_jig_state(void)
+{
+	return jig_state;
+}
+EXPORT_SYMBOL(check_jig_state);
+
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 static int fsa9485_detect_lanhub(struct fsa9485_usbsw *usbsw) {
 	int device_type, ret;
 	unsigned int dev1, dev2, adc;
@@ -672,8 +678,9 @@ static int fsa9485_detect_lanhub(struct fsa9485_usbsw *usbsw) {
 	switch(adc){
 	/* Switch LANHUB+TA to LANHUB */
 	case ADC_GND:
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 		if(usbsw->previous_dock == FSA9485_NONE) {
-			dev_info(&client->dev, "%s:lanhub connect\n", __func__);
+			dev_info(&client->dev, "%s:otg(lanhub) connect\n", __func__);
 			if (pdata->otg_cb)
 				pdata->otg_cb(FSA9485_ATTACHED);
 		} else if (usbsw->previous_dock == ADC_LANHUB) {
@@ -685,7 +692,13 @@ static int fsa9485_detect_lanhub(struct fsa9485_usbsw *usbsw) {
 
 		usbsw->dock_attached = FSA9485_ATTACHED;
 		usbsw->previous_dock = ADC_GND;
+#else
+		dev_info(&client->dev, "%s:otg connect\n", __func__);
+		if (pdata->otg_cb)
+			pdata->otg_cb(FSA9485_ATTACHED);
 
+		usbsw->dock_attached = FSA9485_ATTACHED;
+#endif
 		i2c_smbus_write_byte_data(client, FSA9485_REG_MANSW1, 0x27);
 		i2c_smbus_write_byte_data(client, FSA9485_REG_MANSW2, 0x02);
 		break;
@@ -737,6 +750,7 @@ static int fsa9485_detect_lanhub(struct fsa9485_usbsw *usbsw) {
 
 	return adc;
 }
+#endif
 
 static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 {
@@ -756,6 +770,9 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 	}
 	dev1 = device_type & 0xff;
 	dev2 = device_type >> 8;
+
+	jig_state = (dev2 & DEV_T2_JIG_MASK) ? 1 : 0;
+
 	dev3 = i2c_smbus_read_byte_data(client,
 			FSA9485_REG_RESERVED_1D);
 	if(dev3 < 0) {
@@ -776,8 +793,10 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 			dev2 = DEV_SMARTDOCK;
 		else if (adc == 0x12)
 			dev2 = DEV_AUDIO_DOCK;
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 		else if (adc == 0x13)
 			dev2 = DEV_LANHUB;
+#endif
 	}
 
 	dev_info(&client->dev, "dev1: 0x%02x, dev2: 0x%02x, adc: 0x%02x\n",
@@ -839,12 +858,14 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 				pdata->charger_cb(FSA9485_ATTACHED);
 		/* for SAMSUNG OTG */
 		} else if (dev1 & DEV_USB_OTG) {
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 			/* Enable RAWDATA Interrupts */
 			fsa9485_enable_rawdataInterrupts();
-
+#endif
 			usbsw->dock_attached = FSA9485_ATTACHED;
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 			usbsw->previous_dock = ADC_GND;
-
+#endif
 			dev_info(&client->dev, "otg connect\n");
 			if (pdata->otg_cb)
 				pdata->otg_cb(FSA9485_ATTACHED);
@@ -980,6 +1001,7 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 
 			if (pdata->audio_dock_cb)
 				pdata->audio_dock_cb(FSA9485_ATTACHED);
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 		/* LANHUB */
 		} else if (dev2 & DEV_LANHUB) {
 			/* Enable RAWDATA Interrupts */
@@ -1011,6 +1033,7 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 
 			if (pdata->lanhub_cb)
 				pdata->lanhub_cb(FSA9485_ATTACHED);
+#endif
 		/* Incompatible */
 		} else if (dev3 & DEV_VBUS_DEBOUNCE) {
 			dev_info(&client->dev,
@@ -1043,9 +1066,9 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 				pdata->charger_cb(FSA9485_DETACHED);
 		/* for SAMSUNG OTG */
 		} else if (usbsw->dev1 & DEV_USB_OTG) {
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 			/* Disable RAWDATA Interrupts */
 			fsa9485_disable_rawdataInterrupts();
-
 			dev_info(&client->dev, "%s:lanhub_ta_status(%d)\n",
 					__func__, usbsw->lanhub_ta_status);
 			if (pdata->otg_cb && usbsw->lanhub_ta_status == 0)
@@ -1055,7 +1078,11 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 
 			usbsw->dock_attached = FSA9485_DETACHED;
 			usbsw->lanhub_ta_status=0;
-
+#else
+			if (pdata->otg_cb)
+				pdata->otg_cb(FSA9485_DETACHED);
+			usbsw->dock_attached = FSA9485_DETACHED;
+#endif
 			i2c_smbus_write_byte_data(client,
 						FSA9485_REG_CTRL, 0x1E);
 		/* JIG */
@@ -1152,6 +1179,7 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 			if (pdata->audio_dock_cb)
 				pdata->audio_dock_cb(FSA9485_DETACHED);
 			usbsw->adc = 0;
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 		/* LANHUB */
 		} else if (usbsw->adc == 0x13) {
 			dev_info(&client->dev, "lanhub disconnect\n");
@@ -1179,13 +1207,15 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 			usbsw->dock_attached = FSA9485_DETACHED;
 			usbsw->adc = 0;
 			usbsw->lanhub_ta_status=0;
+#endif
 		} else if (usbsw->dev3 & DEV_VBUS_DEBOUNCE) {
 			dev_info(&client->dev,
 					"Incompatible Charger disconnect\n");
 			if (pdata->in_charger_cb)
 				pdata->in_charger_cb(FSA9485_DETACHED);
 		}
-
+		/*	set auto mode	*/
+		i2c_smbus_write_byte_data(client,FSA9485_REG_CTRL, 0x1E);
 	}
 	usbsw->dev1 = dev1;
 	usbsw->dev2 = dev2;
@@ -1225,10 +1255,14 @@ static irqreturn_t fsa9485_irq_thread(int irq, void *data)
 
 	/* device detection */
 	mutex_lock(&usbsw->mutex);
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 	if((intr&0xff) == 0x00 && intr2 == 0x04)
 		detect = fsa9485_detect_lanhub(usbsw);
 	else
 		detect = fsa9485_detect_dev(usbsw);
+#else
+	detect = fsa9485_detect_dev(usbsw);
+#endif
 	mutex_unlock(&usbsw->mutex);
 	pr_info("%s: detect dev_adc: 0x%02x\n", __func__, detect);
 
@@ -1328,6 +1362,7 @@ static void fsa9485_mhl_detect(struct work_struct *work)
 	struct fsa9485_platform_data *pdata = usbsw->pdata;
 
 	if (local_usbsw->mhl_ready == 0) {
+		fsa9485_set_mhl_cable(isMhlAttached);
 		dev_info(&usbsw->client->dev, "%s: ignore mhl-detection in booting time\n", __func__);
 		return;
 	}
@@ -1512,12 +1547,21 @@ static int __devinit fsa9485_probe(struct i2c_client *client,
 
 	local_usbsw->dock_ready = 0;
 	local_usbsw->mhl_ready = 0;
+#ifdef CONFIG_MUIC_FSA9485_SUPPORT_LANHUB
 	local_usbsw->previous_dock = 0;
 	local_usbsw->lanhub_ta_status = 0;
+#endif
 
 	/* initial cable detection */
 	INIT_DELAYED_WORK(&usbsw->init_work, fsa9485_init_detect);
-	schedule_delayed_work(&usbsw->init_work, msecs_to_jiffies(1000));
+	if(poweroff_charging)
+		schedule_delayed_work(&usbsw->init_work, msecs_to_jiffies(1000));
+	else
+#ifdef CONFIG_SEC_BERLUTI_PROJECT
+		schedule_delayed_work(&usbsw->init_work, msecs_to_jiffies(100));
+#else
+		schedule_delayed_work(&usbsw->init_work, msecs_to_jiffies(3000));
+#endif
 	INIT_DELAYED_WORK(&usbsw->audio_work, fsa9485_delayed_audio);
 	schedule_delayed_work(&usbsw->audio_work, msecs_to_jiffies(20000));
 #if defined(CONFIG_VIDEO_MHL_V1) || defined(CONFIG_VIDEO_MHL_V2)

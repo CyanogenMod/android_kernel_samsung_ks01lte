@@ -30,10 +30,24 @@
 #include <linux/of_gpio.h>
 #endif
 
+//////////////////////////////////////////////////////////////////////
+int rt_uart_connecting;
+EXPORT_SYMBOL(rt_uart_connecting);
+
+static int jig_state;
+
+int rt_check_jig_state(void)
+{
+	return jig_state;
+}
+EXPORT_SYMBOL(rt_check_jig_state);
+//////////////////////////////////////////////////////////////////////
+
+
 #define RT8973_DEVICE_NAME "rt8973"
 #define ALIAS_NAME RT8973_DEVICE_NAME
-#define RT8973_DRV_VER "2.0.3S"
-#define RT8973_IRQF_MODE IRQF_TRIGGER_FALLING
+#define RT8973_DRV_VER "2.0.4SDev3"
+#define RT8973_IRQF_MODE (IRQF_TRIGGER_FALLING | IRQF_NO_SUSPEND)
 
 #define RT8973_REG_CHIP_ID          0x01
 #define RT8973_REG_CONTROL          0x02
@@ -279,6 +293,7 @@ enum {
 	USB_SHIFT,
 	UART_SHIFT,
 	JIG_SHIFT,
+	L200K_USB_SHIFT,
 };
 
 struct rt8973_status {
@@ -303,6 +318,7 @@ struct rt8973_status {
 			uint32_t usb_connect:1;
 			uint32_t uart_connect:1;
 			uint32_t jig_connect:1;
+			uint32_t l200k_usb_connect:1;
 		};
 		uint32_t status;
 	};
@@ -395,6 +411,10 @@ static inline int rt8973_update_regs(rt8973_chip_t *chip)
 	if (ret < 0)
 		return ret;
 	chip->curr_status.id_adc = ret;
+
+	/* invalid id value */
+	if (ret >= ARRAY_SIZE(id_to_cable_type_mapping))
+		return -EINVAL;
 	return 0;
 }
 
@@ -418,11 +438,20 @@ static int rt8973_get_cable_type_by_device_reg(rt8973_chip_t *chip)
 static int rt8973_get_cable_type_by_id(rt8973_chip_t *chip)
 {
 	int id_val = chip->curr_status.id_adc;
+	int cable_type;
 	pr_info("RT8973 : ID value = 0x%x\n", id_val);
 	if (chip->curr_status.vbus_status)
-		return id_to_cable_type_mapping[id_val].cable_type_with_vbus;
+		cable_type = id_to_cable_type_mapping[id_val].cable_type_with_vbus;
 	else
-		return id_to_cable_type_mapping[id_val].cable_type_without_vbus;
+		cable_type = id_to_cable_type_mapping[id_val].cable_type_without_vbus;
+
+	/* Special case for L ID200K USB cable */
+	if (cable_type == MUIC_RT8973_CABLE_TYPE_TYPE1_CHARGER) {
+	/* ID = 200KOhm, VBUS = 1, DCD_T = 0 and CHGDET = 0 ==> L SDP*/
+		if ((chip->curr_status.irq_flags[0]&0x0C) == 0)
+			cable_type = MUIC_RT8973_CABLE_TYPE_L200K_SPEC_USB;
+	}
+	return cable_type;
 }
 
 static int rt8973_get_cable_type(rt8973_chip_t *chip)
@@ -469,6 +498,8 @@ static void rt8973_preprocess_status(rt8973_chip_t *chip)
 	     (chip->curr_status.cable_type ==
 	      MUIC_RT8973_CABLE_TYPE_JIG_USB_OFF) ||
 	     (chip->curr_status.cable_type ==
+	      MUIC_RT8973_CABLE_TYPE_L200K_SPEC_USB) ||
+	     (chip->curr_status.cable_type ==
 	      MUIC_RT8973_CABLE_TYPE_JIG_USB_ON)) ? 1 : 0;
 	chip->curr_status.uart_connect =
 	    ((chip->curr_status.cable_type ==
@@ -494,6 +525,8 @@ static void rt8973_preprocess_status(rt8973_chip_t *chip)
 	      MUIC_RT8973_CABLE_TYPE_JIG_UART_OFF_WITH_VBUS) ||
 	     (chip->curr_status.cable_type ==
 	      MUIC_RT8973_CABLE_TYPE_JIG_UART_ON_WITH_VBUS)) ? 1 : 0;
+	chip->curr_status.l200k_usb_connect = (chip->curr_status.cable_type ==
+		MUIC_RT8973_CABLE_TYPE_L200K_SPEC_USB) ? 1 : 0;
 }
 
 #define FLAG_HIGH           (0x01)
@@ -605,7 +638,9 @@ static char *rt8973_cable_names[] = {
 	"MUIC_RT8973_CABLE_TYPE_JIG_UART_ON_WITH_VBUS",
 
 	"MUIC_RT8973_CABLE_TYPE_CDP",
+	"MUIC_RT8973_CABLE_TYPE_L200K_SPEC_USB",
 	"MUIC_RT8973_CABLE_TYPE_UNKNOWN",
+	"MUIC_RT8973_CABLE_TYPE_INVALID",
 };
 #endif /*RTDBGINFO_LEVEL<=RTDBGLEVEL */
 
@@ -732,12 +767,50 @@ static void rt8973_jig_detach_handler(struct rt8973_chip *chip,
 {
 	jig_type_t type;
 	type = get_jig_type(chip->prev_status.cable_type);
-	pr_info("RT8973 : JIG attached (type = %d)\n", (int)type);
+	pr_info("RT8973 : JIG detached (type = %d)\n", (int)type);
 	if (chip->pdata->jig_callback)
 		chip->pdata->jig_callback(type, 0);
 }
 
+static void rt8973_l200k_usb_attach_handler(struct rt8973_chip *chip,
+				      const struct rt8973_event_handler
+				      *handler, unsigned int old_status,
+				      unsigned int new_status)
+{
+	pr_info("RT8973 : 200K special USB cable attached\n");
+	/* Make switch connect to USB path */
+	rt8973_reg_write(chip, RT8973_REG_MANUAL_SW1, 0x24);
+	/* Change to manual-config */
+	rt8973_clr_bits(chip, RT8973_REG_CONTROL, 1 << 2);
+}
+
+static void rt8973_l200k_usb_detach_handler(struct rt8973_chip *chip,
+				      const struct rt8973_event_handler
+				      *handler, unsigned int old_status,
+				      unsigned int new_status)
+{
+	pr_info("RT8973 : 200K special USB cable detached\n");
+	/* Make switch opened */
+	rt8973_reg_write(chip, RT8973_REG_MANUAL_SW1, 0x00);
+	/* Change to auto-config */
+	rt8973_set_bits(chip, RT8973_REG_CONTROL, 1 << 2);
+
+}
+
+
 struct rt8973_event_handler normal_event_handlers[] = {
+	{
+        .name = "200K special USB attached",
+        .bit_mask = (1 << L200K_USB_SHIFT),
+        .type = FLAG_RISING,
+        .handler = rt8973_l200k_usb_attach_handler,
+	},
+	{
+        .name = "200K special USB detached",
+        .bit_mask = (1 << L200K_USB_SHIFT),
+        .type = FLAG_FALLING,
+        .handler = rt8973_l200k_usb_detach_handler,
+	},
 	{
 	 .name = "Cable changed",
 	 .bit_mask = (1 << CABLE_CHG_SHIFT),
@@ -849,19 +922,36 @@ static void rt8973_irq_work(struct work_struct *work)
 	int ret;
 	rt8973_chip_t *chip = container_of(to_delayed_work(work),
 					   rt8973_chip_t, irq_work);
+	/* enable interrupt */
+	rt8973_clr_bits(chip, RT8973_REG_CONTROL, 0x01);
 	chip->prev_status = chip->curr_status;
 	ret = rt8973_update_regs(chip);
 	if (ret < 0) {
 		pr_err("RT8973 : Error : can't update(read) register status:%d\n", ret);
+		/* roll back status */
+		chip->curr_status = chip->prev_status;
 		return;
 	}
+
+/* for printing out registers -- start */
+	pr_info("%s : INTF1 = 0x%x, INTF2 = 0x%x\n", __FUNCTION__,
+         (int)chip->curr_status.irq_flags[0],
+         (int)chip->curr_status.irq_flags[1]);
+	pr_info("%s : DEV1 = 0x%x, DEV2 = 0x%x\n", __FUNCTION__,
+         (int)chip->curr_status.device_reg[0],
+         (int)chip->curr_status.device_reg[1]);
+	pr_info("%s : ADC = 0x%x\n", __FUNCTION__,
+         (int)chip->curr_status.id_adc);
+/* for printint out registers -- end*/
+
 	rt8973_preprocess_status(chip);
 	pr_info("RT8973 : Status : cable type = %d,\n"
 	       "vbus = %d, accessory = %d\n"
 	       "ocp = %d, ovp = %d, otp = %d,\n"
 	       "adc_chg = %d, cable_chg = %d\n"
 	       "otg = %d, dcdt = %d, usb = %d,\n"
-	       "uart = %d, jig = %d\n",
+	       "uart = %d, jig = %d\n"
+	       "200k usb cable = %d\n",
 	       chip->curr_status.cable_type,
 	       chip->curr_status.vbus_status,
 	       chip->curr_status.accessory_status,
@@ -873,7 +963,9 @@ static void rt8973_irq_work(struct work_struct *work)
 	       chip->curr_status.otg_status,
 	       chip->curr_status.dcdt_status,
 	       chip->curr_status.usb_connect,
-	       chip->curr_status.uart_connect, chip->curr_status.jig_connect);
+	       chip->curr_status.uart_connect,
+	       chip->curr_status.jig_connect,
+	       chip->curr_status.l200k_usb_connect);
 	rt8973_process_urgent_evt(chip);
 	if (chip->curr_status.dcdt_status) {
 		if (chip->dcdt_retry_count >= DCD_T_RETRY) {
@@ -891,6 +983,32 @@ static void rt8973_irq_work(struct work_struct *work)
 		}
 	}
 	rt8973_process_normal_evt(chip);
+
+//////////////////////////////////////////////////////////////////////
+	if(chip->curr_status.cable_type ==  MUIC_RT8973_CABLE_TYPE_JIG_USB_OFF ||\
+		 chip->curr_status.cable_type == MUIC_RT8973_CABLE_TYPE_JIG_USB_ON ||\
+		 chip->curr_status.cable_type == MUIC_RT8973_CABLE_TYPE_JIG_UART_OFF ||\
+		 chip->curr_status.cable_type == MUIC_RT8973_CABLE_TYPE_JIG_UART_ON)
+		jig_state = 1;
+	else
+		jig_state = 0;
+
+	if(chip->curr_status.cable_type ==  MUIC_RT8973_CABLE_TYPE_JIG_USB_OFF ||\
+		 chip->curr_status.cable_type == MUIC_RT8973_CABLE_TYPE_JIG_USB_ON ||\
+		 chip->curr_status.cable_type == MUIC_RT8973_CABLE_TYPE_JIG_UART_OFF) {
+		//flash_control(true);
+	}
+	else if(chip->curr_status.cable_type == MUIC_RT8973_CABLE_TYPE_UART ||\
+		chip->curr_status.cable_type == MUIC_RT8973_CABLE_TYPE_JIG_UART_OFF) {
+		rt_uart_connecting = 1;
+		//flash_control(true);
+	}
+	else if(chip->curr_status.cable_type==MUIC_RT8973_CABLE_TYPE_NONE){
+		rt_uart_connecting = 0;
+		//flash_control(false);
+	}
+//////////////////////////////////////////////////////////////////////
+
 #if defined(CONFIG_TOUCHSCREEN_MELFAS_CS02_GF1) || defined(CONFIG_TOUCHSCREEN_IST30XX)
 	if(chip->curr_status.cable_type==MUIC_RT8973_CABLE_TYPE_NONE){
 		charger_enable(0);	
@@ -929,8 +1047,10 @@ static bool rt8973_reset_check(struct i2c_client *iic)
 		return false;
 	}
 
-	i2c_smbus_write_byte_data(iic, RT8973_REG_RESET, 0x01);
-	msleep_interruptible(1);
+	/* write default value instead of sending reset command*/
+	/* REG[0x02] = 0xE5, REG[0x14] = 0x01*/
+	i2c_smbus_write_byte_data(iic, RT8973_REG_CONTROL, 0xE5);
+	i2c_smbus_write_byte_data(iic, RT8973_REG_MANUAL_SW2, 0x01);
 	return true;
 }
 
@@ -938,16 +1058,21 @@ static void rt8973_init_regs(rt8973_chip_t *chip)
 {
 	int chip_id = rt8973_reg_read(chip, RT8973_REG_CHIP_ID);
 	pr_info("RT8973 : rt8973_init_regs\n");
+	chip->curr_status.cable_type = MUIC_RT8973_CABLE_TYPE_INVALID; /*MUIC_RT8973_CABLE_TYPE_NONE*/
 	chip->curr_status.id_adc = 0x1f;
 	/* for rev 0, turn off i2c reset function */
 	if (((chip_id & 0xf8) >> 3) == 0)
 		rt8973_set_bits(chip, RT8973_REG_CONTROL, 0x08);
 	/* Only mask Connect */
 	rt8973_reg_write(chip, RT8973_REG_INTERRUPT_MASK1, 0x20);
+	/* Dummy read */
+	rt8973_reg_read(chip, RT8973_REG_INT_FLAG1);
 	/* Only mask OCP_LATCH and POR */
 	rt8973_reg_write(chip, RT8973_REG_INTERRUPT_MASK2, 0x24);
 	/* enable interrupt */
-	rt8973_clr_bits(chip, RT8973_REG_CONTROL, 0x01);
+	//rt8973_clr_bits(chip, RT8973_REG_CONTROL, 0x01);
+	/* Execute 1st dectection */
+	queue_delayed_work(chip->wq, &chip->irq_work, msecs_to_jiffies(400));
 }
 
 static ssize_t adc_show(struct device *dev,
@@ -1061,6 +1186,8 @@ static int __devinit rt8973_probe(struct i2c_client *client,
 	if (!pdata)
 		return -EINVAL;
 
+	if (pdata->dock_init)
+		pdata->dock_init();
 
 	ret = i2c_check_functionality(client->adapter,
 				      I2C_FUNC_SMBUS_BYTE_DATA |

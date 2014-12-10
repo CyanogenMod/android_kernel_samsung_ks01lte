@@ -134,7 +134,6 @@ static DEVICE_ATTR(rory_control, S_IRUGO | S_IWUSR ,
 		rory_control_show, rory_control_store);
 #endif /*RORY_CONTROL*/
 
-#ifdef CONFIG_SEC_DEBUG
 static unsigned int convert_debug_level_str(const char *str)
 {
 	if (strncasecmp(str, "0xA0A0", 6) == 0)
@@ -193,7 +192,6 @@ static ssize_t debug_level_store(struct device *dev,
 
 static DEVICE_ATTR(debug_level, S_IRUGO | S_IWUSR ,
 		debug_level_show, debug_level_store);
-#endif
 
 #if defined(CONFIG_MACH_APEXQ) || defined(CONFIG_MACH_AEGIS2)
 static ssize_t slideCount_show
@@ -221,17 +219,102 @@ static DEVICE_ATTR(slideCount, S_IRUGO | S_IWUSR | S_IWGRP,\
 			slideCount_show, slideCount_store);
 #endif
 
+/*
+ * For Drop Caches
+ */
+#include <linux/fs.h>
+#include <linux/vmstat.h>
+#include <linux/swap.h>
+
+#define K(x) ((x) << (PAGE_SHIFT - 10))
+
+extern void drop_pagecache_sb(struct super_block *sb, void *unused);
+extern void drop_slab(void);
+
+static ssize_t drop_caches_show
+	(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int ret = 0;
+	return snprintf(buf, sizeof(buf), "%d\n", ret);
+}
+
+static ssize_t drop_caches_store
+	(struct device *dev, struct device_attribute *attr,\
+		const char *buf, size_t size)
+{
+	struct sysinfo i;
+
+	if (strlen(buf) > 2)
+		goto out;
+
+	if (buf[0] == '3') {
+		si_meminfo(&i);
+		printk("[Before]\nMemFree : %8lu kB\n", K(i.freeram));
+		printk("Cached : %8lu kB\n\n", K(global_page_state(NR_FILE_PAGES) - \
+						total_swapcache_pages - i.bufferram));
+
+		iterate_supers(drop_pagecache_sb, NULL);
+		drop_slab();
+
+		si_meminfo(&i);
+		printk("[After]\nMemFree : %8lu kB\n", K(i.freeram));
+		printk("Cached : %8lu kB\n\n", K(global_page_state(NR_FILE_PAGES) - \
+						total_swapcache_pages - i.bufferram));
+		printk("Cached Drop done!\n");
+	}
+out:
+	return size;
+}
+
+static DEVICE_ATTR(drop_caches, S_IRUGO | S_IWUSR | S_IWGRP,\
+			drop_caches_show, drop_caches_store);
+/*
+ * End Drop Caches
+ */
+
+/*
+ * For external CP download
+ */
+#ifdef CONFIG_GSM_MODEM_SPRD6500
+static ssize_t update_cp_bin_show
+	(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int update = 0;
+
+	sec_get_param(param_update_cp_bin, (void *)&update);
+
+	return snprintf(buf, sizeof(buf), "%d\n", update);
+}
+
+static ssize_t update_cp_bin_store
+	(struct device *dev, struct device_attribute *attr,\
+		const char *buf, size_t size)
+{
+	int update = 0;
+
+	sscanf(buf, "%i", &update);
+	sec_set_param(param_update_cp_bin, &update);
+
+	return size;
+}
+static DEVICE_ATTR(update_cp_bin, S_IRUGO | S_IWUSR | S_IWGRP,\
+			update_cp_bin_show, update_cp_bin_store);
+#endif
+
+
 struct device *sec_misc_dev;
 
 static struct device_attribute *sec_misc_attrs[] = {
 	&dev_attr_emmc_checksum_done,
 	&dev_attr_emmc_checksum_pass,
 	&dev_attr_rory_control,
-#ifdef CONFIG_SEC_DEBUG
 	&dev_attr_debug_level,
-#endif
 #if defined(CONFIG_MACH_APEXQ) || defined(CONFIG_MACH_AEGIS2)
 	&dev_attr_slideCount,
+#endif
+	&dev_attr_drop_caches,
+#ifdef CONFIG_GSM_MODEM_SPRD6500
+	&dev_attr_update_cp_bin,
 #endif
 };
 

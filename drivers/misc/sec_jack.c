@@ -35,7 +35,7 @@
 #ifdef CONFIG_ARCH_MSM8226
 #include <linux/regulator/consumer.h>
 #endif
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 #include <linux/qpnp/pin.h>
 #endif
 
@@ -53,6 +53,8 @@ struct sec_jack_info {
 	struct work_struct buttons_work;
 	struct work_struct detect_work;
 	struct workqueue_struct *queue;
+	struct workqueue_struct *buttons_queue;
+	struct timer_list timer;
 	struct input_dev *input_dev;
 	struct wake_lock det_wake_lock;
 	struct sec_jack_zone *zone;
@@ -63,11 +65,12 @@ struct sec_jack_info {
 	int dev_id;
 	int pressed;
 	int pressed_code;
+	bool buttons_enable;
 	struct platform_device *send_key_dev;
 	unsigned int cur_jack_type;
 };
 
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 int pm8941_mpp4;
 
 static struct qpnp_pin_cfg pm8941_mpp4_endis = {
@@ -129,7 +132,13 @@ static struct gpio_event_platform_data sec_jack_input_data = {
 extern void msm8226_enable_ear_micbias(bool state);
 #endif
 
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)
+#if defined(CONFIG_MACH_KLTE_JPN)
+#define MAX_DETECT_LIMIT 3
+static void determine_jack_type(struct sec_jack_info *hi);
+static int detect_count = 0;
+#endif
+
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 static void mpp_control(bool onoff)
 {
 	if(onoff) {
@@ -158,6 +167,11 @@ static void sec_jack_gpio_init(struct sec_jack_platform_data *pdata)
 		gpio_direction_output(pdata->ear_micbias_gpio, 0);
 	}
 #else
+#ifdef CONFIG_MACH_HEAT_AIO
+	gpio_free(pdata->ear_micbias_gpio);
+	pr_err("%s HEAT_AIO: gpio_free for %d\n", __func__,
+			pdata->ear_micbias_gpio);
+#endif
 	ret = gpio_request(pdata->ear_micbias_gpio, "ear_micbias_en");
 	if (ret) {
 		pr_err("%s : gpio_request failed for %d\n", __func__,
@@ -223,9 +237,9 @@ static void set_sec_micbias_state(struct sec_jack_info *hi, bool state)
 
 #ifdef CONFIG_ARCH_MSM8226
         if(pdata->ear_micbias_gpio > 0)
-                gpio_set_value_cansleep(pdata->ear_micbias_gpio, state); /*Uses external Mic Bias*/
+           gpio_set_value_cansleep(pdata->ear_micbias_gpio, state); /*Uses external Mic Bias*/
         else
-		msm8226_enable_ear_micbias(state); /* Uses WCD Mic Bias*/
+			msm8226_enable_ear_micbias(state); /* Uses WCD Mic Bias*/
 #else 
 	 gpio_set_value_cansleep(pdata->ear_micbias_gpio, state);	
 #endif
@@ -248,7 +262,7 @@ static bool sec_jack_buttons_filter(struct input_handle *handle,
 	/* This is called in timer handler of gpio_input driver.
 	 * We use workqueue to read adc value.
 	 */
-	queue_work(hi->queue, &hi->buttons_work);
+	queue_work(hi->buttons_queue, &hi->buttons_work);
 
 	return true;
 }
@@ -318,12 +332,20 @@ static void sec_jack_set_type(struct sec_jack_info *hi, int jack_type)
 	 * the type but then we get another interrupt and do it again
 	 */
 	if (jack_type == hi->cur_jack_type) {
+#if defined(CONFIG_MACH_KLTE_JPN)
+		if ((jack_type != SEC_HEADSET_4POLE) || (jack_type != SEC_EXTERNAL_ANTENNA))
+#else
 		if (jack_type != SEC_HEADSET_4POLE)
+#endif
 			set_sec_micbias_state(hi, false);
 		return;
 	}
 
+#if defined(CONFIG_MACH_KLTE_JPN)
+	if ((jack_type == SEC_HEADSET_4POLE) || (jack_type == SEC_EXTERNAL_ANTENNA)) {
+#else
 	if (jack_type == SEC_HEADSET_4POLE) {
+#endif
 		/* for a 4 pole headset, enable detection of send/end key */
 		if (hi->send_key_dev == NULL)
 			/* enable to get events again */
@@ -332,12 +354,16 @@ static void sec_jack_set_type(struct sec_jack_info *hi, int jack_type)
 				hi->dev_id,
 				&sec_jack_input_data,
 				sizeof(sec_jack_input_data));
+			mod_timer(&hi->timer,
+				jiffies + msecs_to_jiffies(1000));
 	} else {
 		/* for all other jacks, disable send/end key detection */
 		if (hi->send_key_dev != NULL) {
 			/* disable to prevent false events on next insert */
 			platform_device_unregister(hi->send_key_dev);
 			hi->send_key_dev = NULL;
+			del_timer_sync(&hi->timer);
+			hi->buttons_enable = false;
 		}
 		/* micbias is left enabled for 4pole and disabled otherwise */
 		set_sec_micbias_state(hi, false);
@@ -346,6 +372,29 @@ static void sec_jack_set_type(struct sec_jack_info *hi, int jack_type)
 	hi->cur_jack_type = jack_type;
 	pr_info("%s : jack_type = %d\n", __func__, jack_type);
 
+#if defined(CONFIG_MACH_KLTE_JPN)
+	if (jack_type == SEC_EXTERNAL_ANTENNA) {
+		if(++detect_count > MAX_DETECT_LIMIT) {
+			detect_count = 0;
+			return;
+		}
+		else {
+			int time_left_ms = 100;
+		
+			while (time_left_ms > 0) {
+				usleep_range(10000, 10000);
+				time_left_ms -= 10;
+			}
+
+			hi->cur_jack_type = SEC_JACK_NO_DEVICE;
+			determine_jack_type(hi);
+			
+			return;
+		}
+	}
+	else
+		detect_count = 0;
+#endif
 	switch_set_state(&switch_jack_detection, jack_type);
 }
 
@@ -368,7 +417,7 @@ static void determine_jack_type(struct sec_jack_info *hi)
 	/* set mic bias to enable adc */
 	set_sec_micbias_state(hi, true);
 
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 	mpp_control(1);
 #endif
 
@@ -390,7 +439,7 @@ static void determine_jack_type(struct sec_jack_info *hi)
 				if (++count[i] > zones[i].check_count) {
 					sec_jack_set_type(hi,
 						zones[i].jack_type);
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 					mpp_control(0);
 #endif
 					return;
@@ -402,7 +451,7 @@ static void determine_jack_type(struct sec_jack_info *hi)
 		}
 	}
 
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 	mpp_control(0);
 #endif
 
@@ -440,17 +489,34 @@ static ssize_t earjack_state_onoff_show(struct device *dev,
 static DEVICE_ATTR(state, 0664 , earjack_state_onoff_show,
 	NULL);
 
+static void sec_jack_timer_handler(unsigned long data)
+{
+	struct sec_jack_info *hi = (struct sec_jack_info *)data;
 
+	hi->buttons_enable = true;
+
+}
 /* thread run whenever the headset detect state changes (either insertion
  * or removal).
  */
 static irqreturn_t sec_jack_detect_irq(int irq, void *dev_id)
 {
+
+#if defined(CONFIG_MACH_S3VE3G_EUR)
+		struct sec_jack_info *hi = dev_id;
+		disable_irq_wake(hi->det_irq);
+		queue_work(hi->queue, &hi->detect_work);
+		mdelay(100);
+		enable_irq_wake(hi->det_irq);
+		pr_info("%s: Debug code for removing flooding of jack irq\n", __func__);
+		return IRQ_HANDLED;
+#else
 	struct sec_jack_info *hi = dev_id;
 
 	queue_work(hi->queue, &hi->detect_work);
 
 	return IRQ_HANDLED;
+#endif
 }
 
 void sec_jack_detect_work(struct work_struct *work)
@@ -500,6 +566,14 @@ void sec_jack_buttons_work(struct work_struct *work)
 	int adc;
 	int i;
 
+	if (!hi->buttons_enable) {
+		pr_info("%s: BTN %d is skipped\n", __func__,
+			hi->pressed_code);
+		return;
+	}
+	/* prevent suspend to allow user space to respond to switch */
+	wake_lock_timeout(&hi->det_wake_lock, WAKE_LOCK_TIME);
+
 	/* when button is released */
 	if (hi->pressed == 0) {
 		input_report_key(hi->input_dev, hi->pressed_code, 0);
@@ -510,15 +584,32 @@ void sec_jack_buttons_work(struct work_struct *work)
 		return;
 	}
 
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 	mpp_control(1);
 #endif
 
 	/* when button is pressed */
 	adc = sec_jack_get_adc_value(hi);
 
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 	mpp_control(0);
+#endif
+
+#if defined(CONFIG_MACH_KLTE_JPN)
+	if (hi->cur_jack_type == SEC_EXTERNAL_ANTENNA) {
+		
+		int time_left_ms = 1000;
+		
+		while (time_left_ms > 0) {
+			usleep_range(10000, 10000);
+			time_left_ms -= 10;
+		}
+
+		hi->cur_jack_type = SEC_JACK_NO_DEVICE;
+		determine_jack_type(hi);
+
+		return;
+	}
 #endif
 
 	for (i = 0; i < num_buttons_zones; i++)
@@ -582,7 +673,11 @@ static struct sec_jack_platform_data *sec_jack_populate_dt_pdata(struct device *
 		pdata->jack_zones[i].adc_high = args.args[0];
 		pdata->jack_zones[i].delay_us = args.args[1];
 		pdata->jack_zones[i].check_count = args.args[2];
+#if defined(CONFIG_MACH_KLTE_JPN)
+		pdata->jack_zones[i].jack_type = args.args[3];
+#else
 		pdata->jack_zones[i].jack_type = args.args[3]==0?SEC_HEADSET_3POLE:SEC_HEADSET_4POLE;
+#endif
 		pr_info("%s : %d, %d, %d, %d, %d \n",
 				__func__, args.args_count, args.args[0],
 				args.args[1], args.args[2],args.args[3]);		
@@ -611,7 +706,7 @@ static struct sec_jack_platform_data *sec_jack_populate_dt_pdata(struct device *
 	}
 	pr_info("%s - mpp-channel-scaling - %d %d %d\n", __func__, pdata->mpp_ch_scale[0], pdata->mpp_ch_scale[1], pdata->mpp_ch_scale[2]);
 
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 	pm8941_mpp4 = of_get_named_gpio(dev->of_node, "pm8941-mpp4", 0);
 #endif
 
@@ -738,6 +833,8 @@ static int sec_jack_probe(struct platform_device *pdev)
 		pr_err("Failed to create device file in sysfs entries(%s)!\n",
 			dev_attr_state.attr.name);
 
+	setup_timer(&hi->timer, sec_jack_timer_handler, (unsigned long)hi);
+
 	INIT_WORK(&hi->buttons_work, sec_jack_buttons_work);
 	INIT_WORK(&hi->detect_work, sec_jack_detect_work);
 	hi->queue = create_singlethread_workqueue("sec_jack_wq");
@@ -745,6 +842,12 @@ static int sec_jack_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		pr_err("%s: Failed to create workqueue\n", __func__);
 		goto err_create_wq_failed;
+	}
+	hi->buttons_queue = create_singlethread_workqueue("sec_jack_buttons_wq");
+	if (hi->buttons_queue == NULL) {
+		ret = -ENOMEM;
+		pr_err("%s: Failed to create buttons workqueue\n", __func__);
+		goto err_create_buttons_wq_failed;
 	}
 	queue_work(hi->queue, &hi->detect_work);
 
@@ -786,7 +889,7 @@ static int sec_jack_probe(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, hi);
 	dev_set_drvdata(earjack, hi);
 
-#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT)	
+#if defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_PICASSO) || defined(CONFIG_MACH_MONDRIAN) || defined(CONFIG_MACH_LT03) || defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)
 	mpp_control(0);
 #endif
 
@@ -797,6 +900,8 @@ err_enable_irq_wake:
 err_request_detect_irq:
 	input_unregister_handler(&hi->handler);
 err_register_input_handler:
+	destroy_workqueue(hi->buttons_queue);
+err_create_buttons_wq_failed:
 	destroy_workqueue(hi->queue);
 err_create_wq_failed:
 	device_remove_file(earjack, &dev_attr_state);
@@ -824,6 +929,7 @@ static int sec_jack_remove(struct platform_device *pdev)
 	disable_irq_wake(hi->det_irq);
 	free_irq(hi->det_irq, hi);
 	destroy_workqueue(hi->queue);
+	destroy_workqueue(hi->buttons_queue);
 	if (hi->send_key_dev) {
 		platform_device_unregister(hi->send_key_dev);
 		hi->send_key_dev = NULL;
@@ -854,9 +960,32 @@ static struct platform_driver sec_jack_driver = {
 		.of_match_table = sec_jack_dt_match,
 	},
 };
+
+#if defined(CONFIG_MACH_KLTE_KOR) || defined(CONFIG_MACH_KLTE_JPN)
+extern unsigned int system_rev;
+#endif
+
 static int __init sec_jack_init(void)
 {
+#if defined(CONFIG_MACH_KLTE_KOR)
+	if (system_rev >= 13) {
+		pr_info("%s: Do not use sec jack in system_rev %d",
+			__func__, system_rev);
+		return 0;
+	} else {
+		return platform_driver_register(&sec_jack_driver);
+	}
+#elif defined(CONFIG_MACH_KLTE_JPN)
+	if (system_rev >= 11) {
+		pr_info("%s: Do not use sec jack in system_rev %d",
+			__func__, system_rev);
+		return 0;
+	} else {
+		return platform_driver_register(&sec_jack_driver);
+	}
+#else
 	return platform_driver_register(&sec_jack_driver);
+#endif
 }
 
 static void __exit sec_jack_exit(void)

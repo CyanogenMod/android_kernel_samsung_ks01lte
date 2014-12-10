@@ -9,10 +9,14 @@
 #include <linux/io.h>
 #include <linux/types.h>
 
-#ifdef CONFIG_ARCH_MSM8974PRO
+#if defined(CONFIG_ARCH_MSM8974PRO)
 #define	DEBUG_LOG_START	(0x07100000)
-#elif CONFIG_ARCH_MSM8974
+#elif defined(CONFIG_ARCH_MSM8974)
 #define DEBUG_LOG_START (0x07300000)
+#elif defined(CONFIG_ARCH_MSM8226_3G_WIFI)
+#define DEBUG_LOG_START (0x0D100000)
+#elif defined(CONFIG_ARCH_MSM8926_LTE)
+#define DEBUG_LOG_START (0x10600000)
 #endif
 
 #define	DEBUG_LOG_SIZE	(1<<20)
