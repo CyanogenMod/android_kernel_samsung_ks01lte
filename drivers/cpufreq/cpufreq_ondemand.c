@@ -24,6 +24,7 @@
 #include <linux/ktime.h>
 #include <linux/smpboot.h>
 #include <linux/sched.h>
+#include <linux/input.h>
 #include <linux/workqueue.h>
 #include <linux/slab.h>
 
@@ -127,6 +128,8 @@ struct dbs_work_struct {
 	unsigned int cpu;
 };
 
+static DEFINE_PER_CPU(struct dbs_work_struct, dbs_refresh_work);
+
 static struct dbs_tuners {
 	unsigned int sampling_rate;
 	unsigned int up_threshold;
@@ -140,6 +143,7 @@ static struct dbs_tuners {
 	unsigned int sampling_down_factor;
 	int          powersave_bias;
 	unsigned int io_is_busy;
+	unsigned int input_boost;
 } dbs_tuners_ins = {
 	.up_threshold_multi_core = DEF_FREQUENCY_UP_THRESHOLD,
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
@@ -151,41 +155,8 @@ static struct dbs_tuners {
 	.powersave_bias = 0,
 	.sync_freq = 0,
 	.optimal_freq = 0,
+	.input_boost = 0,
 };
-
-static inline u64 get_cpu_idle_time_jiffy(unsigned int cpu, u64 *wall)
-{
-	u64 idle_time;
-	u64 cur_wall_time;
-	u64 busy_time;
-
-	cur_wall_time = jiffies64_to_cputime64(get_jiffies_64());
-
-	busy_time  = kcpustat_cpu(cpu).cpustat[CPUTIME_USER];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SYSTEM];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_IRQ];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SOFTIRQ];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_STEAL];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_NICE];
-
-	idle_time = cur_wall_time - busy_time;
-	if (wall)
-		*wall = jiffies_to_usecs(cur_wall_time);
-
-	return jiffies_to_usecs(idle_time);
-}
-
-static inline cputime64_t get_cpu_idle_time(unsigned int cpu, cputime64_t *wall)
-{
-	u64 idle_time = get_cpu_idle_time_us(cpu, NULL);
-
-	if (idle_time == -1ULL)
-		return get_cpu_idle_time_jiffy(cpu, wall);
-	else
-		idle_time += get_cpu_iowait_time_us(cpu, wall);
-
-	return idle_time;
-}
 
 static inline cputime64_t get_cpu_iowait_time(unsigned int cpu, cputime64_t *wall)
 {
@@ -316,6 +287,7 @@ show_one(down_differential_multi_core, down_differential_multi_core);
 show_one(optimal_freq, optimal_freq);
 show_one(up_threshold_any_cpu_load, up_threshold_any_cpu_load);
 show_one(sync_freq, sync_freq);
+show_one(input_boost, input_boost);
 
 static ssize_t show_powersave_bias
 (struct kobject *kobj, struct attribute *attr, char *buf)
@@ -344,7 +316,6 @@ static void update_sampling_rate(unsigned int new_rate)
 				     = max(new_rate, min_sampling_rate);
 
 	get_online_cpus();
-	mutex_lock(&dbs_mutex);
 	for_each_online_cpu(cpu) {
 		struct cpufreq_policy *policy;
 		struct cpu_dbs_info_s *dbs_info;
@@ -379,7 +350,6 @@ static void update_sampling_rate(unsigned int new_rate)
 		}
 		mutex_unlock(&dbs_info->timer_mutex);
 	}
-	mutex_unlock(&dbs_mutex);
 	put_online_cpus();
 }
 
@@ -392,6 +362,18 @@ static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 	if (ret != 1)
 		return -EINVAL;
 	update_sampling_rate(input);
+	return count;
+}
+
+static ssize_t store_input_boost(struct kobject *a, struct attribute *b,
+				const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+	if (ret != 1)
+		return -EINVAL;
+	dbs_tuners_ins.input_boost = input;
 	return count;
 }
 
@@ -555,7 +537,7 @@ static ssize_t store_ignore_nice_load(struct kobject *a, struct attribute *b,
 		struct cpu_dbs_info_s *dbs_info;
 		dbs_info = &per_cpu(od_cpu_dbs_info, j);
 		dbs_info->prev_cpu_idle = get_cpu_idle_time(j,
-						&dbs_info->prev_cpu_wall);
+						&dbs_info->prev_cpu_wall, dbs_tuners_ins.io_is_busy);
 		if (dbs_tuners_ins.ignore_nice)
 			dbs_info->prev_cpu_nice = kcpustat_cpu(j).cpustat[CPUTIME_NICE];
 
@@ -697,6 +679,7 @@ define_one_global_rw(down_differential_multi_core);
 define_one_global_rw(optimal_freq);
 define_one_global_rw(up_threshold_any_cpu_load);
 define_one_global_rw(sync_freq);
+define_one_global_rw(input_boost);
 
 static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
@@ -712,6 +695,7 @@ static struct attribute *dbs_attributes[] = {
 	&optimal_freq.attr,
 	&up_threshold_any_cpu_load.attr,
 	&sync_freq.attr,
+	&input_boost.attr,
 	NULL
 };
 
@@ -771,7 +755,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 		j_dbs_info = &per_cpu(od_cpu_dbs_info, j);
 
-		cur_idle_time = get_cpu_idle_time(j, &cur_wall_time);
+		cur_idle_time = get_cpu_idle_time(j, &cur_wall_time, dbs_tuners_ins.io_is_busy);
 		cur_iowait_time = get_cpu_iowait_time(j, &cur_wall_time);
 
 		wall_time = (unsigned int)
@@ -1012,6 +996,55 @@ static int should_io_be_busy(void)
 	return 0;
 }
 
+static void dbs_refresh_callback(struct work_struct *work)
+{
+	struct cpufreq_policy *policy;
+	struct cpu_dbs_info_s *this_dbs_info;
+	struct dbs_work_struct *dbs_work;
+	unsigned int cpu;
+	unsigned int target_freq;
+
+	dbs_work = container_of(work, struct dbs_work_struct, work);
+	cpu = dbs_work->cpu;
+
+	get_online_cpus();
+
+	if (lock_policy_rwsem_write(cpu) < 0)
+		goto bail_acq_sema_failed;
+
+	this_dbs_info = &per_cpu(od_cpu_dbs_info, cpu);
+	policy = this_dbs_info->cur_policy;
+	if (!policy) {
+		/* CPU not using ondemand governor */
+		goto bail_incorrect_governor;
+	}
+
+	if (dbs_tuners_ins.input_boost)
+		target_freq = dbs_tuners_ins.input_boost;
+	else
+		target_freq = policy->max;
+
+	if (policy->cur < target_freq) {
+		/*
+		 * Arch specific cpufreq driver may fail.
+		 * Don't update governor frequency upon failure.
+		 */
+		if (__cpufreq_driver_target(policy, target_freq,
+					CPUFREQ_RELATION_L) >= 0)
+			policy->cur = target_freq;
+
+		this_dbs_info->prev_cpu_idle = get_cpu_idle_time(cpu,
+				&this_dbs_info->prev_cpu_wall, dbs_tuners_ins.io_is_busy);
+	}
+
+bail_incorrect_governor:
+	unlock_policy_rwsem_write(cpu);
+
+bail_acq_sema_failed:
+	put_online_cpus();
+	return;
+}
+
 static int dbs_migration_notify(struct notifier_block *nb,
 				unsigned long target_cpu, void *arg)
 {
@@ -1025,6 +1058,92 @@ static int dbs_migration_notify(struct notifier_block *nb,
 
 static struct notifier_block dbs_migration_nb = {
 	.notifier_call = dbs_migration_notify,
+};
+
+static void dbs_input_event(struct input_handle *handle, unsigned int type,
+		unsigned int code, int value)
+{
+	int i;
+
+	if ((dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MAXLEVEL) ||
+		(dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MINLEVEL)) {
+		/* nothing to do */
+		return;
+	}
+
+	for_each_online_cpu(i)
+		queue_work_on(i, dbs_wq, &per_cpu(dbs_refresh_work, i).work);
+}
+
+static int dbs_input_connect(struct input_handler *handler,
+		struct input_dev *dev, const struct input_device_id *id)
+{
+	struct input_handle *handle;
+	int error;
+
+	handle = kzalloc(sizeof(struct input_handle), GFP_KERNEL);
+	if (!handle)
+		return -ENOMEM;
+
+	handle->dev = dev;
+	handle->handler = handler;
+	handle->name = "cpufreq";
+
+	error = input_register_handle(handle);
+	if (error)
+		goto err2;
+
+	error = input_open_device(handle);
+	if (error)
+		goto err1;
+
+	return 0;
+err1:
+	input_unregister_handle(handle);
+err2:
+	kfree(handle);
+	return error;
+}
+
+static void dbs_input_disconnect(struct input_handle *handle)
+{
+	input_close_device(handle);
+	input_unregister_handle(handle);
+	kfree(handle);
+}
+
+static const struct input_device_id dbs_ids[] = {
+	/* multi-touch touchscreen */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.evbit = { BIT_MASK(EV_ABS) },
+		.absbit = { [BIT_WORD(ABS_MT_POSITION_X)] =
+			BIT_MASK(ABS_MT_POSITION_X) |
+			BIT_MASK(ABS_MT_POSITION_Y) },
+	},
+	/* touchpad */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_KEYBIT |
+			INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.keybit = { [BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH) },
+		.absbit = { [BIT_WORD(ABS_X)] =
+			BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) },
+	},
+	/* Keypad */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
+		.evbit = { BIT_MASK(EV_KEY) },
+	},
+	{ },
+};
+
+static struct input_handler dbs_input_handler = {
+	.event		= dbs_input_event,
+	.connect	= dbs_input_connect,
+	.disconnect	= dbs_input_disconnect,
+	.name		= "cpufreq_ond",
+	.id_table	= dbs_ids,
 };
 
 static int sync_pending(struct cpu_dbs_info_s *this_dbs_info)
@@ -1137,17 +1256,13 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		mutex_lock(&dbs_mutex);
 
 		dbs_enable++;
-
-		if (dbs_enable == 1)
-			BUG_ON(smpboot_register_percpu_thread(&dbs_sync_threads));
-
 		for_each_cpu(j, policy->cpus) {
 			struct cpu_dbs_info_s *j_dbs_info;
 			j_dbs_info = &per_cpu(od_cpu_dbs_info, j);
 			j_dbs_info->cur_policy = policy;
 
 			j_dbs_info->prev_cpu_idle = get_cpu_idle_time(j,
-						&j_dbs_info->prev_cpu_wall);
+						&j_dbs_info->prev_cpu_wall, dbs_tuners_ins.io_is_busy);
 			if (dbs_tuners_ins.ignore_nice)
 				j_dbs_info->prev_cpu_nice =
 						kcpustat_cpu(j).cpustat[CPUTIME_NICE];
@@ -1192,6 +1307,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			atomic_notifier_chain_register(&migration_notifier_head,
 					&dbs_migration_nb);
 		}
+		if (!cpu)
+			rc = input_register_handler(&dbs_input_handler);
 		mutex_unlock(&dbs_mutex);
 
 
@@ -1203,9 +1320,9 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		break;
 
 	case CPUFREQ_GOV_STOP:
-		mutex_lock(&dbs_mutex);
 		dbs_timer_exit(this_dbs_info);
 
+		mutex_lock(&dbs_mutex);
 		dbs_enable--;
 
 		for_each_cpu(j, policy->cpus) {
@@ -1217,9 +1334,9 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		/* If device is being removed, policy is no longer
 		 * valid. */
 		this_dbs_info->cur_policy = NULL;
+		if (!cpu)
+			input_unregister_handler(&dbs_input_handler);
 		if (!dbs_enable) {
-			smpboot_unregister_percpu_thread(&dbs_sync_threads);
-
 			sysfs_remove_group(cpufreq_global_kobject,
 					   &dbs_attr_group);
 			atomic_notifier_chain_unregister(
@@ -1233,11 +1350,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 	case CPUFREQ_GOV_LIMITS:
 		mutex_lock(&this_dbs_info->timer_mutex);
-		if (this_dbs_info->cur_policy == NULL) {
-			pr_debug("Unable to limit cpu freq due to cur_policy == NULL\n");
-			mutex_unlock(&this_dbs_info->timer_mutex);
-			return -EPERM;
-		}
 		if (policy->max < this_dbs_info->cur_policy->cur)
 			__cpufreq_driver_target(this_dbs_info->cur_policy,
 				policy->max, CPUFREQ_RELATION_H);
@@ -1259,7 +1371,7 @@ static int __init cpufreq_gov_dbs_init(void)
 {
 	u64 idle_time;
 	unsigned int i;
-	int cpu = get_cpu();
+	int rc, cpu = get_cpu();
 
 	idle_time = get_cpu_idle_time_us(cpu, NULL);
 	put_cpu();
@@ -1288,11 +1400,19 @@ static int __init cpufreq_gov_dbs_init(void)
 	for_each_possible_cpu(i) {
 		struct cpu_dbs_info_s *this_dbs_info =
 			&per_cpu(od_cpu_dbs_info, i);
+		struct dbs_work_struct *dbs_work =
+			&per_cpu(dbs_refresh_work, i);
 
 		mutex_init(&this_dbs_info->timer_mutex);
+		INIT_WORK(&dbs_work->work, dbs_refresh_callback);
+		dbs_work->cpu = i;
 
 		atomic_set(&this_dbs_info->src_sync_cpu, -1);
 	}
+
+	rc = smpboot_register_percpu_thread(&dbs_sync_threads);
+	if (rc)
+		printk(KERN_ERR "Failed to register dbs_sync threads\n");
 
 	return cpufreq_register_governor(&cpufreq_gov_ondemand);
 }
