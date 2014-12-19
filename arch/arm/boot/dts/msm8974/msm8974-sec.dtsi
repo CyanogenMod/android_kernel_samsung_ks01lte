@@ -2486,6 +2486,7 @@
 		qcom,poll-ms = <250>;
 		qcom,limit-temp = <80>;
 		qcom,temp-hysteresis = <10>;
+		qcom,therm-reset-temp = <115>;
 		qcom,freq-step = <2>;
 		qcom,freq-control-mask = <0xf>;
 		qcom,core-limit-temp = <85>;
