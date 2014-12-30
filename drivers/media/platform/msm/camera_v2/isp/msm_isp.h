@@ -19,7 +19,6 @@
 #include <linux/io.h>
 #include <linux/list.h>
 #include <linux/delay.h>
-#include <linux/avtimer_kernel.h>
 #include <media/v4l2-subdev.h>
 #include <media/msmb_isp.h>
 #include <mach/msm_bus.h>
@@ -35,10 +34,6 @@
 #define MAX_NUM_STATS_COMP_MASK 2
 #define MAX_INIT_FRAME_DROP 31
 #define ISP_Q2 (1 << 2)
-
-#define AVTIMER_MSW_PHY_ADDR 0xFE05300C
-#define AVTIMER_LSW_PHY_ADDR 0xFE053008
-#define AVTIMER_ITERATION_CTR 16
 
 #define VFE_PING_FLAG 0xFFFFFFFF
 #define VFE_PONG_FLAG 0x0
@@ -64,8 +59,6 @@ enum msm_isp_camif_update_state {
 struct msm_isp_timestamp {
 	/*Monotonic clock for v4l2 buffer*/
 	struct timeval buf_time;
-	/*Monotonic clock for VT */
-	struct timeval vt_time;
 	/*Wall clock for userspace event*/
 	struct timeval event_time;
 };
@@ -259,7 +252,7 @@ struct msm_vfe_axi_stream {
 	uint32_t stream_handle;
 	uint8_t buf_divert;
 	enum msm_vfe_axi_stream_type stream_type;
-	uint32_t vt_enable;
+
 	uint32_t frame_based;
 	uint32_t framedrop_period;
 	uint32_t framedrop_pattern;
@@ -427,9 +420,6 @@ struct vfe_device {
 	struct msm_isp_buf_mgr *buf_mgr;
 	int dump_reg;
 	uint32_t vfe_open_cnt;
-	uint8_t vt_enable;
-	void __iomem *p_avtimer_msw;
-	void __iomem *p_avtimer_lsw;
 };
 
 #endif
