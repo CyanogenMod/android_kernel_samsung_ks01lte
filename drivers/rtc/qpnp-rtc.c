@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -82,9 +82,10 @@ extern int poweroff_charging;
 							(arr[3] << 24))
 
 /* Module parameter to control power-on-alarm */
-static bool poweron_alarm;
+bool poweron_alarm;
 module_param(poweron_alarm, bool, 0644);
 MODULE_PARM_DESC(poweron_alarm, "Enable/Disable power-on alarm");
+EXPORT_SYMBOL(poweron_alarm);
 
 #if defined(CONFIG_PM8926_BATTERY_CHECK_INTERRUPT)
 static enum power_supply_property pm8926_battery_props[] = {
