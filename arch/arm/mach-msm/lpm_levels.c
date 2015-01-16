@@ -33,10 +33,8 @@
 #include "rpm-notifier.h"
 #include "spm.h"
 #include "idle.h"
-#include "clock.h"
 
 #include <mach/gpiomux.h>
-#include <linux/regulator/consumer.h>
 
 #ifdef CONFIG_SEC_GPIO_DVS
 #include <linux/secgpio_dvs.h>
@@ -795,7 +793,6 @@ static int lpm_suspend_enter(suspend_state_t state)
 	if (i < 0)
 		return -EINVAL;
 
-	clock_debug_print_enabled();
 	lpm_enter_low_power(&sys_state, i,  false);
 
 	return 0;
@@ -810,7 +807,6 @@ static int lpm_suspend_prepare(void)
 
 	suspend_in_progress = true;
 	msm_mpm_suspend_prepare();
-	regulator_showall_enabled();
 
 #ifdef CONFIG_SEC_GPIO_DVS
 	/************************ Caution !!! ****************************
