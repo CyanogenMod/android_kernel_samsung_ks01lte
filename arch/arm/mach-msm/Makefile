@@ -288,8 +288,11 @@ obj-$(CONFIG_SEC_K_PROJECT) += board-8974-sec-k-gpiomux.o
 obj-$(CONFIG_SEC_LT03_PROJECT) += board-8974-sec-lt03-gpiomux.o
 obj-$(CONFIG_SEC_N2_PROJECT) += board-8974-sec-n2-gpiomux.o
 obj-$(CONFIG_SEC_H_PROJECT) += board-8974-sec-h-gpiomux.o
+<<<<<<< HEAD
 obj-$(CONFIG_SEC_FRESCO_PROJECT) += board-8974-sec-fresco-gpiomux.o
 obj-$(CONFIG_SEC_JS_PROJECT) += board-8974-sec-h-gpiomux.o
+=======
+>>>>>>> parent of 342550a... Merge Samsung release N9005XXUFNF4 (Update 8)
 obj-$(CONFIG_SEC_F_PROJECT) += board-8974-sec-f-gpiomux.o
 obj-$(CONFIG_SEC_KS01_PROJECT) += board-8974-sec-ks01-gpiomux.o
 obj-$(CONFIG_SEC_LT03_PROJECT) += board-8974-sec-lt03-gpiomux.o
