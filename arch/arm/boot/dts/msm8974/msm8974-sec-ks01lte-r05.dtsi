@@ -82,10 +82,6 @@
 		};
 	};
 
-	qcom,wcnss-wlan@fb000000 {
-		status = "disabled";
-	};
-
 	qcom,mdss_dsi_samsung_octa_1080p_video  {
 		status = "ok";
 	};
@@ -389,15 +385,6 @@
 		qcom,cdc-micbias2-headset-only;
 	};
 
-	usb2_otg_sw: regulator-tpd4s214 {
-		compatible = "regulator-fixed";
-		regulator-name = "usb2_otg_sw";
-		gpio = <&pm8941_gpios 18 0>;
-		parent-supply = <&pm8941_boost>;
-		startup-delay-us = <17000>;
-		enable-active-high;
-	};
-
 	hsic_host: hsic@f9a00000 {
 		compatible = "qcom,hsic-host";
 		reg = <0xf9a00000 0x400>;
@@ -428,7 +415,7 @@
 				<85 512 40000 160000>;
         };
 
-	/* wlan0: qca,wlan {
+	wlan0: qca,wlan {
 		compatible = "qca,ar6004-hsic";
 		qcom,msm-bus,name = "wlan";
 		qcom,msm-bus,num-cases = <5>;
@@ -440,7 +427,7 @@
 				<85 512 40000 320000>,
 				<85 512 40000 480000>,
 				<85 512 40000 800000>;
-	};*/
+	};
 };
 
 &pm8941_lsid1 {
