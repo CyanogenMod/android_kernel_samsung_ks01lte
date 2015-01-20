@@ -341,15 +341,6 @@
 		qcom,cdc-micbias2-headset-only;
 	};
 
-	usb2_otg_sw: regulator-tpd4s214 {
-		compatible = "regulator-fixed";
-		regulator-name = "usb2_otg_sw";
-		gpio = <&pm8941_gpios 18 0>;
-		parent-supply = <&pm8941_boost>;
-		startup-delay-us = <17000>;
-		enable-active-high;
-	};
-
 	hsic_host: hsic@f9a00000 {
 		compatible = "qcom,hsic-host";
 		reg = <0xf9a00000 0x400>;
@@ -718,6 +709,10 @@
 	};
 
 	gpio@cc00 { /* GPIO 13 */
+		qcom,mode = <1>;
+		qcom,pull = <2>;
+		qcom,vin-sel = <2>;
+		qcom,src-sel = <0>;
 	};
 
 	gpio@cd00 { /* GPIO 14 */
