@@ -1891,34 +1891,6 @@ config MACH_H3G_CHN_OPEN
 	help
 	  Support for Samsung H3G CHN OPEN device.
 	  
-config MACH_H3G_CHN_CMCC
-	default n
-	bool "Samsung model H3G_CHN_CMCC"
-	select SEC_H_PROJECT
-	help
-	  Support for Samsung H3G_CHN_CMCC device.
-
-config MACH_H3GDUOS_CTC
-	default n
-	bool "Samsung model H3GDUOS_CTC"
-	select SEC_H_PROJECT
-	help
-	  Support for Samsung H3GDUOS_CTC device.
-
-config MACH_H3GDUOS
-	default n
-	bool "Samsung model H3GDUOS"
-	select SEC_H_PROJECT
-	help
-	  Support for Samsung H3GDUOS device.	  
-
-config MACH_H3GDUOS_CU
-	default n
-	bool "Samsung model H3GDUOS_CU"
-	select SEC_H_PROJECT
-	help
-	  Support for Samsung H3GDUOS_CU device.  
-	  
 config MACH_HLTESPR
 	default n
 	bool "Samsung model HLTESPR"
@@ -1959,12 +1931,15 @@ config SEC_KS01_PROJECT
 	help
 	  Support for Samsung KS01 project.
 
+<<<<<<< HEAD
 config SEC_JS_PROJECT
 	default n
 	bool "Samsung JS project"
 	help
 	  Support for Samsung JS project.
 
+=======
+>>>>>>> parent of 342550a... Merge Samsung release N9005XXUFNF4 (Update 8)
 config MACH_H
 	default n
 	bool "Samsung model H"
@@ -2146,6 +2121,7 @@ config SEC_LOCALE_KOR_H
 	default n
 	bool "Samsung H model KOREA"
 
+<<<<<<< HEAD
 config SEC_LOCALE_JPN
 	default n
 	bool "Samsung model JPN"
@@ -2175,6 +2151,8 @@ config MACH_JS01LTEDCM
 	help
 	  Support for Samsung JS01LTEDCM device.
 
+=======
+>>>>>>> parent of 342550a... Merge Samsung release N9005XXUFNF4 (Update 8)
 config MACH_HLTESKT
 	default n
 	bool "Samsung model HLTESKT"
@@ -2329,6 +2307,7 @@ config MSM_STACKED_MEMORY
 	  memory.  When present this memory bank is used for a high speed
 	  shared memory interface.  When not present regular RAM is used.
 
+<<<<<<< HEAD
 config RTC_AUTO_PWRON
 	bool "RTC Auto Power on PM8xxx PMICs"
 	depends on ARCH_MSM8974
@@ -2353,6 +2332,8 @@ config RTC_AUTO_PWRON_PARAM
 	  This option is used to prevent invalid RTC alarm power on.
 	  Say Y if you want to enable this feature.
 
+=======
+>>>>>>> parent of 342550a... Merge Samsung release N9005XXUFNF4 (Update 8)
 config PHYS_OFFSET
 	hex
 	default "0x40800000" if ARCH_MSM9615
@@ -4177,11 +4158,6 @@ config SEC_SSR_DEBUG_LEVEL_CHK
         help
           To check the level of debug for SSR.
 
-config SEC_PERIPHERAL_SECURE_CHK
-        bool "PERIPHERAL SECURE check"
-        help
-          To check the authentication of peripheral image.
-
 config MSM_DCVS
 	bool "Use MSM DCVS for CPU/GPU Frequency control"
 	depends on MSM_SCM
@@ -4360,13 +4336,9 @@ config WALL_CLK_SYSFS
 
 config I2C_ACTUATOR
 	bool "support autofocus on camera without using cci"
-	depends on MSMB_CAMERA
-	help
+ 	depends on MSMB_CAMERA
+ 	help
 	actuator for camera.
-
-config SWITCH_DUAL_MODEM
-	default n
-	bool "Switch UART/USB to AP/CP/CP2"
 
 config TIMA_RKP
        bool "Enable RKP (Realtime Kernel Protection) TIMA feature"
@@ -4463,10 +4435,6 @@ config TIMA_LOG
        help
          TIMA Log dumping support
 
-config PCM_ROUTE_VOICE_STUB
-	bool "External AUXPCM device route to SLIMBUS or WCN(BT) using the VOICE_STUB Front End"
-	default n
-	depends on ARCH_MSM8974
 
 config KRAIT_REGULATOR
 	bool "Support Kraits powered via ganged regulators in the pmic"
