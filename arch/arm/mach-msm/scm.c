@@ -356,7 +356,6 @@ int scm_call(u32 svc_id, u32 cmd_id, const void *cmd_buf, size_t cmd_len,
 		return -ENOMEM;
 
 	do {
-		memset(cmd, 0x0, PAGE_ALIGN(len));
 		ret = scm_call_common(svc_id, cmd_id, cmd_buf, cmd_len, resp_buf,
 				resp_len, cmd, len);
 
