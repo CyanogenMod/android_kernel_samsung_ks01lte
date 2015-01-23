@@ -4,7 +4,6 @@
 
 # Each configuration option enables a list of files.
 
-obj-$(CONFIG_KEYBOARD_ABOV_TOUCH)	+= abov_touchkey.o
 obj-$(CONFIG_KEYBOARD_ADP5520)		+= adp5520-keys.o
 obj-$(CONFIG_KEYBOARD_ADP5588)		+= adp5588-keys.o
 obj-$(CONFIG_KEYBOARD_ADP5589)		+= adp5589-keys.o
@@ -57,8 +56,4 @@ obj-$(CONFIG_KEYBOARD_QCIKBD)       += qci_kbd.o
 obj-$(CONFIG_KEYBOARD_W90P910)		+= w90p910_keypad.o
 obj-$(CONFIG_KEYBOARD_CYPRESS_TOUCHKEY)	+= cypress_touchkey/
 obj-$(CONFIG_KEYBOARD_CYPRESS_TOUCHKEY_H)	+= cypress_touchkey_h/
-obj-$(CONFIG_KEYBOARD_CYPRESS_TOUCHKEY_HE)	+= cypress_touchkey_he/
-obj-$(CONFIG_KEYBOARD_CYPRESS_TOUCHKEY_C)	+= cypress_touchkey_c/
 obj-$(CONFIG_KEYBOARD_CYPRESS_TOUCHKEY_KS01)   += cypress_touchkey_ks01/
-obj-$(CONFIG_KEYBOARD_CYPRESS_TKEY_HL)    += cypress_touchkey_hl/
-obj-$(CONFIG_KEYBOARD_CYPRESS_TOUCHKEY_S3)	+= cypress_touchkey_s3/
