@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_proto.h 464559 2014-03-25 08:26:34Z $
+ * $Id: dhd_proto.h 455951 2014-02-17 10:52:22Z $
  */
 
 #ifndef _dhd_proto_h_
@@ -89,8 +89,6 @@ extern int dhd_preinit_ioctls(dhd_pub_t *dhd);
 
 extern int dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf,
 	uint reorder_info_len, void **pkt, uint32 *free_buf_count);
-
-extern void dhd_prot_pending(dhd_pub_t * dhd, bool flag);
 
 #ifdef BCMPCIE
 extern int dhd_prot_process_msgbuf(dhd_pub_t *dhd);

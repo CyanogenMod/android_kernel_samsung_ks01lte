@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_cfg80211.h 457855 2014-02-25 01:27:41Z $
+ * $Id: wl_cfg80211.h 487871 2014-06-27 07:48:00Z $
  */
 
 #ifndef _wl_cfg80211_h_
@@ -435,8 +435,10 @@ struct ap_info {
 /* Structure to hold WPS, WPA IEs for a AP */
 	u8   probe_res_ie[VNDR_IES_MAX_BUF_LEN];
 	u8   beacon_ie[VNDR_IES_MAX_BUF_LEN];
+	u8   assoc_res_ie[VNDR_IES_MAX_BUF_LEN];
 	u32 probe_res_ie_len;
 	u32 beacon_ie_len;
+	u32 assoc_res_ie_len;
 	u8 *wpa_ie;
 	u8 *rsn_ie;
 	u8 *wps_ie;
@@ -616,6 +618,8 @@ struct bcm_cfg80211 {
 	u32 aibss_txfail_pid;
 	u32 aibss_txfail_seq;
 #endif /* WLAIBSS */
+	u32 rmc_event_pid;
+	u32 rmc_event_seq;
 	bool roam_offload;
 #ifdef WLFBT
 	uint8 fbt_key[FBT_KEYLEN];
@@ -661,10 +665,6 @@ wl_dealloc_netinfo(struct bcm_cfg80211 *cfg, struct net_device *ndev)
 		if (ndev && (_net_info->ndev == ndev)) {
 			list_del(&_net_info->list);
 			cfg->iface_cnt--;
-			if (_net_info->wdev) {
-				kfree(_net_info->wdev);
-				ndev->ieee80211_ptr = NULL;
-			}
 			kfree(_net_info);
 		}
 	}
@@ -1018,6 +1018,8 @@ extern s32 wl_cfg80211_ibss_vsie_delete(struct net_device *dev);
 #ifdef WLAIBSS
 extern void wl_cfg80211_set_txfail_pid(int pid);
 #endif /* WLAIBSS */
+extern void wl_cfg80211_set_rmc_pid(int pid);
+
 #ifdef WLFBT
 extern void wl_cfg80211_get_fbt_key(uint8 *key);
 #endif

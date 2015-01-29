@@ -53,6 +53,10 @@
  *    - 403 : USA VZW
  *    - 404 : USA SPR
  *    - 405 : USA USC
+ *    - 406 : CAN OPEN
+ *    - 407 : USA MPCS
+ *    - 408 : USA ACG
+ *    - 409 : USA LRA
  *    You can refer how to using it below this file.
  *    And, you can add more region code, too.
  */
@@ -60,23 +64,33 @@
 #ifndef _dhd_sec_feature_h_
 #define _dhd_sec_feature_h_
 
+#include <linuxver.h>
+
 /* For COB type feature */
 #ifdef CONFIG_WIFI_BROADCOM_COB
 #undef USE_CID_CHECK
 #define READ_MACADDR
 #endif  /* CONFIG_WIFI_BROADCOM_COB */
 
-
-/* PROJECTS START */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)) && (defined(CONFIG_BCM4334) || \
+	defined(CONFIG_BCM4334_MODULE))
+#define RXFRAME_THREAD
+#endif /* (LINUX_VERSION  >= VERSION(3, 4, 0)) && ( CONFIG_BCM4334 || CONFIG_BCM4334_MODULE) */
 
 #if defined(CONFIG_MACH_SAMSUNG_ESPRESSO) || defined(CONFIG_MACH_SAMSUNG_ESPRESSO_10)
 #define READ_MACADDR
 #define HW_OOB
 #endif /* CONFIG_MACH_SAMSUNG_ESPRESSO && CONFIG_MACH_SAMSUNG_ESPRESSO_10 */
 
-#if defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_HLLTE) || \
-	defined(CONFIG_MACH_M2LTE) || defined(CONFIG_MACH_UNIVERSAL5422) || \
-	defined(CONFIG_MACH_UNIVERSAL5430)
+#if defined(CONFIG_MACH_UNIVERSAL5430)
+#undef CUSTOM_SET_CPUCORE
+#define PRIMARY_CPUCORE 0
+#define DPC_CPUCORE 4
+#define RXF_CPUCORE 7
+#define ARGOS_CPU_SCHEDULER
+#elif defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_HLLTE) || \
+	defined(CONFIG_MACH_M2LTE) || \
+	defined(CONFIG_MACH_UNIVERSAL5422)
 #define CUSTOM_SET_CPUCORE
 #define PRIMARY_CPUCORE 0
 #define MAX_RETRY_SET_CPUCORE 5
@@ -99,17 +113,14 @@
 #endif /* CONFIG_ARCH_MSM7X30 */
 
 #if defined(CONFIG_MACH_GC1) || defined(CONFIG_MACH_U1_NA_SPR) || \
-	defined(CONFIG_MACH_VIENNAEUR) || defined(CONFIG_MACH_LT03EUR) || \
-	defined(CONFIG_MACH_LT03SKT) || defined(CONFIG_MACH_LT03KTT) || \
-	defined(CONFIG_MACH_LT03LGT) || defined(CONFIG_V1A) || defined(CONFIG_N1A) || \
-	defined(CONFIG_N2A) || defined(CONFIG_V2A) || defined(CONFIG_MACH_VIENNAEUR)
+	defined(CONFIG_MACH_VIENNAEUR) || defined(CONFIG_V1A) || defined(CONFIG_MACH_LT03EUR) || \
+	defined(CONFIG_MACH_LT03SKT) || defined(CONFIG_MACH_LT03KTT) || defined(CONFIG_MACH_LT03LGT) || \
+	defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
 #undef USE_CID_CHECK
 #define READ_MACADDR
-#endif	/* CONFIG_MACH_GC1 || CONFIG_MACH_U1_NA_SPR || CONFIG_MACH_VIENNAEUR ||
-	 * CONFIG_MACH_LT03EUR || CONFIG_MACH_LT03SKT || CONFIG_MACH_LT03KTT ||
-	 * CONFIG_MACH_LT03LGT || CONFIG_V1A ||
-	 * CONFIG_N1A || CONFIG_N2A || CONFIG_V2A ||
-	 * CONFIG_MACH_VIENNAEUR
+#endif	/* CONFIG_MACH_GC1 || CONFIG_MACH_U1_NA_SPR || CONFIG_MACH_VIENNAEUR || CONFIG_V1A ||
+	 * CONFIG_MACH_LT03EUR || CONFIG_MACH_LT03SKT || CONFIG_MACH_LT03KTT || CONFIG_MACH_LT03LGT ||
+	 * CONFIG_N1A_3G || CONFIG_N1A_WIFI ||
 	 */
 
 #ifdef CONFIG_MACH_P10
@@ -121,11 +132,7 @@
 #define WIFI_TURNOFF_DELAY	200
 #endif /* CONFIG_ARCH_MSM8960 */
 
-/* PROJECTS END */
-
-
-/* REGION CODE START */
-
+/* REGION CODE */
 #ifndef CONFIG_WLAN_REGION_CODE
 #define CONFIG_WLAN_REGION_CODE 100
 #endif /* CONFIG_WLAN_REGION_CODE */
@@ -137,9 +144,9 @@
 #endif /* CONFIG_WLAN_REGION_CODE == 101 */
 #endif /* CONFIG_WLAN_REGION_CODE >= 100 && CONFIG_WLAN_REGION_CODE < 200 */
 
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_MACH_VIENNAEUR)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
 #define SUPPORT_MULTIPLE_CHIPS
-#endif /* CONFIG_V1A || CONFIG_V2A || CONFIG_MACH_VIENNAEUR */
+#endif /* CONFIG_V1A */
 
 #if (CONFIG_WLAN_REGION_CODE >= 200) && (CONFIG_WLAN_REGION_CODE < 300) /* KOR */
 #undef USE_INITIAL_2G_SCAN
@@ -163,7 +170,9 @@
 #undef WRITE_MACADDR
 #ifndef READ_MACADDR
 #define READ_MACADDR
-#endif /* READ_MACADDR */
+#else
+#define RDWR_MACADDR
+#endif /* CONFIG_BCM4334 */
 
 #if (CONFIG_WLAN_REGION_CODE == 201) /* SKT */
 #ifdef CONFIG_MACH_UNIVERSAL5410
@@ -197,10 +206,70 @@
 #define BCMWAPI_WAI
 #endif /* CONFIG_WLAN_REGION_CODE >= 300 && CONFIG_WLAN_REGION_CODE < 400 */
 
+#if (CONFIG_WLAN_REGION_CODE >= 400) && (CONFIG_WLAN_REGION_CODE < 500) /* USA */
+
+#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_SEC_KSPORTS_PROJECT)
+/* TX Power control when Calling by Samsung */
+#define TX_POWER_CONTROL_CALLING
+/* TX Power control when Calling by Broadcom */
+#undef SARLIMIT_TX_CONTROL_NVRAM
+#else
+/* TX Power control when Calling by Samsung */
+#undef TX_POWER_CONTROL_CALLING
+/* TX Power control when Calling by Broadcom */
+#define SARLIMIT_TX_CONTROL_NVRAM
+#endif
+
+#define TX_CALLING_POWER -1
+
+#if (CONFIG_WLAN_REGION_CODE == 401) /* ATT */
+#undef TX_CALLING_POWER
+#define TX_CALLING_POWER 9
+#endif /* CONFIG_WLAN_REGION_CODE == 401 */
+
 #if (CONFIG_WLAN_REGION_CODE == 402) /* TMO */
 #undef CUSTOM_SUSPEND_BCN_LI_DTIM
-#define CUSTOM_SUSPEND_BCN_LI_DTIM 3
+#define CUSTOM_SUSPEND_BCN_LI_DTIM      3
+#undef TX_CALLING_POWER
+#define TX_CALLING_POWER 9
 #endif /* CONFIG_WLAN_REGION_CODE == 402 */
+
+#if (CONFIG_WLAN_REGION_CODE == 403) /* VZW */
+#undef TX_CALLING_POWER
+#define TX_CALLING_POWER 7
+#endif /* CONFIG_WLAN_REGION_CODE == 403 */
+
+#if (CONFIG_WLAN_REGION_CODE == 404) /* SPR */
+#undef TX_CALLING_POWER
+#define TX_CALLING_POWER 7
+#endif /* CONFIG_WLAN_REGION_CODE == 404 */
+
+#if (CONFIG_WLAN_REGION_CODE == 405) /* USC */
+#undef TX_CALLING_POWER
+#define TX_CALLING_POWER 7
+#endif /* CONFIG_WLAN_REGION_CODE == 405 */
+
+#if (CONFIG_WLAN_REGION_CODE == 406) /* CAN */
+#undef TX_CALLING_POWER
+#define TX_CALLING_POWER 9
+#endif /* CONFIG_WLAN_REGION_CODE == 406 */
+
+#if (CONFIG_WLAN_REGION_CODE == 407) /* MPCS */
+#undef TX_CALLING_POWER
+#define TX_CALLING_POWER 9
+#endif /* CONFIG_WLAN_REGION_CODE == 407 */
+
+#if (CONFIG_WLAN_REGION_CODE == 408) /* ACG */
+#undef TX_CALLING_POWER
+#define TX_CALLING_POWER 7
+#endif /* CONFIG_WLAN_REGION_CODE == 408 */
+
+#if (CONFIG_WLAN_REGION_CODE == 409) /* LRA */
+#undef TX_CALLING_POWER
+#define TX_CALLING_POWER 7
+#endif /* CONFIG_WLAN_REGION_CODE == 409 */
+
+#endif /* CONFIG_WLAN_REGION_CODE >= 400 && CONFIG_WLAN_REGION_CODE < 500 */
 
 /* REGION CODE END */
 
@@ -211,5 +280,12 @@
 #endif /* !READ_MACADDR && !WRITE_MACADDR && !RDWR_KORICS_MACADDR && !RDWR_MACADDR */
 
 #define WRITE_WLANINFO
+
+#ifdef CONFIG_MACH_KLTE_DCM
+#define CUSTOMER_BCN_TIMEOUT
+#define CUSTOMER_BCN_TIMEOUT_VALUE 4 // change value
+#else
+#define CUSTOMER_BCN_TIMEOUT_VALUE 8 // change value
+#endif
 
 #endif /* _dhd_sec_feature_h_ */
