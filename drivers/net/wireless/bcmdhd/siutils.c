@@ -22,7 +22,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: siutils.c 506459 2014-10-06 08:12:35Z $
+ * $Id: siutils.c 434466 2013-11-06 12:34:26Z $
  */
 
 #include <bcm_cfg.h>
@@ -1293,7 +1293,6 @@ si_chip_hostif(si_t *sih)
 
 	case BCM4350_CHIP_ID:
 	case BCM4354_CHIP_ID:
-	case BCM4356_CHIP_ID:
 	case BCM43556_CHIP_ID:
 	case BCM43558_CHIP_ID:
 	case BCM43566_CHIP_ID:
@@ -2340,10 +2339,7 @@ si_chipcontrl_btshd0_4331(si_t *sih, bool on)
 
 	origidx = si_coreidx(sih);
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return;
-	}
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 
 	val = R_REG(sii->osh, &cc->chipcontrol);
 
@@ -2370,11 +2366,7 @@ si_chipcontrl_restore(si_t *sih, uint32 val)
 	chipcregs_t *cc;
 	uint origidx = si_coreidx(sih);
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return;
-	}
-
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 	W_REG(sii->osh, &cc->chipcontrol, val);
 	si_setcoreidx(sih, origidx);
 }
@@ -2387,11 +2379,7 @@ si_chipcontrl_read(si_t *sih)
 	uint origidx = si_coreidx(sih);
 	uint32 val;
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return -1;
-	}
-
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 	val = R_REG(sii->osh, &cc->chipcontrol);
 	si_setcoreidx(sih, origidx);
 	return val;
@@ -2405,11 +2393,7 @@ si_chipcontrl_epa4331(si_t *sih, bool on)
 	uint origidx = si_coreidx(sih);
 	uint32 val;
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return;
-	}
-
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 	val = R_REG(sii->osh, &cc->chipcontrol);
 
 	if (on) {
@@ -2443,11 +2427,7 @@ si_chipcontrl_srom4360(si_t *sih, bool on)
 	uint origidx = si_coreidx(sih);
 	uint32 val;
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return;
-	}
-
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 	val = R_REG(sii->osh, &cc->chipcontrol);
 
 	if (on) {
@@ -2483,10 +2463,7 @@ si_chipcontrl_epa4331_wowl(si_t *sih, bool enter_wowl)
 	sii = SI_INFO(sih);
 	origidx = si_coreidx(sih);
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return;
-	}
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 
 	val = R_REG(sii->osh, &cc->chipcontrol);
 
@@ -2517,10 +2494,7 @@ si_epa_4313war(si_t *sih)
 	chipcregs_t *cc;
 	uint origidx = si_coreidx(sih);
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return;
-	}
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 
 	/* EPA Fix */
 	W_REG(sii->osh, &cc->gpiocontrol,
@@ -2548,11 +2522,7 @@ si_btcombo_p250_4313_war(si_t *sih)
 	chipcregs_t *cc;
 	uint origidx = si_coreidx(sih);
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return;
-	}
-
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 	W_REG(sii->osh, &cc->gpiocontrol,
 		R_REG(sii->osh, &cc->gpiocontrol) | GPIO_CTRL_5_6_EN_MASK);
 
@@ -2568,10 +2538,7 @@ si_btc_enable_chipcontrol(si_t *sih)
 	chipcregs_t *cc;
 	uint origidx = si_coreidx(sih);
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return;
-	}
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 
 	/* BT fix */
 	W_REG(sii->osh, &cc->chipcontrol,
@@ -2586,10 +2553,7 @@ si_btcombo_43228_war(si_t *sih)
 	chipcregs_t *cc;
 	uint origidx = si_coreidx(sih);
 
-	if ((cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0)) == NULL) {
-		SI_ERROR(("%s: Failed to find CORE ID!\n", __FUNCTION__));
-		return;
-	}
+	cc = (chipcregs_t *)si_setcore(sih, CC_CORE_ID, 0);
 
 	W_REG(sii->osh, &cc->gpioouten, GPIO_CTRL_7_6_EN_MASK);
 	W_REG(sii->osh, &cc->gpioout, GPIO_OUT_7_EN_MASK);
@@ -2677,7 +2641,6 @@ si_is_sprom_available(si_t *sih)
 			!(sih->chipst & CST4335_SFLASH_MASK));
 	case BCM4350_CHIP_ID:
 	case BCM4354_CHIP_ID:
-	case BCM4356_CHIP_ID:
 	case BCM43556_CHIP_ID:
 	case BCM43558_CHIP_ID:
 	case BCM43566_CHIP_ID:

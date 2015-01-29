@@ -202,7 +202,7 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"BN", "BN", 4},
 	{"BG", "BG", 4},
 	{"KH", "KH", 2},
-	{"CA", "US", 0},
+	{"CA", "CA", 31},
 	{"KY", "KY", 3},
 	{"CN", "CN", 38},
 	{"CO", "CO", 17},
@@ -302,9 +302,6 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"MN", "MN", 1},
 	{"NI", "NI", 2},
 	{"UZ", "MA", 2},
-	{"ZA", "ZA", 6},
-	{"EG", "EG", 13},
-	{"TN", "TN", 1},
 #endif /* default ccode/regrev */
 };
 
@@ -335,15 +332,12 @@ void get_customized_country_code(void *adapter, char *country_iso_code, wl_count
 	return;
 }
 
-#ifdef PLATFORM_SLP
+#ifdef SLP_PATH
 #define CIDINFO "/opt/etc/.cid.info"
 #define PSMINFO "/opt/etc/.psm.info"
 #define MACINFO "/opt/etc/.mac.info"
 #define MACINFO_EFS NULL
-#define REVINFO "/opt/etc/.rev"
-#define WIFIVERINFO "/opt/etc/.wifiver.info"
-#define ANTINFO "/opt/etc/.ant.info"
-#define WRMAC_BUF_SIZE 19
+#define	REVINFO "/data/.rev"
 #else
 #define MACINFO "/data/.mac.info"
 #define MACINFO_EFS "/efs/wifi/.mac.info"
@@ -351,10 +345,7 @@ void get_customized_country_code(void *adapter, char *country_iso_code, wl_count
 #define	REVINFO "/data/.rev"
 #define CIDINFO "/data/.cid.info"
 #define PSMINFO "/data/.psm.info"
-#define WIFIVERINFO "/data/.wifiver.info"
-#define ANTINFO "/data/.ant.info"
-#define WRMAC_BUF_SIZE 18
-#endif /* PLATFORM_SLP */
+#endif /* SLP_PATH */
 
 #ifdef BCM4330_CHIP
 #define CIS_BUF_SIZE            128
@@ -1195,7 +1186,7 @@ int dhd_write_macaddr(struct ether_addr *mac)
 	char *filepath_efs      = MACINFO_EFS;
 
 	struct file *fp_mac = NULL;
-	char buf[WRMAC_BUF_SIZE]      = {0};
+	char buf[18]      = {0};
 	mm_segment_t oldfs    = {0};
 	int ret = -1;
 	int retry_count = 0;
@@ -1361,14 +1352,13 @@ int dhd_sel_ant_from_file(dhd_pub_t *dhd)
 	int ret = -1;
 	uint32 ant_val = 0;
 	uint32 btc_mode = 0;
-	char *filepath = ANTINFO;
+	char *filepath = "/data/.ant.info";
 	char iovbuf[WLC_IOCTL_SMLEN];
 	uint chip_id = dhd_bus_chip_id(dhd);
 
 	/* Check if this chip can support MIMO */
 	if (chip_id != BCM4324_CHIP_ID &&
 		chip_id != BCM4350_CHIP_ID &&
-		chip_id != BCM4356_CHIP_ID &&
 		chip_id != BCM4354_CHIP_ID) {
 		DHD_ERROR(("[WIFI_SEC] %s: This chipset does not support MIMO\n",
 			__FUNCTION__));
@@ -1556,7 +1546,7 @@ uint32 sec_save_wlinfo(char *firm_ver, char *dhd_ver, char *nvram_p)
 {
 	struct file *fp = NULL;
 	struct file *nvfp = NULL;
-	char *filepath = WIFIVERINFO;
+	char *filepath = "/data/.wifiver.info";
 	int min_len, str_len = 0;
 	int ret = 0;
 	char* nvram_buf;
