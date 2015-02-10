@@ -286,10 +286,12 @@
 #define KEY_S_HEALTH_MIN_CONST	(KEY_S_HEALTH_MIN_CNTR + 1)
 #define KEY_S_HEALTH_STEP_CNT	(KEY_S_HEALTH_MIN_CONST + 1)
 #define KEY_S_HEALTH_STEP_CNT_P	(KEY_S_HEALTH_STEP_CNT + 1)
-
+#define KEY_S_HEALTH_FREQ_TH        (KEY_S_HEALTH_STEP_CNT_P + 1)
+#define KEY_S_HEALTH_ALPHA1         (KEY_S_HEALTH_FREQ_TH + 1)
+#define KEY_S_HEALTH_ALPHA2         (KEY_S_HEALTH_ALPHA1 + 1)
 
 /*Host Based No Motion*/
-#define KEY_D_HOST_NO_MOT           (KEY_S_HEALTH_STEP_CNT_P + 1)
+#define KEY_D_HOST_NO_MOT           (KEY_S_HEALTH_FREQ_TH + 1)
 
 /*Host Based Accel Bias*/
 #define KEY_D_ACCEL_BIAS            (KEY_D_HOST_NO_MOT + 1)

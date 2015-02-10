@@ -29,6 +29,7 @@ extern struct class *sec_class;
 #include <linux/earlysuspend.h>
 #include <linux/mutex.h>
 
+#define CONFIG_GLOVE_TOUCH
 #if defined(CONFIG_GLOVE_TOUCH)
 #define TK_BIT_GLOVE 0x40
 #endif
@@ -51,8 +52,6 @@ extern struct class *sec_class;
 #define CYPRESS_65_IC_MASK	0x04
 
 #define NUM_OF_KEY		4
-
-#define TK_KEYPAD_ENABLE
 
 #ifdef TK_INFORM_CHARGER
 struct touchkey_callbacks {
@@ -130,9 +129,6 @@ struct cypress_touchkey_info {
 	int glove_value;
 #endif
 
-#ifdef TK_KEYPAD_ENABLE
-	atomic_t keypad_enable;
-#endif
 };
 
 void touchkey_charger_infom(bool en);

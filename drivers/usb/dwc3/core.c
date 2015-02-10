@@ -133,32 +133,22 @@ void dwc3_set_mode(struct dwc3 *dwc, u32 mode)
 	 * if it failed previously to operate in SS mode.
 	 */
 	reg |= DWC3_GCTL_U2RSTECN;
-	reg &= ~(DWC3_GCTL_SOFITPSYNC);
-	reg &= ~(DWC3_GCTL_PWRDNSCALEMASK);
-	reg |= DWC3_GCTL_PWRDNSCALE(2);
-	reg |= DWC3_GCTL_U2EXIT_LFPS;
-	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
-
-	if (mode == DWC3_GCTL_PRTCAP_OTG || mode == DWC3_GCTL_PRTCAP_HOST) {
+	if (mode == DWC3_GCTL_PRTCAP_HOST) {
 		/*
 		 * Allow ITP generated off of ref clk based counter instead
 		 * of UTMI/ULPI clk based counter, when superspeed only is
 		 * active so that UTMI/ULPI PHY can be suspened.
-		 *
-		 * Starting with revision 2.50A, GFLADJ_REFCLK_LPM_SEL is used
-		 * instead.
 		 */
-		if (dwc->revision < DWC3_REVISION_250A) {
-			reg = dwc3_readl(dwc->regs, DWC3_GCTL);
-			reg |= DWC3_GCTL_SOFITPSYNC;
-			dwc3_writel(dwc->regs, DWC3_GCTL, reg);
-		} else {
-			reg = dwc3_readl(dwc->regs, DWC3_GFLADJ);
-			reg |= DWC3_GFLADJ_REFCLK_LPM_SEL;
-			dwc3_writel(dwc->regs, DWC3_GFLADJ, reg);
-		}
+		reg |= DWC3_GCTL_SOFITPSYNC;
+		reg &= ~(DWC3_GCTL_PWRDNSCALEMASK);
+		reg |= DWC3_GCTL_PWRDNSCALE(2);
+	} else if (mode == DWC3_GCTL_PRTCAP_DEVICE) {
+		reg &= ~(DWC3_GCTL_PWRDNSCALEMASK);
+		reg |= DWC3_GCTL_PWRDNSCALE(2);
+		reg &= ~(DWC3_GCTL_SOFITPSYNC);
 	}
-
+	reg |= DWC3_GCTL_U2EXIT_LFPS;
+	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
 	reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
 	reg |= DWC3_GUSB3PIPECTL_SUSPHY;
 	dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
@@ -363,17 +353,6 @@ static void dwc3_event_buffers_cleanup(struct dwc3 *dwc)
 	}
 }
 
-static void dwc3_core_num_eps(struct dwc3 *dwc)
-{
-	struct dwc3_hwparams	*parms = &dwc->hwparams;
-
-	dwc->num_in_eps = DWC3_NUM_IN_EPS(parms);
-	dwc->num_out_eps = DWC3_NUM_EPS(parms) - dwc->num_in_eps;
-
-	dev_vdbg(dwc->dev, "found %d IN and %d OUT endpoints\n",
-			dwc->num_in_eps, dwc->num_out_eps);
-}
-
 static void dwc3_cache_hwparams(struct dwc3 *dwc)
 {
 	struct dwc3_hwparams	*parms = &dwc->hwparams;
@@ -451,8 +430,6 @@ static int dwc3_core_init(struct dwc3 *dwc)
 	 */
 	if (dwc->revision < DWC3_REVISION_190A)
 		reg |= DWC3_GCTL_U2RSTECN;
-
-	dwc3_core_num_eps(dwc);
 
 	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
 

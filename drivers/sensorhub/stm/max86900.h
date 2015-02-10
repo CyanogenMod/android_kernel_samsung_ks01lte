@@ -81,15 +81,16 @@ struct max86900_device_data
 	struct mutex i2clock;
 	struct mutex activelock;
 	struct regulator *vdd_1p8;
-#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_KSPORTSLTE_SPR)
 	struct regulator *vdd_3p3;
 #endif
 	const char *sub_ldo4;
-#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_KSPORTSLTE_SPR)
 	const char *led_l19;
 #endif
 	bool *bio_status;
-	u8 is_enable;
+	atomic_t is_enable;
+	atomic_t is_suspend;
 	u8 led_current;
 	u8 hr_range;
 	u8 hr_range2;

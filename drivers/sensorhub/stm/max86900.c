@@ -126,7 +126,7 @@ static int max86900_regulator_onoff(struct max86900_device_data *data, int onoff
 		goto err_1p8;
 	}
 
-#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_KSPORTSLTE_SPR)
 	data->vdd_3p3 = regulator_get(NULL, data->led_l19);
 	if (IS_ERR(data->vdd_3p3)) {
 		pr_err("%s - regulator_get fail\n", __func__);
@@ -138,23 +138,23 @@ static int max86900_regulator_onoff(struct max86900_device_data *data, int onoff
 	if (onoff == HRM_LDO_ON) {
 		regulator_set_voltage(data->vdd_1p8, 1800000, 1800000);
 		regulator_enable(data->vdd_1p8);
-#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_KSPORTSLTE_SPR)
 		regulator_set_voltage(data->vdd_3p3, 3300000, 3300000);
 		regulator_enable(data->vdd_3p3);
 #endif
 	} else {
 		regulator_disable(data->vdd_1p8);
-#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_KSPORTSLTE_SPR)
 		regulator_disable(data->vdd_3p3);
 #endif
 	}
 
 	regulator_put(data->vdd_1p8);
-#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_KSPORTSLTE_SPR)
 	regulator_put(data->vdd_3p3);
 #endif
 	return 0;
-#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_KSPORTSLTE_SPR)
 err_3p3:
 	regulator_put(data->vdd_1p8);
 #endif
@@ -438,11 +438,8 @@ static int max86900_read_data(struct max86900_device_data *device, u16 *data)
 			| ((((u16)recvData[i * 2 + 1])) & 0x00ff);
 	}
 
-	data[2] = device->led;
-
-	if ((device->sample_cnt % 1000) == 1)
-		pr_info("%s - %u, %u, %u, %u\n", __func__,
-			data[0], data[1], data[2], data[3]);
+	if ((device->sample_cnt % 4000) == 1)
+		pr_info("%s - %u, %u\n", __func__, data[0], data[1]);
 
 	if (device->sample_cnt == 20 && device->led == 0) {
 		err = max86900_read_temperature(device);
@@ -498,7 +495,8 @@ void max86900_mode_enable(struct max86900_device_data *data, int onoff)
 		err = max86900_enable(data);
 		if (err != 0)
 			pr_err("max86900_enable err : %d\n", err);
-		data->is_enable = 1;
+
+		atomic_set(&data->is_enable, 1);
 	} else {
 		err = max86900_disable(data);
 		if (err != 0)
@@ -509,7 +507,8 @@ void max86900_mode_enable(struct max86900_device_data *data, int onoff)
 				pr_err("%s max86900_regulator_off fail err = %d\n",
 					__func__, err);
 		}
-		data->is_enable = 0;
+
+		atomic_set(&data->is_enable, 0);
 	}
 	pr_info("%s - part_type = %u, onoff = %d\n", __func__, data->part_type, onoff);
 }
@@ -520,7 +519,7 @@ static ssize_t max86900_enable_show(struct device *dev,
 {
     struct max86900_device_data *data = dev_get_drvdata(dev);
 
-    return sprintf(buf, "%d\n", data->is_enable);
+    return sprintf(buf, "%d\n", atomic_read(&data->is_enable));
 }
 
 static ssize_t max86900_enable_store(struct device *dev,
@@ -1025,6 +1024,27 @@ static ssize_t max86900_lib_ver_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%s\n", data->lib_ver);
 }
 
+static ssize_t max86900_hrm_flush_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct max86900_device_data *data = dev_get_drvdata(dev);
+	u8 handle = 0;
+
+	if (sysfs_streq(buf, "17")) /* ID_SAM_HRM */
+		handle = 17;
+	else if (sysfs_streq(buf, "18")) /* ID_AOSP_HRM */
+		handle = 18;
+	else if (sysfs_streq(buf, "19")) /* ID_HRM_RAW */
+		handle = 19;
+	else {
+		pr_info("%s: invalid value %d\n", __func__, *buf);
+		return -EINVAL;
+	}
+
+	input_report_rel(data->hrm_input_dev, REL_MISC, handle);
+	return size;
+}
+
 static DEVICE_ATTR(name, S_IRUGO, max86900_name_show, NULL);
 static DEVICE_ATTR(vendor, S_IRUGO, max86900_vendor_show, NULL);
 static DEVICE_ATTR(led_current, S_IRUGO | S_IWUSR | S_IWGRP,
@@ -1045,6 +1065,8 @@ static DEVICE_ATTR(eol_test_status, S_IRUGO, eol_test_status_show, NULL);
 static DEVICE_ATTR(int_pin_check, S_IRUGO, int_pin_check, NULL);
 static DEVICE_ATTR(lib_ver, S_IRUGO | S_IWUSR | S_IWGRP,
 	max86900_lib_ver_show, max86900_lib_ver_store);
+static DEVICE_ATTR(hrm_flush, S_IWUSR | S_IWGRP,
+	NULL, max86900_hrm_flush_store);
 
 static struct device_attribute *hrm_sensor_attrs[] = {
 	&dev_attr_name,
@@ -1059,6 +1081,7 @@ static struct device_attribute *hrm_sensor_attrs[] = {
 	&dev_attr_eol_test_status,
 	&dev_attr_int_pin_check,
 	&dev_attr_lib_ver,
+	&dev_attr_hrm_flush,
 	NULL,
 };
 
@@ -1066,7 +1089,7 @@ irqreturn_t max86900_irq_handler(int irq, void *device)
 {
 	int err;
 	struct max86900_device_data *data = device;
-	u16 raw_data[4] = {0x00, };
+	u16 raw_data[2] = {0x00, };
 
 	err = max86900_read_data(data, raw_data);
 	if (err < 0)
@@ -1114,7 +1137,7 @@ static int max86900_parse_dt(struct max86900_device_data *data,
 
 	if (of_property_read_string(dNode, "max86900,sub_ldo4", &data->sub_ldo4) < 0)
 		pr_err("%s - get sub_ldo4 error\n", __func__);
-#if defined(CONFIG_SEC_KACTIVE_PROJECT)
+#if defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_MACH_KSPORTSLTE_SPR)
 	if (of_property_read_string(dNode, "max86900,led_l19", &data->led_l19) < 0)
 		pr_err("%s - get led_l19 error\n", __func__);
 #endif
@@ -1268,6 +1291,7 @@ int max86900_probe(struct i2c_client *client, const struct i2c_device_id *id )
 	input_set_capability(data->hrm_input_dev, EV_REL, REL_X);
 	input_set_capability(data->hrm_input_dev, EV_REL, REL_Y);
 	input_set_capability(data->hrm_input_dev, EV_REL, REL_Z);
+	input_set_capability(data->hrm_input_dev, EV_REL, REL_MISC);
 
 	err = input_register_device(data->hrm_input_dev);
 	if (err < 0) {
@@ -1368,6 +1392,33 @@ static void max86900_shutdown(struct i2c_client *client)
 	pr_info("%s\n", __func__);
 }
 
+static int max86900_pm_suspend(struct device *dev)
+{
+	struct max86900_device_data *data = dev_get_drvdata(dev);
+	if (atomic_read(&data->is_enable)) {
+		max86900_mode_enable(data, HRM_LDO_OFF);
+		atomic_set(&data->is_suspend, 1);
+	}
+	pr_info("%s\n", __func__);
+	return 0;
+}
+
+static int max86900_pm_resume(struct device *dev)
+{
+	struct max86900_device_data *data = dev_get_drvdata(dev);
+	if (atomic_read(&data->is_suspend)) {
+		max86900_mode_enable(data, HRM_LDO_ON);
+		atomic_set(&data->is_suspend, 0);
+	}
+	pr_info("%s\n", __func__);
+	return 0;
+}
+
+static const struct dev_pm_ops max86900_pm_ops = {
+	.suspend = max86900_pm_suspend,
+	.resume = max86900_pm_resume
+};
+
 static struct of_device_id max86900_match_table[] = {
 	{ .compatible = "max86900",},
 	{},
@@ -1383,6 +1434,7 @@ static struct i2c_driver max86900_i2c_driver =
 	.driver = {
 	    .name = CHIP_NAME,
 	    .owner = THIS_MODULE,
+	    .pm = &max86900_pm_ops,
 	    .of_match_table = max86900_match_table,
 	},
 	.probe = max86900_probe,

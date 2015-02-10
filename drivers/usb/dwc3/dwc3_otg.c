@@ -219,6 +219,16 @@ static int dwc3_otg_start_host(struct usb_otg *otg, int on)
 		dev_dbg(otg->phy->dev, "%s: turn on host\n", __func__);
 #endif
 
+		dwc3_otg_notify_host_mode(otg, on);
+#ifdef CONFIG_CHARGER_PM8941
+		ret = regulator_enable(dotg->vbus_otg);
+		if (ret) {
+			dev_err(otg->phy->dev, "unable to enable vbus_otg\n");
+			dwc3_otg_notify_host_mode(otg, 0);
+			return ret;
+		}
+#endif
+
 		/*
 		 * This should be revisited for more testing post-silicon.
 		 * In worst case we may need to disconnect the root hub
@@ -244,18 +254,10 @@ static int dwc3_otg_start_host(struct usb_otg *otg, int on)
 			dev_err(otg->phy->dev,
 				"%s: failed to add XHCI pdev ret=%d\n",
 				__func__, ret);
+			regulator_disable(dotg->vbus_otg);
+			dwc3_otg_notify_host_mode(otg, 0);
 			return ret;
 		}
-
-		dwc3_otg_notify_host_mode(otg, on);
-#ifdef CONFIG_CHARGER_PM8941
-		ret = regulator_enable(dotg->vbus_otg);
-		if (ret) {
-			dev_err(otg->phy->dev, "unable to enable vbus_otg\n");
-			platform_device_del(dwc->xhci);
-			return ret;
-		}
-#endif
 
 		/* re-init OTG EVTEN register as XHCI reset clears it */
 		if (ext_xceiv && !ext_xceiv->otg_capability)
@@ -829,11 +831,6 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 					work = 1;
 					break;
 				case DWC3_SDP_CHARGER:
-#ifdef CONFIG_MACH_OPPO
-					/* hack to always power from SDP charger */
-					dwc3_otg_set_power(phy,
-							CONFIG_USB_GADGET_VBUS_DRAW);
-#endif
 					dwc3_otg_start_peripheral(&dotg->otg,
 									1);
 					phy->state = OTG_STATE_B_PERIPHERAL;
@@ -912,9 +909,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 			dotg->vbus_retry_count = 0;
 			work = 1;
 		} else {
-#ifdef CONFIG_MACH_MONDRIAN
 			pm_runtime_get_noresume(phy->dev);
-#endif
 			phy->state = OTG_STATE_A_HOST;
 			ret = dwc3_otg_start_host(&dotg->otg, 1);
 			if ((ret == -EPROBE_DEFER) &&
@@ -923,9 +918,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 				 * Get regulator failed as regulator driver is
 				 * not up yet. Will try to start host after 1sec
 				 */
-#ifdef CONFIG_MACH_MONDRIAN
 				pm_runtime_put_noidle(phy->dev);
-#endif
 				phy->state = OTG_STATE_A_IDLE;
 				dev_dbg(phy->dev, "Unable to get vbus regulator. Retrying...\n");
 				delay = VBUS_REG_CHECK_DELAY;
@@ -936,9 +929,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 				 * Probably set_host was not called yet.
 				 * We will re-try as soon as it will be called
 				 */
-#ifdef CONFIG_MACH_MONDRIAN
 				pm_runtime_put_noidle(phy->dev);
-#endif
 				dev_dbg(phy->dev, "enter lpm as\n"
 					"unable to start A-device\n");
 				phy->state = OTG_STATE_A_IDLE;
@@ -955,9 +946,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 			phy->state = OTG_STATE_B_IDLE;
 			dotg->vbus_retry_count = 0;
 			work = 1;
-#ifdef CONFIG_MACH_MONDRIAN
 			pm_runtime_put_noidle(phy->dev);
-#endif
 		}
 		break;
 
@@ -1082,10 +1071,10 @@ int dwc3_otg_init(struct dwc3 *dwc)
 	dotg->otg.phy->dev = dwc->dev;
 	dotg->otg.phy->set_power = dwc3_otg_set_power;
 	dotg->otg.phy->set_suspend = dwc3_otg_set_suspend;
+	dotg->otg.phy->set_phy_autosuspend = dwc3_otg_set_autosuspend;
 #ifdef CONFIG_USB_HOST_NOTIFY
 	dotg->otg.phy->set_suspend = NULL;
 #endif
-	dotg->otg.phy->set_phy_autosuspend = dwc3_otg_set_autosuspend;
 
 	ret = usb_set_transceiver(dotg->otg.phy);
 	if (ret) {

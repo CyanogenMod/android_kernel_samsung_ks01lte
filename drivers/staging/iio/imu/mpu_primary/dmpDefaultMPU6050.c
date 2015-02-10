@@ -19,7 +19,7 @@
 #define CFG_OUT_PRESS           (2214)
 #define CFG_FB_GAIN_GYRO_ON     (1674)
 #define CFG_OUT_GYRO            (2146)
-#define CFG_PEDSTEP_DET         (3336)
+#define CFG_PEDSTEP_DET         (3363)
 #define OUT_GYRO_DAT            (2155)
 #define CFG_FIFO_INT            (2325)
 #define OUT_CPASS_DAT           (2189)
@@ -38,10 +38,10 @@
 #define CFG_7                   (1610)
 #define OUT_PQUAT_DAT           (2087)
 #define CFG_OUT_6QUAT           (2043)
-#define CFG_PED_INT             (3325)
+#define CFG_PED_INT             (3352)
 #define SMD_TP2                 (1575)
 #define SMD_TP1                 (1554)
-#define CFG_S_HEALTH_INT        (2577)
+#define CFG_S_HEALTH_INT        (2614)
 #define CFG_PED_ENABLE          (2327)
 #define CFG_MOTION_BIAS         (1612)
 #define CFG_OUT_ACCL            (2112)
@@ -119,8 +119,8 @@
 #define CPASS_MTX_21            (34 * 16 + 4)
 #define CPASS_MTX_22            (34 * 16 + 8)
 #define D_EXT_GYRO_BIAS_X       (61 * 16)
-#define D_EXT_GYRO_BIAS_Y       (61 * 16 + 4)
-#define D_EXT_GYRO_BIAS_Z       (61 * 16 + 8)
+#define D_EXT_GYRO_BIAS_Y       (61 * 16) + 4
+#define D_EXT_GYRO_BIAS_Z       (61 * 16) + 8
 #define D_ACT0                  (40 * 16)
 #define D_ACSX                  (40 * 16 + 4)
 #define D_ACSY                  (40 * 16 + 8)
@@ -226,7 +226,9 @@
 
 #define D_S_HEALTH_INT_PERIOD   (16*70 +  2)
 #define D_S_HEALTH_INT_PERIOD2  (16*70 +  6)
-
+#define D_S_HEALTH_FREQ_TH      (16*25 +  0)
+#define D_S_HEALTH_ALPHA1       (16*35 +  4)
+#define D_S_HEALTH_ALPHA2       (16*35 +  8)
 
 #define D_S_HEALTH_MIN_CNTR	(16*64 + 2)
 #define D_S_HEALTH_MIN_CONST	(16*64 + 6)
@@ -391,6 +393,9 @@ static const struct tKeyLabel dmpTConfig[] = {
 	{KEY_S_HEALTH_MIN_CONST,        D_S_HEALTH_MIN_CONST},
 	{KEY_S_HEALTH_STEP_CNT,         D_S_HEALTH_STEP_CNT},
 	{KEY_S_HEALTH_STEP_CNT_P,       D_S_HEALTH_STEP_CNT_P},
+	{KEY_S_HEALTH_FREQ_TH,          D_S_HEALTH_FREQ_TH},
+	{KEY_S_HEALTH_ALPHA1,           D_S_HEALTH_ALPHA1},
+	{KEY_S_HEALTH_ALPHA2,           D_S_HEALTH_ALPHA2},
 	{KEY_D_HOST_NO_MOT,             D_HOST_NO_MOT},
 	{KEY_D_ACCEL_BIAS,              D_ACCEL_BIAS},
 	{KEY_CFG_EXT_GYRO_BIAS_X,       D_EXT_GYRO_BIAS_X},

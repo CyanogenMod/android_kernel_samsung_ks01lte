@@ -62,9 +62,9 @@
 #define CSX_STATUS_REG           SX9500_TCHCMPSTAT_TCHSTAT0_FLAG
 #endif
 
-#define LIMIT_PROXOFFSET                2550 /* 30pF */
+#define LIMIT_PROXOFFSET                3880 /* 45 pF */
 #define LIMIT_PROXUSEFUL                10000
-#define STANDARD_CAP_MAIN               300000
+#define STANDARD_CAP_MAIN               450000
 
 #define DEFAULT_INIT_TOUCH_THRESHOLD    2000
 #define DEFAULT_NORMAL_TOUCH_THRESHOLD  17
@@ -72,6 +72,8 @@
 #define TOUCH_CHECK_REF_AMB      0 /* 44523 */
 #define TOUCH_CHECK_SLOPE        0 /* 50 */
 #define TOUCH_CHECK_MAIN_AMB     0 /* 151282 */
+
+#define DEFENCE_CODE_FOR_DEVICE_DAMAGE
 
 /* CS0, CS1, CS2, CS3 */
 #define TOTAL_BOTTON_COUNT       1
@@ -93,7 +95,6 @@ struct sx9500_p {
 	bool calSuccessed;
 	bool flagDataSkip;
 	u8 touchTh;
-	u8 releaseTh;
 	int initTh;
 	int calData[3];
 	int touchMode;
@@ -110,12 +111,26 @@ struct sx9500_p {
 #if defined(CONFIG_SEC_MILLET_PROJECT) \
 	|| defined(CONFIG_SEC_MATISSE_PROJECT) \
 	|| defined(CONFIG_SEC_BERLUTI_PROJECT) \
-	|| defined(CONFIG_SEC_DEGAS_PROJECT)
+	|| defined(CONFIG_SEC_DEGAS_PROJECT) \
+	||  defined(CONFIG_SEC_T8_PROJECT) \
+	||  defined(CONFIG_SEC_T10_PROJECT)
 	struct regulator *L19;
 	struct regulator *lvs1_1p8;
 #endif
+
+#if defined(CONFIG_SENSORS_SX9500_REGULATOR_ONOFF)
+	struct regulator *vdd;
+	struct regulator *ldo;
+#endif
 	atomic_t enable;
 };
+
+#if defined(CONFIG_MACH_CHAGALL)
+#ifndef CONFIG_MACH_CHAGALL_KDI
+#define SX9500_NORMAL_TOUCH_CABLE_THRESHOLD	22
+int msm8974_get_cable_type(void);
+#endif
+#endif
 
 static int sx9500_get_nirq_state(struct sx9500_p *data)
 {
@@ -220,14 +235,31 @@ static int sx9500_set_offset_calibration(struct sx9500_p *data)
 
 static void send_event(struct sx9500_p *data, int cnt, u8 state)
 {
+	u8 buf;
+#if defined(CONFIG_MACH_CHAGALL)
+#if defined(CONFIG_MACH_CHAGALL_KDI)
+	buf = data->touchTh;
+#else
+	if (msm8974_get_cable_type() > 1) {
+		buf = SX9500_NORMAL_TOUCH_CABLE_THRESHOLD;
+		pr_info("[SX9500]: %s - cable connected %d\n",
+			__func__, msm8974_get_cable_type());
+	} else {
+		buf = data->touchTh;
+	}
+#endif
+#else
+	buf = data->touchTh;
+#endif
+
 	if (state == ACTIVE) {
 		data->state[cnt] = ACTIVE;
-		sx9500_i2c_write(data, SX9500_CPS_CTRL6_REG, data->releaseTh);
+		sx9500_i2c_write(data, SX9500_CPS_CTRL6_REG, buf);
 		pr_info("[SX9500]: %s - %d button touched\n", __func__, cnt);
 	} else {
 		data->touchMode = NORMAL_TOUCH_MODE;
 		data->state[cnt] = IDLE;
-		sx9500_i2c_write(data, SX9500_CPS_CTRL6_REG, data->touchTh);
+		sx9500_i2c_write(data, SX9500_CPS_CTRL6_REG, buf);
 		pr_info("[SX9500]: %s - %d button released\n", __func__, cnt);
 	}
 
@@ -283,6 +315,21 @@ static void sx9500_display_data_reg(struct sx9500_p *data)
 	}
 }
 
+static s32 sx9500_get_init_threshold(struct sx9500_p *data)
+{
+	s32 threshold;
+
+	/* Because the STANDARD_CAP_MAIN was 300,000 in the previous patch,
+	 * the exception code is added. It will be removed later */
+	if (data->calData[0] == 0)
+		threshold = STANDARD_CAP_MAIN + data->initTh;
+	else if (data->calData[0] > 100000)
+		threshold = data->initTh + data->calData[0];
+	else
+		threshold = 300000 + data->initTh + data->calData[0];
+
+	return threshold;
+}
 static s32 sx9500_get_capMain(struct sx9500_p *data)
 {
 	u8 msByte = 0;
@@ -350,9 +397,9 @@ static s32 sx9500_get_capMain(struct sx9500_p *data)
 
 static void sx9500_touchCheckWithRefSensor(struct sx9500_p *data)
 {
-	s32 capMain;
+	s32 capMain, threshold;
 	int cnt = 0;
-	s32 threshold = STANDARD_CAP_MAIN + data->initTh + data->calData[0];
+	threshold = sx9500_get_init_threshold(data);
 
 	capMain = sx9500_get_capMain(data);
 
@@ -534,7 +581,7 @@ static int sx9500_do_calibrate(struct sx9500_p *data, bool do_calib)
 	}
 
 	capMain = sx9500_get_capMain(data);
-	data->calData[0] = capMain - STANDARD_CAP_MAIN;
+	data->calData[0] = capMain;
 
 	if (atomic_read(&data->enable) == OFF)
 		sx9500_set_mode(data, SX9500_MODE_SLEEP);
@@ -723,8 +770,8 @@ static ssize_t sx9500_threshold_show(struct device *dev,
 	struct sx9500_p *data = dev_get_drvdata(dev);
 
 	/* It's for init touch */
-	return snprintf(buf, PAGE_SIZE, "%d\n",
-			STANDARD_CAP_MAIN + data->initTh + data->calData[0]);
+		return snprintf(buf, PAGE_SIZE, "%d\n",
+			sx9500_get_init_threshold(data));
 }
 
 static ssize_t sx9500_threshold_store(struct device *dev,
@@ -740,7 +787,7 @@ static ssize_t sx9500_threshold_store(struct device *dev,
 	}
 
 	pr_info("[SX9500]: %s - normal threshold %lu\n", __func__, val);
-	data->touchTh = data->releaseTh = (u8)val;
+	data->touchTh = (u8)val;
 
 	return count;
 }
@@ -945,19 +992,30 @@ static void sx9500_touch_process(struct sx9500_p *data)
 {
 	u8 status = 0;
 	int cnt;
-	s32 capMain;
-	s32 threshold = STANDARD_CAP_MAIN + data->initTh + data->calData[0];
+	s32 capMain, threshold;
+	threshold = sx9500_get_init_threshold(data);
 
 	capMain = sx9500_get_capMain(data);
 
 	sx9500_i2c_read(data, SX9500_TCHCMPSTAT_REG, &status);
 	for (cnt = 0; cnt < TOTAL_BOTTON_COUNT; cnt++) {
 		if (data->state[cnt] == IDLE) {
-			if (status & (CSX_STATUS_REG << cnt))
+			if (status & (CSX_STATUS_REG << cnt)) {
+#ifdef DEFENCE_CODE_FOR_DEVICE_DAMAGE
+				if ((data->calData[0] - 5000) > capMain) {
+					sx9500_set_offset_calibration(data);
+					mdelay(400);
+					sx9500_touchCheckWithRefSensor(data);
+					pr_err("[SX9500]: %s - Defence code for"
+						" device damage\n", __func__);
+					return;
+				}
+#endif
 				send_event(data, cnt, ACTIVE);
-			else
+			} else {
 				pr_info("[SX9500]: %s - %d already released.\n",
 					__func__, cnt);
+			}
 		} else { /* User released button */
 			if (!(status & (CSX_STATUS_REG << cnt))) {
 				if ((data->touchMode == INIT_TOUCH_MODE)
@@ -1146,7 +1204,6 @@ static void sx9500_initialize_variable(struct sx9500_p *data)
 		__func__, data->initTh);
 
 	data->touchTh = (u8)CONFIG_SENSORS_SX9500_NORMAL_TOUCH_THRESHOLD;
-	data->releaseTh = (u8)CONFIG_SENSORS_SX9500_NORMAL_TOUCH_THRESHOLD;
 	pr_info("[SX9500]: %s - Normal Touch Threshold : %u\n",
 		__func__, data->touchTh);
 }
@@ -1179,16 +1236,84 @@ static int sx9500_parse_dt(struct sx9500_p *data, struct device *dev)
 	return 0;
 }
 
+#if defined(CONFIG_SENSORS_SX9500_REGULATOR_ONOFF)
+int sx9500_regulator_on(struct sx9500_p *data, bool onoff)
+{
+	int ret = -1;
+	if (!data->vdd) {
+		data->vdd = devm_regulator_get(&data->client->dev, "vdd");
+		if (!data->vdd) {
+			pr_err("%s: regulator pointer null vdd, rc=%d\n",
+				__func__, ret);
+			return ret;
+		}
+		ret = regulator_set_voltage(data->vdd, 2850000, 2850000);
+		if (ret) {
+			pr_err("%s: set voltage failed on vdd, rc=%d\n",
+				__func__, ret);
+			return ret;
+		}
+	}
+
+
+	if (!data->ldo) {
+		data->ldo = devm_regulator_get(&data->client->dev, "vdd_ldo");
+		if (!data->ldo) {
+			pr_err("%s: devm_regulator_get for vdd_ldo failed\n",
+				__func__);
+			return 0;
+		}
+	}
+
+	if (onoff) {
+		ret = regulator_enable(data->vdd);
+		if (ret) {
+			pr_err("%s: Failed to enable regulator vdd.\n",
+				__func__);
+			return ret;
+		}
+
+		ret = regulator_enable(data->ldo);
+		if (ret) {
+			pr_err("%s: Failed to enable regulator ldo.\n",
+				__func__);
+			return ret;
+		}
+	} else {
+		ret = regulator_disable(data->vdd);
+		if (ret) {
+			pr_err("%s: Failed to disable regulator vdd.\n",
+				__func__);
+			return ret;
+		}
+
+		ret = regulator_disable(data->ldo);
+		if (ret) {
+			pr_err("%s: Failed to disable regulator ldo.\n",
+				__func__);
+			return ret;
+		}
+
+	}
+	/*Delay added for wakeup of chip, before i2c-transactions */
+	msleep(30);
+	return 0;
+}
+#endif
+
 #if defined(CONFIG_SEC_MILLET_PROJECT) \
 	|| defined(CONFIG_SEC_MATISSE_PROJECT) \
 	|| defined(CONFIG_SEC_BERLUTI_PROJECT) \
-	|| defined(CONFIG_SEC_DEGAS_PROJECT)
+	|| defined(CONFIG_SEC_DEGAS_PROJECT) \
+	|| defined(CONFIG_SEC_T8_PROJECT) \
+	|| defined(CONFIG_SEC_T10_PROJECT)
 int sx9500_power_on(struct sx9500_p *data, bool onoff)
 {
 	int ret = -1;
 #if defined(CONFIG_SEC_MILLET_PROJECT) \
 	|| defined(CONFIG_SEC_BERLUTI_PROJECT) \
-	|| defined(CONFIG_SEC_DEGAS_PROJECT)
+	|| defined(CONFIG_SEC_DEGAS_PROJECT) \
+	|| defined(CONFIG_SEC_T8_PROJECT)
 	if (!data->L19) {
 		data->L19 = regulator_get(&data->client->dev, "8226_l19");
 		if (!data->L19) {
@@ -1204,7 +1329,7 @@ int sx9500_power_on(struct sx9500_p *data, bool onoff)
 		}
 	}
 #endif
-#if defined(CONFIG_SEC_MATISSE_PROJECT)
+#if defined(CONFIG_SEC_MATISSE_PROJECT) || defined(CONFIG_SEC_T10_PROJECT)
 	if (!data->L19) {
 		data->L19 = regulator_get(&data->client->dev, "8226_l15");
 		if (!data->L19) {
@@ -1302,10 +1427,16 @@ static int sx9500_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, data);
 	data->client = client;
+#if defined(CONFIG_SENSORS_SX9500_REGULATOR_ONOFF)
+	sx9500_regulator_on(data,1);
+#endif
+
 #if defined(CONFIG_SEC_MILLET_PROJECT) \
 	|| defined(CONFIG_SEC_MATISSE_PROJECT) \
 	|| defined(CONFIG_SEC_BERLUTI_PROJECT) \
-	|| defined(CONFIG_SEC_DEGAS_PROJECT)
+	|| defined(CONFIG_SEC_DEGAS_PROJECT) \
+	|| defined(CONFIG_SEC_T8_PROJECT) \
+	|| defined(CONFIG_SEC_T10_PROJECT)
 	sx9500_power_on(data, 1);
 #endif
 	/* read chip id */

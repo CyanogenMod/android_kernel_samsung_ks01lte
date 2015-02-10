@@ -670,6 +670,89 @@ static int mpu6500_input_set_odr(struct mpu6500_input_data *data, int odr)
 	return result;
 }
 
+#if defined(CONFIG_MPU6500_ADJUST_SMART_ALERT)
+static int mpu6500_input_set_motion_interrupt(struct mpu6500_input_data *data,
+					      int enable, bool factory_test)
+{
+	struct motion_int_data *mot_data = &data->mot_data;
+	unsigned char reg;
+
+	atomic_set(&data->reactive_state, false);
+
+	if (enable) {
+		mpu6500_i2c_read_reg(data->client, MPUREG_INT_STATUS, 1, &reg);
+		printk(KERN_INFO "@@Initialize motion interrupt : INT_STATUS=%x\n", reg);
+
+		reg = 0x01;		// Make cycle and sleep bit 0
+		mpu6500_i2c_write_single_reg(data->client, MPUREG_PWR_MGMT_1, reg);
+		msleep(50);
+
+		reg = 0x0;		// Clear gyro and accel config
+		mpu6500_i2c_write_single_reg(data->client, MPUREG_CONFIG, reg);
+		mpu6500_i2c_write_single_reg(data->client, MPUREG_ACCEL_CONFIG, reg);
+
+		reg = 0x08;		// Set accel fchoice 0 to use lp accel low power odr
+		mpu6500_i2c_write_single_reg(data->client, MPUREG_ACCEL_CONFIG2, reg);
+
+		reg = 0x05;		// Set frequency of wake up (7.81Hz)
+		mpu6500_i2c_write_single_reg(data->client, MPUREG_LP_ACCEL_ODR, reg);
+
+		if (factory_test)
+			reg = 0x41;		// Enable motion interrupt and raw data ready
+		else
+			reg = 0x40;     // Enable motion interrupt
+		mpu6500_i2c_write_single_reg(data->client, MPUREG_INT_ENABLE, reg);
+
+		reg = 0xC0;		// Enable wake on motion detection logic
+		mpu6500_i2c_write_single_reg(data->client, MPUREG_ACCEL_INTEL_CTRL, reg);
+
+		if (factory_test)
+			reg = 0x00;
+		else
+			reg = 0x30;		// Set Motion Threshold. (1LSB = 4mg)
+		mpu6500_i2c_write_single_reg(data->client, MPUREG_WOM_THR, reg);
+
+		if (!factory_test) {
+			reg = 0x07;	// Put gyro in standby and accel running
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_PWR_MGMT_2, reg);
+
+			reg = 0x1;
+			reg |= 0x20;	// Set the cycle bit to be 1 (LP Mode)
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_PWR_MGMT_1, reg);
+		}
+		data->motion_recg_st_time = jiffies;
+	} else {
+		if (mot_data->is_set) {
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_PWR_MGMT_1,
+				mot_data->pwr_mnt[0]);
+			msleep(50);
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_PWR_MGMT_2,
+				mot_data->pwr_mnt[1]);
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_CONFIG,
+				mot_data->cfg);
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_ACCEL_CONFIG,
+				mot_data->accel_cfg);
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_ACCEL_CONFIG2,
+				mot_data->accel_cfg2);
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_GYRO_CONFIG,
+				mot_data->gyro_cfg);
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_INT_ENABLE,
+				mot_data->int_cfg);
+			reg = 0xff; /* Motion Duration =1 ms */
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_ACCEL_INTEL_ENABLE, reg);
+			/* Motion Threshold =1mg, based on the data sheet. */
+			reg = 0xff;
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_WOM_THR, reg);
+			mpu6500_i2c_read_reg(data->client, MPUREG_INT_STATUS, 1, &reg);
+			mpu6500_i2c_write_single_reg(data->client, MPUREG_SMPLRT_DIV, mot_data->smplrt_div);
+			pr_info("%s: disable interrupt\n", __func__);
+		}
+	}
+	mot_data->is_set = enable;
+
+	return 0;
+}
+#else
 static int mpu6500_input_set_motion_interrupt(struct mpu6500_input_data *data,
 					      int enable, bool factory_test)
 {
@@ -770,6 +853,7 @@ static int mpu6500_input_set_motion_interrupt(struct mpu6500_input_data *data,
 
 	return 0;
 }
+#endif
 
 static int mpu6500_input_set_irq(struct mpu6500_input_data *data, unsigned char irq)
 {
@@ -2217,7 +2301,7 @@ static int __devinit mpu6500_input_probe(struct i2c_client *client,
 	data->pdata = pdata;
 #if defined(CONFIG_SEC_BERLUTI_PROJECT)
 	data->chip_pos = MPU6500_BOTTOM_LEFT_LOWER;
-#elif defined(CONFIG_SEC_S3VE_PROJECT)
+#elif defined(CONFIG_SEC_S3VE_PROJECT) || defined(CONFIG_SEC_VICTOR3GDSDTV_PROJECT)
 	data->chip_pos = MPU6500_TOP_LEFT_UPPER;
 #else
 	data->chip_pos = MPU6500_BOTTOM_RIGHT_LOWER;

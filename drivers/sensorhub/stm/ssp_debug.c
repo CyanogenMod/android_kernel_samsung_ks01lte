@@ -299,10 +299,17 @@ static void print_sensordata(struct ssp_data *data, unsigned int uSensor)
 			get_msdelay(data->adDelayBuf[uSensor]));
 		break;
 	case GESTURE_SENSOR:
+#if defined (CONFIG_SENSORS_SSP_MAX88921)
+		ssp_dbg("[SSP] %u : %d %d %d %d (%ums)\n", uSensor,
+			data->buf[uSensor].data[0], data->buf[uSensor].data[1],
+			data->buf[uSensor].data[2], data->buf[uSensor].data[3],
+			get_msdelay(data->adDelayBuf[uSensor]));
+#else
 		ssp_dbg("[SSP] %u : %d %d %d %d (%ums)\n", uSensor,
 			data->buf[uSensor].data[3], data->buf[uSensor].data[4],
 			data->buf[uSensor].data[5], data->buf[uSensor].data[6],
 			get_msdelay(data->adDelayBuf[uSensor]));
+#endif
 		break;
 	case TEMPERATURE_HUMIDITY_SENSOR:
 		ssp_dbg("[SSP] %u : %d %d %d(%ums)\n", uSensor,
@@ -371,9 +378,9 @@ static void debug_work_func(struct work_struct *work)
 	unsigned int uSensorCnt;
 	struct ssp_data *data = container_of(work, struct ssp_data, work_debug);
 
-	ssp_dbg("[SSP]: %s(%u) - Sensor state: 0x%x, RC: %u, CC: %u DC: %u\n",
+	ssp_dbg("[SSP]: %s(%u) - Sensor state: 0x%x, RC: %u, CC: %u DC: %u TC: %u\n",
 		__func__, data->uIrqCnt, data->uSensorState, data->uResetCnt,
-		data->uComFailCnt,data->uDumpCnt);
+		data->uComFailCnt, data->uDumpCnt, data->uTimeOutCnt);
 
 	switch (data->fw_dl_state) {
 	case FW_DL_STATE_FAIL:

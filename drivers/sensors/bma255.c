@@ -113,12 +113,19 @@ static int bma255_i2c_recovery(struct bma255_p *data)
 {
 	int ret, i;
 	struct gpiomux_setting old_config[2];
+#if defined(CONFIG_SEC_AFYON_PROJECT)
+	static struct gpiomux_setting recovery_config = {
+		.func = GPIOMUX_FUNC_3,
+		.drv = GPIOMUX_DRV_2MA,
+		.pull = GPIOMUX_PULL_NONE,
+	};
+#else
 	struct gpiomux_setting recovery_config = {
 		.func = GPIOMUX_FUNC_GPIO,
 		.drv = GPIOMUX_DRV_8MA,
 		.pull = GPIOMUX_PULL_NONE,
 	};
-
+#endif
 	if ((data->sda_gpio < 0) || (data->scl_gpio < 0)) {
 		pr_info("[SENSOR]: %s - no sda, scl gpio\n", __func__);
 		return -1;
@@ -219,7 +226,6 @@ static int bma255_i2c_read(struct bma255_p *data,
 	msg[1].flags = I2C_M_RD;
 	msg[1].len = len;
 	msg[1].buf = buf;
-
 	do {
 		ret = i2c_transfer(data->client->adapter, msg, 2);
 		if (ret < 0)
@@ -1044,6 +1050,7 @@ static int bma255_parse_dt(struct bma255_p *data, struct device *dev)
 	return 0;
 }
 
+#ifndef CONFIG_MACH_MS01_EUR_3G
 static int sensor_regulator_onoff(struct device *dev, bool onoff)
 {
 	struct regulator *sensor_vcc, *sensor_lvs1;
@@ -1075,6 +1082,7 @@ static int sensor_regulator_onoff(struct device *dev, bool onoff)
 
 	return 0;
 }
+#endif
 
 static int bma255_probe(struct i2c_client *client,
 		const struct i2c_device_id *id)
@@ -1090,10 +1098,11 @@ static int bma255_probe(struct i2c_client *client,
 		goto exit;
 	}
 
+#ifndef CONFIG_MACH_MS01_EUR_3G
 	ret = sensor_regulator_onoff(&client->dev, true);
 	if (ret < 0)
 		pr_err("[SENSOR]: %s - No regulator\n", __func__);
-
+#endif
 	data = kzalloc(sizeof(struct bma255_p), GFP_KERNEL);
 	if (data == NULL) {
 		pr_err("[SENSOR]: %s - kzalloc error\n", __func__);
@@ -1121,7 +1130,6 @@ static int bma255_probe(struct i2c_client *client,
 		       "reactive_wake_lock");
 
 	/* read chip id */
-	bma255_set_mode(data, BMA255_MODE_NORMAL);
 	for (i = 0; i < CHIP_ID_RETRIES; i++) {
 		ret = i2c_smbus_read_word_data(client, BMA255_CHIP_ID_REG);
 		if ((ret & 0x00ff) != BMA255_CHIP_ID) {

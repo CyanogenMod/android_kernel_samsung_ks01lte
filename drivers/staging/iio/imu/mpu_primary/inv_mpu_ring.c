@@ -34,6 +34,9 @@
 
 #include "inv_mpu_iio.h"
 
+#define MAX_GYRO	32767
+#define MIN_GYRO	-32768
+
 static u8 fifo_data[HARDWARE_FIFO_SIZE + HEADERED_Q_BYTES];
 static int inv_process_batchmode(struct inv_mpu_state *st);
 
@@ -330,8 +333,6 @@ static int set_fifo_rate_reg(struct inv_mpu_state *st)
 	result = inv_set_lpf(st, fifo_rate);
 	if (result)
 		return result;
-	/* wait for the sampling rate change to stabilize */
-	mdelay(INV_MPU_SAMPLE_RATE_CHANGE_STABLE);
 
 	return 0;
 }
@@ -358,11 +359,12 @@ static int inv_lpa_mode(struct inv_mpu_state *st, int lpa_mode)
 	if (result)
 		return result;
 	if (INV_MPU6500 == st->chip_type) {
-		/* set to 512 bytes for FIFO size */
-		d = 0;
+		/* set to 512 bytes for FIFO size and LPF 42HZ */
+		d = INV_FILTER_42HZ;
+
 		if (lpa_mode)
 			d |= BIT_ACCEL_FCHOCIE_B;
-		result = inv_i2c_single_write(st, REG_6500_ACCEL_CONFIG2, d);
+		result = inv_i2c_single_write(st, st->reg.accel_config2, d);
 		if (result)
 			return result;
 	}
@@ -1118,7 +1120,7 @@ int set_inv_enable(struct iio_dev *indio_dev, bool enable)
 		if (st->factory_mode)
 			d = 0x00;
 		else
-			d = 0x0C;
+			d = 0x0C + 0x5;
 		inv_i2c_single_write(st, REG_6500_ACCEL_WOM_THR, d);
 
 		d = 0x04;	/* 3.91 Hz (low power accel odr) */
@@ -1419,11 +1421,30 @@ static int inv_process_dmp_interrupt(struct inv_mpu_state *st)
 
 		/*wake AP for 1 sec*/
 		wake_lock_timeout(&st->shealth.wake_lock,msecs_to_jiffies(1000));
+		st->shealth.interrupt_counter ++;
+		st->shealth.interrupt_timestamp = inv_get_shealth_timestamp(st, false);
+		st->shealth.interrupt_time_timeofday = get_time_timeofday();
 
-		st->shealth.interrupt_timestamp = get_time_ns();
 		st->shealth.interrupt_mask |= SHEALTH_INT_CADENCE;
 		inv_get_shealth_cadence(st, 1, 21, st->shealth.cadence);
 		st->shealth.valid_count = st->shealth.interrupt_duration;
+		/*adjust interrupt time period*/
+		{
+			u16 tick_count = 0;
+
+			s32 kerneltime_diff = (st->shealth.interrupt_time_timeofday
+						- st->shealth.start_time_timeofday) >> 30;
+			s32 timestamp_diff = (st->shealth.interrupt_timestamp
+						- st->shealth.start_timestamp) >> 30;
+			tick_count =  timestamp_diff * (st->shealth.tick_count + 1)
+					/ kerneltime_diff - 1;
+			pr_info("[SHEALTH] %s Tick[Before After] = [%d %d]\n", __func__,
+				st->shealth.tick_count, tick_count);
+
+			/*change the value of update timer for adjusting interrupt timing*/
+			inv_set_shealth_update_timer(st, tick_count);
+			st->shealth.tick_count = tick_count;
+		}
 		complete(&st->shealth.wait);
 	}
 
@@ -1603,7 +1624,7 @@ static int inv_process_batchmode(struct inv_mpu_state *st)
 	done_flag = false;
 	target_bytes = st->fifo_count + st->left_over_size;
 	counter = 0;
-	while ((dptr - d <= target_bytes - HEADERED_NORMAL_BYTES) &&
+	while (((dptr - d) <= (target_bytes - HEADERED_NORMAL_BYTES)) &&
 							(!done_flag)) {
 		hdr = (u16)be16_to_cpup((__be16 *)(dptr));
 		steps = (hdr & STEP_INDICATOR_MASK);
@@ -1612,11 +1633,11 @@ static int inv_process_batchmode(struct inv_mpu_state *st)
 		/* error packet */
 		if ((sensor_ind == SENSOR_INVALID) ||
 				(!st->sensor[sensor_ind].on)) {
-			dptr += HEADERED_NORMAL_BYTES;
+			dptr += (HEADERED_NORMAL_BYTES / 4);
 			continue;
 		}
 		/* incomplete packet */
-		if (target_bytes - (dptr - d) <
+		if ((target_bytes - (dptr - d)) <
 					st->sensor[sensor_ind].sample_size) {
 			done_flag = true;
 			continue;

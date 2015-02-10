@@ -129,8 +129,6 @@ ifeq ($(CONFIG_SEC_F_PROJECT),y)
 	dtb-y	+= msm8974-sec-fltekor-r16.dtb
 endif
 ifeq ($(CONFIG_SEC_KS01_PROJECT),y)
-ifeq ($(CONFIG_SEC_LOCALE_KOR),y)
-    # dtbs for KOR
     dtb-$(CONFIG_SEC_KS01_PROJECT)	+= msm8974-sec-ks01lte-r00.dtb
     dtb-$(CONFIG_SEC_KS01_PROJECT)	+= msm8974-sec-ks01lte-r01.dtb
     dtb-$(CONFIG_SEC_KS01_PROJECT)	+= msm8974-sec-ks01lte-r02.dtb
@@ -140,17 +138,6 @@ ifeq ($(CONFIG_SEC_LOCALE_KOR),y)
     dtb-$(CONFIG_SEC_KS01_PROJECT)	+= msm8974-sec-ks01lte-r06.dtb
     dtb-$(CONFIG_SEC_KS01_PROJECT)	+= msm8974-sec-ks01lte-r07.dtb
     dtb-$(CONFIG_SEC_KS01_PROJECT)	+= msm8974-sec-ks01lte-r11.dtb
-else
-    dtb-$(CONFIG_SEC_KS01_PROJECT)      += msm8974-sec-ks01lte-r00.dtb
-    dtb-$(CONFIG_SEC_KS01_PROJECT)      += msm8974-sec-ks01lte-r01.dtb
-    dtb-$(CONFIG_SEC_KS01_PROJECT)      += msm8974-sec-ks01lte-r02.dtb
-    dtb-$(CONFIG_SEC_KS01_PROJECT)      += msm8974-sec-ks01lte-r03.dtb
-    dtb-$(CONFIG_SEC_KS01_PROJECT)      += msm8974-sec-ks01lte-r04.dtb
-    dtb-$(CONFIG_SEC_KS01_PROJECT)      += msm8974-sec-ks01lte-r05.dtb
-    dtb-$(CONFIG_SEC_KS01_PROJECT)      += msm8974-sec-ks01lte-r06.dtb
-    dtb-$(CONFIG_SEC_KS01_PROJECT)      += msm8974-sec-ks01lte-r07.dtb
-    dtb-$(CONFIG_SEC_KS01_PROJECT)      += msm8974-sec-ks01lte-r11.dtb
-endif
 endif
 	dtb-$(CONFIG_SEC_KACTIVE_PROJECT)	+= msm8974pro-ac-sec-kactivelte-r00.dtb
 
