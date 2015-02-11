@@ -13,6 +13,7 @@
 #include <linux/mfd/max77803.h>
 #include <linux/mfd/max77803-private.h>
 #include <linux/of_gpio.h>
+#include <linux/wakelock.h>
 #ifdef CONFIG_USB_HOST_NOTIFY
 #include <linux/host_notify.h>
 #endif

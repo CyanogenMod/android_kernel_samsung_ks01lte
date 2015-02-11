@@ -32,8 +32,6 @@
 #include <linux/poll.h>
 #include <linux/oom.h>
 #include <linux/export.h>
-#include <linux/frontswap.h>
-#include <linux/swapfile.h>
 
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
@@ -45,7 +43,7 @@ static bool swap_count_continued(struct swap_info_struct *, pgoff_t,
 static void free_swap_count_continuations(struct swap_info_struct *);
 static sector_t map_swap_entry(swp_entry_t, struct block_device**);
 
-DEFINE_SPINLOCK(swap_lock);
+static DEFINE_SPINLOCK(swap_lock);
 static unsigned int nr_swapfiles;
 atomic_long_t nr_swap_pages;
 /* protected with swap_lock. reading in vm_swap_full() doesn't need lock */
@@ -58,9 +56,9 @@ static const char Unused_file[] = "Unused swap file entry ";
 static const char Bad_offset[] = "Bad swap offset entry ";
 static const char Unused_offset[] = "Unused swap offset entry ";
 
-struct swap_list_t swap_list = {-1, -1};
+static struct swap_list_t swap_list = {-1, -1};
 
-struct swap_info_struct *swap_info[MAX_SWAPFILES];
+static struct swap_info_struct *swap_info[MAX_SWAPFILES];
 
 static DEFINE_MUTEX(swapon_mutex);
 
@@ -608,7 +606,6 @@ static unsigned char swap_entry_free(struct swap_info_struct *p,
 		set_highest_priority_index(p->type);
 		atomic_long_inc(&nr_swap_pages);
 		p->inuse_pages--;
-		frontswap_invalidate_page(p->type, offset);
 		if ((p->flags & SWP_BLKDEV) &&
 				disk->fops->swap_slot_free_notify)
 			disk->fops->swap_slot_free_notify(p->bdev, offset);
@@ -1071,12 +1068,11 @@ static int unuse_mm(struct mm_struct *mm,
 }
 
 /*
- * Scan swap_map (or frontswap_map if frontswap parameter is true)
- * from current position to next entry still in use.
+ * Scan swap_map from current position to next entry still in use.
  * Recycle to start on reaching the end, returning 0 when empty.
  */
 static unsigned int find_next_to_unuse(struct swap_info_struct *si,
-					unsigned int prev, bool frontswap)
+					unsigned int prev)
 {
 	unsigned int max = si->max;
 	unsigned int i = prev;
@@ -1102,12 +1098,6 @@ static unsigned int find_next_to_unuse(struct swap_info_struct *si,
 			prev = 0;
 			i = 1;
 		}
-		if (frontswap) {
-			if (frontswap_test(si, i))
-				break;
-			else
-				continue;
-		}
 		count = si->swap_map[i];
 		if (count && swap_count(count) != SWAP_MAP_BAD)
 			break;
@@ -1119,12 +1109,8 @@ static unsigned int find_next_to_unuse(struct swap_info_struct *si,
  * We completely avoid races by reading each swap page in advance,
  * and then search for the process using it.  All the necessary
  * page table adjustments can then be made atomically.
- *
- * if the boolean frontswap is true, only unuse pages_to_unuse pages;
- * pages_to_unuse==0 means all pages; ignored if frontswap is false
  */
-int try_to_unuse(unsigned int type, bool frontswap,
-		 unsigned long pages_to_unuse)
+static int try_to_unuse(unsigned int type)
 {
 	struct swap_info_struct *si = swap_info[type];
 	struct mm_struct *start_mm;
@@ -1157,7 +1143,7 @@ int try_to_unuse(unsigned int type, bool frontswap,
 	 * one pass through swap_map is enough, but not necessarily:
 	 * there are races when an instance of an entry might be missed.
 	 */
-	while ((i = find_next_to_unuse(si, i, frontswap)) != 0) {
+	while ((i = find_next_to_unuse(si, i)) != 0) {
 		if (signal_pending(current)) {
 			retval = -EINTR;
 			break;
@@ -1324,10 +1310,6 @@ int try_to_unuse(unsigned int type, bool frontswap,
 		 * interactive performance.
 		 */
 		cond_resched();
-		if (frontswap && pages_to_unuse > 0) {
-			if (!--pages_to_unuse)
-				break;
-		}
 	}
 
 	mmput(start_mm);
@@ -1587,8 +1569,7 @@ bad_bmap:
 }
 
 static void enable_swap_info(struct swap_info_struct *p, int prio,
-				unsigned char *swap_map,
-				unsigned long *frontswap_map)
+				unsigned char *swap_map)
 {
 	int i, prev;
 
@@ -1598,7 +1579,6 @@ static void enable_swap_info(struct swap_info_struct *p, int prio,
 	else
 		p->prio = --least_priority;
 	p->swap_map = swap_map;
-	frontswap_map_set(p, frontswap_map);
 	p->flags |= SWP_WRITEOK;
 	atomic_long_add(p->pages, &nr_swap_pages);
 	total_swap_pages += p->pages;
@@ -1615,7 +1595,6 @@ static void enable_swap_info(struct swap_info_struct *p, int prio,
 		swap_list.head = swap_list.next = p->type;
 	else
 		swap_info[prev]->next = p->type;
-	frontswap_init(p->type);
 	spin_unlock(&swap_lock);
 }
 
@@ -1691,7 +1670,7 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 	spin_unlock(&swap_lock);
 
 	oom_score_adj = test_set_oom_score_adj(OOM_SCORE_ADJ_MAX);
-	err = try_to_unuse(type, false, 0); /* force all pages to be unused */
+	err = try_to_unuse(type);
 	compare_swap_oom_score_adj(OOM_SCORE_ADJ_MAX, oom_score_adj);
 
 	if (err) {
@@ -1702,7 +1681,7 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 		 * sys_swapoff for this swap_info_struct at this point.
 		 */
 		/* re-insert swap space back into swap_list */
-		enable_swap_info(p, p->prio, p->swap_map, frontswap_map_get(p));
+		enable_swap_info(p, p->prio, p->swap_map);
 		goto out_dput;
 	}
 
@@ -1731,12 +1710,10 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 	swap_map = p->swap_map;
 	p->swap_map = NULL;
 	p->flags = 0;
-	frontswap_invalidate_area(type);
 	spin_unlock(&p->lock);
 	spin_unlock(&swap_lock);
 	mutex_unlock(&swapon_mutex);
 	vfree(swap_map);
-	vfree(frontswap_map_get(p));
 	/* Destroy swap account informatin */
 	swap_cgroup_swapoff(type);
 
@@ -2006,24 +1983,20 @@ static unsigned long read_swap_header(struct swap_info_struct *p,
 
 	/*
 	 * Find out how many pages are allowed for a single swap
-	 * device. There are three limiting factors: 1) the number
+	 * device. There are two limiting factors: 1) the number
 	 * of bits for the swap offset in the swp_entry_t type, and
 	 * 2) the number of bits in the swap pte as defined by the
-	 * the different architectures, and 3) the number of free bits
-	 * in an exceptional radix_tree entry. In order to find the
+	 * different architectures. In order to find the
 	 * largest possible bit mask, a swap entry with swap type 0
 	 * and swap offset ~0UL is created, encoded to a swap pte,
 	 * decoded to a swp_entry_t again, and finally the swap
 	 * offset is extracted. This will mask all the bits from
 	 * the initial ~0UL mask that can't be encoded in either
 	 * the swp_entry_t or the architecture definition of a
-	 * swap pte.  Then the same is done for a radix_tree entry.
+	 * swap pte.
 	 */
 	maxpages = swp_offset(pte_to_swp_entry(
-			swp_entry_to_pte(swp_entry(0, ~0UL))));
-	maxpages = swp_offset(radix_to_swp_entry(
-			swp_to_radix_entry(swp_entry(0, maxpages)))) + 1;
-
+			swp_entry_to_pte(swp_entry(0, ~0UL)))) + 1;
 	if (maxpages > swap_header->info.last_page) {
 		maxpages = swap_header->info.last_page + 1;
 		/* p->max is an unsigned int: don't overflow it */
@@ -2101,7 +2074,6 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 	sector_t span;
 	unsigned long maxpages;
 	unsigned char *swap_map = NULL;
-	unsigned long *frontswap_map = NULL;
 	struct page *page = NULL;
 	struct inode *inode = NULL;
 
@@ -2185,9 +2157,6 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 		error = nr_extents;
 		goto bad_swap;
 	}
-	/* frontswap enabled? set up bit-per-page map for frontswap */
-	if (frontswap_enabled)
-		frontswap_map = vzalloc(maxpages / sizeof(long));
 
 	if (p->bdev) {
 		if (blk_queue_nonrot(bdev_get_queue(p->bdev))) {
@@ -2203,15 +2172,14 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 	if (swap_flags & SWAP_FLAG_PREFER)
 		prio =
 		  (swap_flags & SWAP_FLAG_PRIO_MASK) >> SWAP_FLAG_PRIO_SHIFT;
-	enable_swap_info(p, prio, swap_map, frontswap_map);
+	enable_swap_info(p, prio, swap_map);
 
 	printk(KERN_INFO "Adding %uk swap on %s.  "
-			"Priority:%d extents:%d across:%lluk %s%s%s\n",
+			"Priority:%d extents:%d across:%lluk %s%s\n",
 		p->pages<<(PAGE_SHIFT-10), name, p->prio,
 		nr_extents, (unsigned long long)span<<(PAGE_SHIFT-10),
 		(p->flags & SWP_SOLIDSTATE) ? "SS" : "",
-		(p->flags & SWP_DISCARDABLE) ? "D" : "",
-		(frontswap_map) ? "FS" : "");
+		(p->flags & SWP_DISCARDABLE) ? "D" : "");
 
 	mutex_unlock(&swapon_mutex);
 	atomic_inc(&proc_poll_event);

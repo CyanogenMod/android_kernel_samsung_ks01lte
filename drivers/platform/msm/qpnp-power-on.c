@@ -27,7 +27,7 @@
 #include <mach/sec_debug.h>
 #endif
 
-#ifdef CONFIG_ARCH_MSM8226  //should be removed
+#ifndef CONFIG_SEC_DEBUG
 extern struct class *sec_class;
 #endif
 

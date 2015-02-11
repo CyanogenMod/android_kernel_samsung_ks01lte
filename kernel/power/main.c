@@ -833,10 +833,6 @@ static struct attribute *g[] = {
 	&pm_test_attr.attr,
 	&pm_print_times_attr.attr,
 #endif
-#ifdef CONFIG_USER_WAKELOCK
-	&wake_lock_attr.attr,
-	&wake_unlock_attr.attr,
-#endif
 #endif
 #ifdef CONFIG_CPU_FREQ_LIMIT_USERSPACE
 	&cpufreq_table_attr.attr,

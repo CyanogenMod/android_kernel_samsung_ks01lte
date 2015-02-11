@@ -28,7 +28,6 @@
 static int try_to_freeze_tasks(bool user_only)
 {
 	struct task_struct *g, *p;
-	struct task_struct *q = NULL;
 	unsigned long end_time;
 	unsigned int todo;
 	bool wq_busy = false;
@@ -63,10 +62,8 @@ static int try_to_freeze_tasks(bool user_only)
 			 * transition can't race with task state testing here.
 			 */
 			if (!task_is_stopped_or_traced(p) &&
-			    !freezer_should_skip(p)) {
+			    !freezer_should_skip(p))
 				todo++;
-				q = p;
-			}
 		} while_each_thread(g, p);
 		read_unlock(&tasklist_lock);
 

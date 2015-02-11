@@ -595,7 +595,7 @@ static void shmem_evict_inode(struct inode *inode)
 		kfree(xattr->name);
 		kfree(xattr);
 	}
-	BUG_ON(inode->i_blocks);
+	WARN_ON(inode->i_blocks);
 	shmem_free_inode(inode->i_sb);
 	end_writeback(inode);
 }
@@ -713,17 +713,8 @@ static int shmem_writepage(struct page *page, struct writeback_control *wbc)
 	info = SHMEM_I(inode);
 	if (info->flags & VM_LOCKED)
 		goto redirty;
-#ifdef CONFIG_RUNTIME_COMPCACHE
-	/*
-	 * Modification for runtime compcache
-	 * shmem_writepage can be reason of kernel panic when using swap.
-	 * This modification prevent using swap by shmem.
-	 */
-	goto redirty;
-#else
 	if (!total_swap_pages)
 		goto redirty;
-#endif /* CONFIG_RUNTIME_COMPCACHE */
 
 	/*
 	 * shmem_backing_dev_info's capabilities prevent regular writeback or
@@ -807,24 +798,8 @@ static struct mempolicy *shmem_get_sbmpol(struct shmem_sb_info *sbinfo)
 static struct page *shmem_swapin(swp_entry_t swap, gfp_t gfp,
 			struct shmem_inode_info *info, pgoff_t index)
 {
-	struct mempolicy mpol, *spol;
 	struct vm_area_struct pvma;
-
-	spol = mpol_cond_copy(&mpol,
-			mpol_shared_policy_lookup(&info->policy, index));
-
-	/* Create a pseudo vma that just contains the policy */
-	pvma.vm_start = 0;
-	pvma.vm_pgoff = index;
-	pvma.vm_ops = NULL;
-	pvma.vm_policy = spol;
-	return swapin_readahead(swap, gfp, &pvma, 0);
-}
-
-static struct page *shmem_alloc_page(gfp_t gfp,
-			struct shmem_inode_info *info, pgoff_t index)
-{
-	struct vm_area_struct pvma;
+	struct page *page;
 
 	/* Create a pseudo vma that just contains the policy */
 	pvma.vm_start = 0;
@@ -832,10 +807,32 @@ static struct page *shmem_alloc_page(gfp_t gfp,
 	pvma.vm_ops = NULL;
 	pvma.vm_policy = mpol_shared_policy_lookup(&info->policy, index);
 
-	/*
-	 * alloc_page_vma() will drop the shared policy reference
-	 */
-	return alloc_page_vma(gfp, &pvma, 0);
+	page = swapin_readahead(swap, gfp, &pvma, 0);
+
+	/* Drop reference taken by mpol_shared_policy_lookup() */
+	mpol_cond_put(pvma.vm_policy);
+
+	return page;
+}
+
+static struct page *shmem_alloc_page(gfp_t gfp,
+			struct shmem_inode_info *info, pgoff_t index)
+{
+	struct vm_area_struct pvma;
+	struct page *page;
+
+	/* Create a pseudo vma that just contains the policy */
+	pvma.vm_start = 0;
+	pvma.vm_pgoff = index;
+	pvma.vm_ops = NULL;
+	pvma.vm_policy = mpol_shared_policy_lookup(&info->policy, index);
+
+	page = alloc_page_vma(gfp, &pvma, 0);
+
+	/* Drop reference taken by mpol_shared_policy_lookup() */
+	mpol_cond_put(pvma.vm_policy);
+
+	return page;
 }
 #else /* !CONFIG_NUMA */
 #ifdef CONFIG_TMPFS
@@ -1120,18 +1117,6 @@ out_nomem:
 static int shmem_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	file_accessed(file);
-#ifdef CONFIG_TIMA_RKP
-	if (vma->vm_end - vma->vm_start) {
-		/* iommu optimization- needs to be turned ON from
-		* the tz side.
-		*/
-		cpu_v7_tima_iommu_opt(vma->vm_start, vma->vm_end, (unsigned long)vma->vm_mm->pgd);
-		__asm__ __volatile__ (
-		"mcr    p15, 0, r0, c8, c3, 0\n"
-		"dsb\n"
-		"isb\n");
-	}
-#endif
 	vma->vm_ops = &shmem_vm_ops;
 	vma->vm_flags |= VM_CAN_NONLINEAR;
 	return 0;
@@ -1386,6 +1371,7 @@ static ssize_t shmem_file_splice_read(struct file *in, loff_t *ppos,
 	struct splice_pipe_desc spd = {
 		.pages = pages,
 		.partial = partial,
+		.nr_pages_max = PIPE_DEF_BUFFERS,
 		.flags = flags,
 		.ops = &page_cache_pipe_buf_ops,
 		.spd_release = spd_release_page,
@@ -1474,7 +1460,7 @@ static ssize_t shmem_file_splice_read(struct file *in, loff_t *ppos,
 	if (spd.nr_pages)
 		error = splice_to_pipe(pipe, &spd);
 
-	splice_shrink_spd(pipe, &spd);
+	splice_shrink_spd(&spd);
 
 	if (error > 0) {
 		*ppos += error;
@@ -2038,11 +2024,13 @@ static struct dentry *shmem_fh_to_dentry(struct super_block *sb,
 {
 	struct inode *inode;
 	struct dentry *dentry = NULL;
-	u64 inum = fid->raw[2];
-	inum = (inum << 32) | fid->raw[1];
+	u64 inum;
 
 	if (fh_len < 3)
 		return NULL;
+
+	inum = fid->raw[2];
+	inum = (inum << 32) | fid->raw[1];
 
 	inode = ilookup5(sb, (unsigned long)(inum + fid->raw[0]),
 			shmem_match, fid->raw);
@@ -2189,6 +2177,7 @@ static int shmem_remount_fs(struct super_block *sb, int *flags, char *data)
 	unsigned long inodes;
 	int error = -EINVAL;
 
+	config.mpol = NULL;
 	if (shmem_parse_options(data, &config, true))
 		return error;
 
@@ -2213,8 +2202,13 @@ static int shmem_remount_fs(struct super_block *sb, int *flags, char *data)
 	sbinfo->max_inodes  = config.max_inodes;
 	sbinfo->free_inodes = config.max_inodes - inodes;
 
-	mpol_put(sbinfo->mpol);
-	sbinfo->mpol        = config.mpol;	/* transfers initial ref */
+	/*
+	 * Preserve previous mempolicy unless mpol remount option was specified.
+	 */
+	if (config.mpol) {
+		mpol_put(sbinfo->mpol);
+		sbinfo->mpol = config.mpol;	/* transfers initial ref */
+	}
 out:
 	spin_unlock(&sbinfo->stat_lock);
 	return error;
