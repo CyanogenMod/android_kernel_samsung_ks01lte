@@ -130,7 +130,7 @@
 		qcom,L2-spm-is-apcs-master;
 	};
 
-	qcom,lpm-levels {
+	lpm_levels: qcom,lpm-levels {
 		compatible = "qcom,lpm-levels";
 		qcom,default-l2-state = "l2_cache_retention";
 		#address-cells = <1>;
