@@ -41,6 +41,9 @@ extern struct class *sec_class;
 /* Flip cover*/
 #define TKEY_FLIP_MODE
 
+/* Keypad Enabler */
+#define TK_KEYPAD_ENABLE
+
 #ifdef TKEY_FLIP_MODE
 #define TK_BIT_FLIP		0x08
 #endif
@@ -129,6 +132,9 @@ struct cypress_touchkey_info {
 	int glove_value;
 #endif
 
+#ifdef TK_KEYPAD_ENABLE
+	atomic_t keypad_enable;
+#endif
 };
 
 void touchkey_charger_infom(bool en);
