@@ -275,6 +275,11 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		else if (desc->action && desc->action->name)
 			name = desc->action->name;
 
+		if (desc == NULL)
+			name = "stray irq";
+		else if (desc->action && desc->action->name)
+			name = desc->action->name;
+
 		pr_warning("%s: %d triggered %s\n", __func__,
 					i + gic->irq_offset, name);
 	}
