@@ -26,6 +26,7 @@ void convert_acc_data(s16 *iValue)
 void report_acc_data(struct ssp_data *data, struct sensor_value *accdata)
 {
 	int time_hi, time_lo;
+
 	convert_acc_data(&accdata->x);
 	convert_acc_data(&accdata->y);
 	convert_acc_data(&accdata->z);
@@ -52,7 +53,6 @@ void report_acc_data(struct ssp_data *data, struct sensor_value *accdata)
 		data->buf[ACCELEROMETER_SENSOR].z =
 			(data->buf[ACCELEROMETER_SENSOR].z > 0 ? MIN_ACCEL_2G : MAX_ACCEL_2G);
 	}
-
 	time_lo = (int)(accdata->timestamp & TIME_LO_MASK);
 	time_hi = (int)((accdata->timestamp & TIME_HI_MASK) >> TIME_HI_SHIFT);
 
@@ -116,14 +116,14 @@ void report_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 		lTemp[4] = (long)data->gyrocal.y << 2;
 		lTemp[5] = (long)data->gyrocal.z << 2;
 	} else {
-                lTemp[0] = (long)gyrodata->x;
+		lTemp[0] = (long)gyrodata->x;
 		lTemp[1] = (long)gyrodata->y;
 		lTemp[2] = (long)gyrodata->z;
 		lTemp[3] = (long)data->gyrocal.x;
 		lTemp[4] = (long)data->gyrocal.y;
 		lTemp[5] = (long)data->gyrocal.z;
 	}
-	
+
 	time_lo = (int)(gyrodata->timestamp & TIME_LO_MASK);
 	time_hi = (int)((gyrodata->timestamp & TIME_HI_MASK) >> TIME_HI_SHIFT);
 
@@ -144,7 +144,6 @@ void report_mag_data(struct ssp_data *data, struct sensor_value *magdata)
 	data->buf[GEOMAGNETIC_SENSOR].x = magdata->x;
 	data->buf[GEOMAGNETIC_SENSOR].y = magdata->y;
 	data->buf[GEOMAGNETIC_SENSOR].z = magdata->z;
-
 	time_lo = (int)(magdata->timestamp & TIME_LO_MASK);
 	time_hi = (int)((magdata->timestamp & TIME_HI_MASK) >> TIME_HI_SHIFT);
 
@@ -410,6 +409,7 @@ int initialize_event_symlink(struct ssp_data *data)
 		goto iRet_meta_sysfs_create_link;
 
 	return SUCCESS;
+
 iRet_meta_sysfs_create_link:
 	sysfs_delete_link(&data->sen_dev->kobj,
 		&data->step_cnt_input_dev->dev.kobj,
@@ -505,9 +505,8 @@ int initialize_input_dev(struct ssp_data *data)
 	int iRet = 0;
 	struct input_dev *acc_input_dev, *gyro_input_dev, *pressure_input_dev,
 		*light_input_dev, *prox_input_dev, *temp_humi_input_dev,
-		*mag_input_dev, *gesture_input_dev,
-		*sig_motion_input_dev, *step_det_input_dev, *step_cnt_input_dev,
-		*meta_input_dev;
+		*mag_input_dev, *gesture_input_dev, *sig_motion_input_dev,
+		*step_det_input_dev, *step_cnt_input_dev, *meta_input_dev;
 
 	/* allocate input_device */
 	acc_input_dev = input_allocate_device();
@@ -789,6 +788,7 @@ int initialize_input_dev(struct ssp_data *data)
 	data->meta_input_dev = meta_input_dev;
 
 	return SUCCESS;
+
 iRet_meta_input_unreg_device:
 	input_unregister_device(step_cnt_input_dev);
 iRet_step_cnt_motion_input_unreg_device:

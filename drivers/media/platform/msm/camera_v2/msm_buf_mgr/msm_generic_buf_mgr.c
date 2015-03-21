@@ -55,6 +55,11 @@ static int msm_buf_mngr_buf_done(struct msm_buf_mngr_device *buf_mngr_dev,
 	struct msm_get_bufs *bufs, *save;
 	int ret = -EINVAL;
 
+	if (!buf_info) {
+	    pr_err("%s buf_info NULL\n", __func__);
+	    return ret;
+	}
+
 	spin_lock_irqsave(&buf_mngr_dev->buf_q_spinlock, flags);
 	list_for_each_entry_safe(bufs, save, &buf_mngr_dev->buf_qhead, entry) {
 		if ((bufs->session_id == buf_info->session_id) &&

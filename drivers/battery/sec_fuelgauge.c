@@ -13,7 +13,6 @@
 #include <linux/battery/sec_charger.h>
 #include <linux/battery/sec_battery.h>
 #include <linux/of_gpio.h>
-#include <linux/wakelock.h>
 
 static struct device_attribute sec_fg_attrs[] = {
 	SEC_FG_ATTR(reg),

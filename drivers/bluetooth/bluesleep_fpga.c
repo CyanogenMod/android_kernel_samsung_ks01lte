@@ -476,7 +476,9 @@ struct uart_port *bluesleep_get_uart_port(void)
 {
 	struct uart_port *uport = NULL;
 
-	uport = msm_hs_get_port_by_id(0);
+	uport = msm_hs_get_uart_port(0);
+	if(uport == NULL)
+		BT_ERR("(bluesleep_get_uart_port) uport is null");
 
 	return uport;
 }

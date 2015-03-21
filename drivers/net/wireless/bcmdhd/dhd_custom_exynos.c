@@ -75,11 +75,11 @@
 
 #define WLAN_SKB_BUF_NUM	17
 
-#if defined(CONFIG_ARGOS)
+#if defined(CUSTOMER_HW4) && defined(ARGOS_CPU_SCHEDULER)
 extern int argos_irq_affinity_setup(unsigned int irq, int dev_num,
                  struct cpumask *affinity_cpu_mask,
                  struct cpumask *default_cpu_mask);
-#endif /* CONFIG_ARGOS */
+#endif /* CUSTOMER_HW4 && ARGOS_CPU_SCHEDULER */
 static struct sk_buff *wlan_static_skb[WLAN_SKB_BUF_NUM];
 
 struct wlan_mem_prealloc {
@@ -285,15 +285,18 @@ int __init dhd_wlan_init_gpio(void)
 	return 0;
 }
 
-#if defined(CONFIG_ARGOS)
+#if defined(CUSTOMER_HW4) && defined(ARGOS_CPU_SCHEDULER)
 void set_cpucore_for_interrupt(cpumask_var_t default_cpu_mask,
 	cpumask_var_t affinity_cpu_mask) {
-#if defined(CONFIG_MACH_UNIVERSAL5430)
+#if defined(CONFIG_MACH_UNIVERSAL5422)
+	argos_irq_affinity_setup(EXYNOS5_IRQ_HSMMC1, 2, affinity_cpu_mask, default_cpu_mask);
+	argos_irq_affinity_setup(EXYNOS_IRQ_EINT16_31, 2, affinity_cpu_mask, default_cpu_mask);
+#elif defined(CONFIG_MACH_UNIVERSAL5430)
 	argos_irq_affinity_setup(IRQ_SPI(226), 2, affinity_cpu_mask, default_cpu_mask);
 	argos_irq_affinity_setup(IRQ_SPI(2), 2, affinity_cpu_mask, default_cpu_mask);
 #endif
 }
-#endif /* CONFIG_ARGOS */
+#endif /* CUSTOMER_HW4 && ARGOS_CPU_SCHEDULER */
 
 void interrupt_set_cpucore(int set)
 {
