@@ -32,23 +32,26 @@
 #define MCU_SLEEP_FACTORY_DATA_LENGTH		FACTORY_DATA_MAX
 #define GESTURE_FACTORY_DATA_LENGTH     4
 
-/*************************************************************************/
-/* SSP parsing the dataframe                                             */
-/*************************************************************************/
-
 static void get_timestamp(struct ssp_data *data, int iSensorData,
 	struct sensor_value *sensorsdata, struct ssp_time_diff *sensortime)
 {
+	if ((iSensorData == PROXIMITY_SENSOR) || (iSensorData == GESTURE_SENSOR)
+		|| (iSensorData == STEP_DETECTOR) || (iSensorData == SIG_MOTION_SENSOR)
+		|| (iSensorData == STEP_COUNTER)) {
+		sensorsdata->timestamp = data->timestamp;
+		return;
+	}
+
 	if (((sensortime->irq_diff * 10) >
 		(data->adDelayBuf[iSensorData] * 18))
 		&& ((sensortime->irq_diff * 10) <
 		(data->adDelayBuf[iSensorData] * 100))) {
 		u64 move_timestamp;
-		u64 shift_tinestamp =
+		u64 shift_timestamp =
 			div64_long(data->adDelayBuf[iSensorData], 2);
 		for (move_timestamp = data->lastTimestamp[iSensorData] +
 			data->adDelayBuf[iSensorData];
-			move_timestamp < (data->timestamp - shift_tinestamp);
+			move_timestamp < (data->timestamp - shift_timestamp);
 			move_timestamp += data->adDelayBuf[iSensorData]) {
 			sensorsdata->timestamp = move_timestamp;
 			data->report_sensor_data[iSensorData](data,
@@ -57,6 +60,11 @@ static void get_timestamp(struct ssp_data *data, int iSensorData,
 	}
 	sensorsdata->timestamp = data->timestamp;
 }
+
+
+/*************************************************************************/
+/* SSP parsing the dataframe                                             */
+/*************************************************************************/
 
 static void get_3axis_sensordata(char *pchRcvDataFrame, int *iDataIdx,
 	struct sensor_value *sensorsdata)
@@ -307,7 +315,6 @@ int parse_dataframe(struct ssp_data *data, char *pchRcvDataFrame, int iLength)
 				data->lastTimestamp[iSensorData];
 			data->get_sensor_data[iSensorData](pchRcvDataFrame,
 				&iDataIdx, sensorsdata);
-
 			get_timestamp(data, iSensorData, sensorsdata,
 				&sensortime);
 
@@ -317,7 +324,9 @@ int parse_dataframe(struct ssp_data *data, char *pchRcvDataFrame, int iLength)
 			else if ((iSensorData == PROXIMITY_SENSOR) ||
 				(iSensorData == PROXIMITY_RAW) ||
 				(iSensorData == GESTURE_SENSOR) ||
-				(iSensorData == SIG_MOTION_SENSOR))
+				(iSensorData == SIG_MOTION_SENSOR) ||
+				(iSensorData == STEP_DETECTOR) ||
+				(iSensorData == STEP_COUNTER))
 				data->report_sensor_data[iSensorData](data,
 					sensorsdata);
 			else

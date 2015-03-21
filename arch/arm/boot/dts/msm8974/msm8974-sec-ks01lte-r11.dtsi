@@ -192,7 +192,7 @@
 		   SEC_BATTERY_FULL_CONDITION_VCELL */
 		battery,full_condition_type = <13>;
 		battery,full_condition_soc = <97>;
-		battery,full_condition_vcell = <4300>;
+		battery,full_condition_vcell = <4250>;
 
 		battery,recharge_check_count = <1>;
 		battery,recharge_condition_type = <4>; /* SEC_BATTERY_RECHARGE_CONDITION_VCELL */
@@ -324,6 +324,8 @@
 			reg = <0x20>;
 			interrupt-parent = <&msmgpio>;
 			interrupts = <80 0>;
+			qcom,noise-rjct-scl = <1>;
+			qcom,noise-rjct-sda = <1>;
 			synaptics,tsppwr_en = <&pm8941_gpios 9 0x1>;
 			synaptics,irq-gpio = <&msmgpio 80 0x00>;
 			synaptics,i2c-pull-up = <1>;
@@ -394,7 +396,6 @@
 	sound {
 		qcom,model = "msm8974-taiko-cdp-snd-card";
 		qcom,hdmi-audio-rx;
-		qcom,us-euro-gpios = <&pm8941_gpios 20 0>;
 		qcom,cdc-micbias2-headset-only;
 	};
 

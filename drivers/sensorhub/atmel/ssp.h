@@ -34,8 +34,8 @@
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/timer.h>
-#include <linux/regulator/consumer.h>
 #include <linux/android_alarm.h>
+#include <linux/regulator/consumer.h>
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #undef CONFIG_HAS_EARLYSUSPEND
@@ -95,7 +95,7 @@ enum {
 enum {
 	SENSOR_NS_DELAY_FASTEST = 10000000,	/* 10msec */
 	SENSOR_NS_DELAY_GAME = 20000000,	/* 20msec */
-	SENSOR_NS_DELAY_UI = 66667000,		/* 66.667msec */
+	SENSOR_NS_DELAY_UI =  66667000,		/* 66.667msec */
 	SENSOR_NS_DELAY_NORMAL = 200000000,	/* 200msec */
 };
 
@@ -213,16 +213,16 @@ enum {
 #define MAX_GYRO	32767
 #define MIN_GYRO	-32768
 
+/* report timestamp from kernel (for Android L) */
+#define TIME_LO_MASK 0x00000000FFFFFFFF
+#define TIME_HI_MASK 0xFFFFFFFF00000000
+#define TIME_HI_SHIFT 32
+
 /* sensor combination, data->sns_combination */
 enum {
 	INVENSENSE_MPU6500_AG = 0,
 	STM_K330_AG,
 };
-
-/* report timestamp from kernel (for Android L) */
-#define TIME_LO_MASK 0x00000000FFFFFFFF
-#define TIME_HI_MASK 0xFFFFFFFF00000000
-#define TIME_HI_SHIFT 32
 
 /* SSP_INSTRUCTION_CMD */
 enum {
@@ -297,8 +297,8 @@ struct sensor_value {
 		u8 prox[4];
 		s16 data[9];
 		s32 pressure[3];
-		u8 sig_motion;
 		u8 step_det;
+		u8 sig_motion;
 		u32 step_diff;
 	};
 	u64 timestamp;

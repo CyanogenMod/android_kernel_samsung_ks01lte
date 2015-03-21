@@ -22,7 +22,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: siutils.c 506459 2014-10-06 08:12:35Z $
+ * $Id: siutils.c 509862 2014-10-22 06:25:12Z $
  */
 
 #include <bcm_cfg.h>
@@ -1850,6 +1850,42 @@ socram_banksize(si_info_t *sii, sbsocramregs_t *regs, uint8 idx, uint8 mem_type)
 	return banksize;
 }
 
+void si_socram_set_bankpda(si_t *sih, uint32 bankidx, uint32 bankpda)
+{
+	si_info_t *sii = SI_INFO(sih);
+	si_cores_info_t *cores_info = (si_cores_info_t *)sii->cores_info;
+	uint origidx;
+	uint intr_val = 0;
+	sbsocramregs_t *regs;
+	bool wasup;
+	uint corerev;
+
+	/* Block ints and save current core */
+	INTR_OFF(sii, intr_val);
+	origidx = si_coreidx(sih);
+
+	/* Switch to SOCRAM core */
+	if (!(regs = si_setcore(sih, SOCRAM_CORE_ID, 0)))
+		goto done;
+
+	if (!(wasup = si_iscoreup(sih)))
+		si_core_reset(sih, 0, 0);
+
+	corerev = si_corerev(sih);
+	if (corerev >= 16) {
+		W_REG(sii->osh, &regs->bankidx, bankidx);
+		W_REG(sii->osh, &regs->bankpda, bankpda);
+	}
+
+	/* Return to previous state and core */
+	if (!wasup)
+		si_core_disable(sih, 0);
+	si_setcoreidx(sih, origidx);
+
+done:
+	INTR_RESTORE(sii, intr_val);
+}
+
 void
 si_socdevram(si_t *sih, bool set, uint8 *enable, uint8 *protect, uint8 *remap)
 {
@@ -2255,6 +2291,10 @@ si_socram_srmem_size(si_t *sih)
 
 	if ((CHIPID(sih->chip) == BCM4334_CHIP_ID) && (CHIPREV(sih->chiprev) < 2)) {
 		return (32 * 1024);
+	}
+
+	if (CHIPID(sih->chip) == BCM43430_CHIP_ID) {
+		return (64 * 1024);
 	}
 
 	/* Block ints and save current core */

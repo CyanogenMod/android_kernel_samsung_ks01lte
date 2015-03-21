@@ -58,6 +58,7 @@
 
 extern int poweroff_charging;
 
+
 typedef struct _msm_cpp_timer_data_t {
 	struct cpp_device *cpp_dev;
 	struct msm_cpp_frame_info_t *processed_frame;
@@ -270,7 +271,7 @@ static unsigned long msm_cpp_queue_buffer_info(struct cpp_device *cpp_dev,
 		goto QUEUE_BUFF_ERROR1;
 	}
 	rc = ion_map_iommu(cpp_dev->client, buff->map_info.ion_handle,
-		cpp_dev->domain_num, 0, SZ_4K, 0,
+		cpp_dev->domain_num, 0, (dma_addr_t)SZ_4K, 0,
 		(dma_addr_t *)&buff->map_info.phy_addr,
 		&buff->map_info.len, 0, 0);
 	if (rc < 0) {
@@ -1477,6 +1478,11 @@ static int msm_cpp_cfg(struct cpp_device *cpp_dev,
 	if (cpp_dev->hw_info.cpp_hw_version == 0x10010000) {
 		fw_version_1_2_x = 2;
 	}
+#ifdef CONFIG_MACH_CHAGALL_KDI
+	else if (cpp_dev->hw_info.cpp_hw_version == CPP_HW_VERSION_1_1_1) {
+		fw_version_1_2_x = 2;
+	}
+#endif
 	for (i = 0; i < num_stripes; i++) {
 		cpp_frame_msg[(133 + fw_version_1_2_x) + i * 27] +=
 			(uint32_t) in_phyaddr;
@@ -2007,14 +2013,13 @@ static int __devinit cpp_probe(struct platform_device *pdev)
 {
 	struct cpp_device *cpp_dev;
 	int rc = 0;
-	
-	// We'll move this modification after studying with QC
+
 	if (poweroff_charging == 1)
 	{
 		pr_err("forced return cpp_probe at lpm mode\n");
 		return rc;
 	}
-	
+
 	cpp_dev = kzalloc(sizeof(struct cpp_device), GFP_KERNEL);
 	if (!cpp_dev) {
 		pr_err("no enough memory\n");

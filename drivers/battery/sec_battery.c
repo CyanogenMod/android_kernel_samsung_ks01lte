@@ -808,6 +808,7 @@ static bool sec_bat_voltage_check(struct sec_battery_info *battery)
 
 	if ((battery->status == POWER_SUPPLY_STATUS_FULL) && \
 		battery->is_recharging) {
+		value.intval = 0;
 		psy_do_property(battery->pdata->fuelgauge_name, get,
 			POWER_SUPPLY_PROP_CAPACITY, value);
 		if (value.intval <
@@ -1060,6 +1061,7 @@ static bool sec_bat_temperature_check(
 				struct sec_battery_info *battery)
 {
 	int temp_value;
+	int pre_health;
 
 	if (battery->status == POWER_SUPPLY_STATUS_DISCHARGING) {
 		dev_dbg(battery->dev,
@@ -1089,6 +1091,7 @@ static bool sec_bat_temperature_check(
 			"%s: Invalid Temp Check Type\n", __func__);
 		return true;
 	}
+	pre_health = battery->health;
 
 	if (temp_value >= battery->temp_highlimit_threshold) {
 		if (battery->health != POWER_SUPPLY_HEALTH_OVERHEATLIMIT) {
@@ -1160,6 +1163,12 @@ static bool sec_bat_temperature_check(
 		else
 			battery->health = POWER_SUPPLY_HEALTH_GOOD;
 	}
+	if(pre_health != battery->health){
+		battery->health_change = true;
+		dev_info(battery->dev,"%s: health_change true\n", __func__);
+	}
+	else
+		battery->health_change = false;
 
 	if ((battery->health == POWER_SUPPLY_HEALTH_OVERHEAT) ||
 		(battery->health == POWER_SUPPLY_HEALTH_COLD) ||
@@ -1235,7 +1244,6 @@ static void sec_bat_event_program_alarm(
 	kt = ns_to_ktime(SEC_BAT_CHECK_PERIOD);
 	alarm_start_relative(&battery->event_termination_alarm, kt);
 }
-
 static enum alarmtimer_restart
 sec_bat_event_expired_timer_func(struct alarm *alarm, ktime_t now)
 {
@@ -2201,7 +2209,7 @@ static void sec_bat_monitor_work(
 		battery->polling_in_sleep = false;
 		if ((battery->status == POWER_SUPPLY_STATUS_DISCHARGING) &&
 			(battery->ps_enable != true)) {
-			if ((unsigned long)(c_ts.tv_sec - old_ts.tv_sec) < 10 * 60) {
+			if ((unsigned long)(c_ts.tv_sec - old_ts.tv_sec) < 5 * 60) {
 				pr_info("Skip monitor_work(%ld)\n",
 						c_ts.tv_sec - old_ts.tv_sec);
 				goto skip_monitor;
@@ -2245,7 +2253,7 @@ static void sec_bat_monitor_work(
 #if defined(CONFIG_BATTERY_SWELLING)
 	sec_bat_swelling_check(battery, battery->temperature);
 
-	if (battery->swelling_mode)
+	if (battery->swelling_mode && !battery->swelling_block)
 		sec_bat_swelling_fullcharged_check(battery);
 	else
 #endif
@@ -2295,7 +2303,7 @@ continue_monitor:
 skip_monitor:
 	sec_bat_set_polling(battery);
 
-	if (battery->capacity <= 0)
+	if (battery->capacity <= 0 || battery->health_change)
 		wake_lock_timeout(&battery->monitor_wake_lock, HZ * 5);
 	else
 		wake_unlock(&battery->monitor_wake_lock);
@@ -2373,7 +2381,7 @@ static void sec_bat_cable_work(struct work_struct *work)
 		((battery->pdata->cable_check_type &
 		SEC_BATTERY_CABLE_CHECK_NOINCOMPATIBLECHARGE) &&
 		battery->cable_type == POWER_SUPPLY_TYPE_UNKNOWN)) {
-		if (battery->status == POWER_SUPPLY_STATUS_FULL) {
+		if (battery->status == POWER_SUPPLY_STATUS_FULL || battery->capacity == 100) {
 			/* To prevent soc jumping to 100 when cable is removed on progressing
 			   forced full-charged sequence */
 #if defined(CONFIG_AFC_CHARGER_MODE)
@@ -4475,6 +4483,7 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 	battery->store_mode = false;
 	battery->slate_mode = false;
 	battery->is_hc_usb = false;
+	battery->health_change = false;
 
 	battery->prev_reported_soc = -EINVAL;
 	if (battery->pdata->charger_name == NULL)
