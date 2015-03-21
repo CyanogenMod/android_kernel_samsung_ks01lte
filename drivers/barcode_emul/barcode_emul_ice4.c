@@ -63,6 +63,7 @@
 #define SEC_FPGA_MAX_FW_PATH	255
 #define SEC_FPGA_FW_FILENAME		"i2c_top_bitmap.bin"
 
+#define IRDA_BUFFER_MAX_SIZE	255
 #define BARCODE_I2C_ADDR	0x6C
 #define FIRMWARE_MAX_RETRY	2
 #define GPIO_FPGA_MAIN_CLK 26
@@ -75,9 +76,6 @@
 #define MAX_SIZE		2048
 #define READ_LENGTH	8
 #endif
-
-#define TIME_LIMIT_MSEC 300
-#define tm(time) (u32)ktime_to_us(time)
 
 struct barcode_emul_data {
 	struct i2c_client		*client;
@@ -719,7 +717,7 @@ static ssize_t barcode_ver_check_show(struct device *dev,
 	barcode_emul_read(data->client, FW_VER_ADDR, 1, &fw_ver);
 	fw_ver = (fw_ver >> 5) & 0x7;
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", fw_ver+14);
+	return snprintf(buf, IRDA_BUFFER_MAX_SIZE, "%d\n", fw_ver+14);
 }
 
 static DEVICE_ATTR(barcode_ver_check, 0664, barcode_ver_check_show, NULL);
@@ -732,7 +730,7 @@ static ssize_t barcode_led_status_show(struct device *dev,
 	u8 status;
 	barcode_emul_read(data->client, BEAM_STATUS_ADDR, 1, &status);
 	status = status & 0x1;
-	return snprintf(buf, PAGE_SIZE, "%d\n", status);
+	return snprintf(buf, IRDA_BUFFER_MAX_SIZE, "%d\n", status);
 }
 static DEVICE_ATTR(barcode_led_status, 0664, barcode_led_status_show, NULL);
 
@@ -767,12 +765,8 @@ static void ir_remocon_work(struct barcode_emul_data *ir_data, int count)
 
 	int buf_size = count+2;
 	int ret;
-//	int sleep_timing;
-//	int end_data;
-	int actual_time;
 	int emission_time;
 	int ack_pin_onoff;
-	ktime_t t1,t2;
 
 	if (count_number >= 100)
 		count_number = 0;
@@ -841,36 +835,10 @@ static void ir_remocon_work(struct barcode_emul_data *ir_data, int count)
 	}
 */
 	data->count = 2;
-#if 0
-	end_data = data->i2c_block_transfer.data[count-2] << 8
-		| data->i2c_block_transfer.data[count-1];
-
 	emission_time = \
-		(1000 * (data->ir_sum - end_data) / (data->ir_freq)) + 10;
-	sleep_timing = emission_time - 130;
-	if (sleep_timing > 0)
-		msleep(sleep_timing);
-#endif
-/*
-	printk(KERN_INFO "%s: sleep_timing = %d\n", __func__, sleep_timing);
-*/
-	emission_time = \
-		(1000 * (data->ir_sum) / (data->ir_freq));
-/*	
+		(1000 * (data->ir_sum) / (data->ir_freq)) + 50;
 	if (emission_time > 0)
-		msleep(emission_time);*/
-	
-	actual_time = 0;
-	t1 = ktime_get();
-	while((gpio_get_value(g_pdata->irda_irq) == 0) && (actual_time <= emission_time)) {
-		int diff;
-		t2 = ktime_get();
-		diff = (tm(t2) - tm(t1))/1000;
-		msleep(10);
-		actual_time += 10;
-		if(diff > TIME_LIMIT_MSEC)
-			break;
-	}
+		msleep(emission_time);
 		pr_barcode("%s: emission_time = %d\n",
 					__func__, emission_time);
 

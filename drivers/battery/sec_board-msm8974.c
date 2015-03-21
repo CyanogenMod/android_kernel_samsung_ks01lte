@@ -92,6 +92,11 @@ static struct battery_data_t samsung_battery_data[] = {
 		.RCOMP_charging = 0x70,
 		.temp_cohot = -375,
 		.temp_cocold = -3975,
+#elif defined(CONFIG_MACH_KS01EUR)
+		.RCOMP0 = 0x73,
+		.RCOMP_charging = 0x79,
+		.temp_cohot = -850,
+		.temp_cocold = -4200,
 #elif defined(CONFIG_MACH_KS01SKT) || defined(CONFIG_MACH_KS01KTT) || \
 		defined(CONFIG_MACH_KS01LGT)
 		.RCOMP0 = 0x70,
@@ -179,8 +184,11 @@ static struct battery_data_t samsung_battery_data[] = {
 	}
 };
 #endif
-
-#if defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT) || \
+#if defined(CONFIG_MACH_KLTE_CTC)
+#define CAPACITY_MAX			980
+#define CAPACITY_MAX_MARGIN	50
+#define CAPACITY_MIN			-7
+#elif defined(CONFIG_SEC_K_PROJECT) || defined(CONFIG_SEC_KACTIVE_PROJECT) || \
 	defined(CONFIG_SEC_KSPORTS_PROJECT)
 #define CAPACITY_MAX			990
 #define CAPACITY_MAX_MARGIN	50
@@ -1095,6 +1103,21 @@ static sec_bat_adc_table_data_t chg_temp_table[] = {
 #define TEMP_LOW_THRESHOLD_LPM      -50
 #define TEMP_LOW_RECOVERY_LPM         0
 
+#elif defined(CONFIG_MACH_H3G_CHN_CMCC)
+#define TEMP_HIGH_THRESHOLD_EVENT	600
+#define TEMP_HIGH_RECOVERY_EVENT	460
+#define TEMP_LOW_THRESHOLD_EVENT	-45
+#define TEMP_LOW_RECOVERY_EVENT	0
+#define TEMP_HIGH_THRESHOLD_NORMAL	600
+#define TEMP_HIGH_RECOVERY_NORMAL	460
+#define TEMP_LOW_THRESHOLD_NORMAL	-45
+#define TEMP_LOW_RECOVERY_NORMAL	0
+#define TEMP_HIGH_THRESHOLD_LPM		600
+#define TEMP_HIGH_RECOVERY_LPM		460
+#define TEMP_LOW_THRESHOLD_LPM		-45
+#define TEMP_LOW_RECOVERY_LPM		0
+
+
 #elif defined(CONFIG_MACH_HLTEEUR)
 #define TEMP_HIGH_THRESHOLD_EVENT	600
 #define TEMP_HIGH_RECOVERY_EVENT	400
@@ -1108,6 +1131,7 @@ static sec_bat_adc_table_data_t chg_temp_table[] = {
 #define TEMP_HIGH_RECOVERY_LPM		400
 #define TEMP_LOW_THRESHOLD_LPM		-45
 #define TEMP_LOW_RECOVERY_LPM		0
+
 
 /* H Project*/
 #elif defined(CONFIG_SEC_H_PROJECT)
@@ -1153,7 +1177,20 @@ static sec_bat_adc_table_data_t chg_temp_table[] = {
 #define TEMP_LOW_THRESHOLD_LPM		-50
 #define TEMP_LOW_RECOVERY_LPM		0
 #elif defined(CONFIG_SEC_KS01_PROJECT)
-#if defined(CONFIG_MACH_KS01SKT) || defined(CONFIG_MACH_KS01LGT)
+#if defined(CONFIG_MACH_KS01EUR)
+#define TEMP_HIGH_THRESHOLD_EVENT   600
+#define TEMP_HIGH_RECOVERY_EVENT	460
+#define TEMP_LOW_THRESHOLD_EVENT	-50
+#define TEMP_LOW_RECOVERY_EVENT	0
+#define TEMP_HIGH_THRESHOLD_NORMAL	600
+#define TEMP_HIGH_RECOVERY_NORMAL	460
+#define TEMP_LOW_THRESHOLD_NORMAL	-50
+#define TEMP_LOW_RECOVERY_NORMAL	0
+#define TEMP_HIGH_THRESHOLD_LPM		600
+#define TEMP_HIGH_RECOVERY_LPM		460
+#define TEMP_LOW_THRESHOLD_LPM		-50
+#define TEMP_LOW_RECOVERY_LPM		0
+#elif defined(CONFIG_MACH_KS01SKT) || defined(CONFIG_MACH_KS01LGT)
 #define TEMP_HIGH_THRESHOLD_EVENT	670
 #define TEMP_HIGH_RECOVERY_EVENT	420
 #define TEMP_LOW_THRESHOLD_EVENT	-45

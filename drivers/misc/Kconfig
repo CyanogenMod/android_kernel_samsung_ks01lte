@@ -433,12 +433,6 @@ config SENSORS_APDS990X
 	   To compile this driver as a module, choose M here: the
 	   module will be called apds990x. If unsure, say N here.
 
-config GAMMA_CONTROL
-	bool "Gamma Control for OLED"
-	default y
-	help
-	  This adds full support for shifting RGB panel colors.
-
 config SAMSUNG_JACK
 	bool "3.5 PI Jack driver for Samsung devices"
 	depends on INPUT
@@ -1075,4 +1069,5 @@ source "drivers/misc/lis3lv02d/Kconfig"
 source "drivers/misc/carma/Kconfig"
 source "drivers/misc/altera-stapl/Kconfig"
 source "drivers/misc/modem_if/Kconfig"
+source "drivers/misc/dualwave/Kconfig"
 endmenu

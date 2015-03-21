@@ -157,6 +157,8 @@ enum dsi_pm_type {
 #define DSI_BTA_TERM    BIT(1)
 #define DSI_CMD_TERM    BIT(0)
 
+extern int mdss_dsi_clk_on;
+
 extern struct device dsi_dev;
 extern u32 dsi_irq;
 extern struct mdss_dsi_ctrl_pdata *ctrl_list[];
@@ -290,6 +292,7 @@ struct mdss_dsi_ctrl_pdata {
 	u8 ctrl_state;
 	int panel_mode;
 	int irq_cnt;
+	int mdss_dsi_clk_on;
 	int rst_gpio;
 	int disp_en_gpio;
 	int disp_te_gpio;

@@ -42,6 +42,7 @@
 		qcom,mdss-pan-dsi-dlane-swap = <0>;
 		qcom,mdss-pan-dsi-t-clk = <0x1c 0x04>;
 		qcom,mdss-pan-dsi-stream = <0>;
+		qcom,mdss-pan-dsi-tx-eot-append = <1>;
 		qcom,mdss-pan-dsi-mdp-tr = <0x0>;
 		qcom,mdss-pan-dsi-dma-tr = <0x04>;
 		qcom,mdss-pan-dsi-frame-rate = <60>;
@@ -110,6 +111,7 @@
 			like below  READ LENGH = 0x21
 		 */
 			samsung,panel-nv-mtp-read-cmds = [ 06 01 00 00 00 00 01 c8 21 00];
+			samsung,panel-nv-mdate-read-cmds = [ 06 01 00 00 00 00 01 c8 02 28];
 			samsung,panel-nv-mtp-read-hbm-cmds = [ 06 01 00 00 00 00 01 c8 06 21];	/* read C8 34~39th , 33=0x21*/
 			samsung,panel-nv-mtp-read-hbm2-cmds = [ 06 01 00 00 00 00 01 c8 0F 48];	/* read C8 73~87th , 72=0x48*/
 			samsung,panel-nv-mdnie-read-cmds = [ 06 01 00 00 00 00 01 A1 04 00];

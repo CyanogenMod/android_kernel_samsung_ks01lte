@@ -124,7 +124,7 @@ static int msm_csiphy_lane_config(struct csiphy_device *csiphy_dev,
 
 		if (csiphy_dev->hw_version == CSIPHY_VERSION_V3) 
 		msm_camera_io_w(0xff, csiphybase + MIPI_CSIPHY_LNn_CFG4_ADDR+0x40*j); 
-        
+
 		j++;
 		lane_mask >>= 1;
 	}
