@@ -121,6 +121,7 @@
 /include/ "msm8974-mdss-sec.dtsi"
 /include/ "msm8974-smp2p.dtsi"
 /include/ "msm8974-bus.dtsi"
+/include/ "msm-rdbg.dtsi"
 
 &soc {
 	#address-cells = <1>;
@@ -922,6 +923,10 @@
 		qcom,sec-auxpcm-gpio-sync = <&msmgpio 80 0>;
 		qcom,sec-auxpcm-gpio-din  = <&msmgpio 81 0>;
 		qcom,sec-auxpcm-gpio-dout = <&msmgpio 82 0>;
+		qcom,sec-auxpcm-gpio-clk_duos  = <&msmgpio 58 0>;
+		qcom,sec-auxpcm-gpio-sync_duos = <&msmgpio 59 0>;
+		qcom,sec-auxpcm-gpio-din_duos  = <&msmgpio 60 0>;
+		qcom,sec-auxpcm-gpio-dout_duos = <&msmgpio 61 0>;
 	};
 
 	spmi_bus: qcom,spmi@fc4c0000 {
@@ -2510,19 +2515,19 @@
 		compatible = "qcom,msm-thermal";
 		qcom,sensor-id = <5>;
 		qcom,poll-ms = <250>;
-		qcom,limit-temp = <60>;
+		qcom,limit-temp = <80>;
 		qcom,temp-hysteresis = <10>;
 		qcom,therm-reset-temp = <115>;
 		qcom,freq-step = <2>;
 		qcom,freq-control-mask = <0xf>;
-		qcom,core-limit-temp = <65>;
+		qcom,core-limit-temp = <85>;
 		qcom,core-temp-hysteresis = <10>;
 		qcom,core-control-mask = <0xe>;
-		qcom,hotplug-temp = <100>;
+		qcom,hotplug-temp = <110>;
 		qcom,hotplug-temp-hysteresis = <20>;
 		qcom,cpu-sensors = "tsens_tz_sensor5", "tsens_tz_sensor6",
 				"tsens_tz_sensor7", "tsens_tz_sensor8";
-		qcom,freq-mitigation-temp = <100>;
+		qcom,freq-mitigation-temp = <110>;
 		qcom,freq-mitigation-temp-hysteresis = <20>;
 		qcom,freq-mitigation-value = <960000>;
 		qcom,freq-mitigation-control-mask = <0x01>;
