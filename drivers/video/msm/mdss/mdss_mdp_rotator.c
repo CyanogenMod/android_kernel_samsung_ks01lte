@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -283,7 +283,9 @@ static int mdss_mdp_rotator_queue_sub(struct mdss_mdp_rotator_session *rot,
 		pr_err("unable to queue rot data\n");
 		goto error;
 	}
+	ATRACE_BEGIN("rotator_kickoff");
 	ret = mdss_mdp_rotator_kickoff(rot_ctl, rot, dst_data);
+	ATRACE_END("rotator_kickoff");
 
 	return ret;
 error:
@@ -473,7 +475,7 @@ int mdss_mdp_rotator_setup(struct msm_fb_data_type *mfd,
 			goto rot_err;
 		}
 
-		if (work_pending(&rot->commit_work)) {
+		if (work_busy(&rot->commit_work)) {
 			mutex_unlock(&rotator_lock);
 			flush_work(&rot->commit_work);
 			mutex_lock(&rotator_lock);
@@ -580,9 +582,9 @@ static int mdss_mdp_rotator_finish(struct mdss_mdp_rotator_session *rot)
 
 	rot_pipe = rot->pipe;
 	if (rot_pipe) {
-		if (work_pending(&rot->commit_work)) {
+		if (work_busy(&rot->commit_work)) {
 			mutex_unlock(&rotator_lock);
-			cancel_work_sync(&rot->commit_work);
+			flush_work(&rot->commit_work);
 			mutex_lock(&rotator_lock);
 		}
 

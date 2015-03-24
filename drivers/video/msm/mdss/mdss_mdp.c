@@ -55,7 +55,10 @@
 #include "mdss_panel.h"
 #include "mdss_debug.h"
 
-#define AUTOSUSPEND_TIMEOUT_MS  200
+#define CREATE_TRACE_POINTS
+#include <trace/mdss_mdp_trace.h>
+
+#define AUTOSUSPEND_TIMEOUT_MS	200
 
 struct mdss_data_type *mdss_res;
 
@@ -122,12 +125,12 @@ struct mdss_hw mdss_mdp_hw = {
 	.irq_handler = mdss_mdp_isr,
 };
 
-#define MDP_REG_BUS_VECTOR_ENTRY(ab_val, ib_val)		 \
-	{						 \
-		.src = MSM_BUS_MASTER_SPDM,		 \
-		.dst = MSM_BUS_SLAVE_IMEM_CFG,		 \
-		.ab = (ab_val),				 \
-		.ib = (ib_val),				 \
+#define MDP_REG_BUS_VECTOR_ENTRY(ab_val, ib_val)		\
+	{						\
+		.src = MSM_BUS_MASTER_SPDM,		\
+		.dst = MSM_BUS_SLAVE_IMEM_CFG,		\
+		.ab = (ab_val),				\
+		.ib = (ib_val),				\
 	}
 
 #define SZ_37_5M (37500000 * 8)
@@ -382,7 +385,7 @@ static void mdss_mdp_bus_scale_unregister(struct mdss_data_type *mdata)
 
 	if (mdata->bus_hdl)
 		msm_bus_scale_unregister_client(mdata->bus_hdl);
-	
+
 	pr_debug("unregister reg_bus_hdl=%x\n", mdata->reg_bus_hdl);
 
 	if (mdata->reg_bus_hdl) {
@@ -587,8 +590,8 @@ void mdss_mdp_hist_irq_disable(u32 irq)
 
 /**
  * mdss_mdp_irq_disable_nosync() - disable mdp irq
- * @intr_type: mdp interface type
- * @intf_num:  mdp interface num
+ * @intr_type:	mdp interface type
+ * @intf_num:	mdp interface num
  *
  * This fucntion is called from interrupt context
  * mdp_lock is already held at up stream (mdss_irq_handler)
@@ -935,7 +938,7 @@ static int mdss_mdp_irq_clk_setup(struct mdss_data_type *mdata)
 
 	/* vsync_clk is optional for non-smart panels */
 	mdss_mdp_irq_clk_register(mdata, "vsync_clk", MDSS_CLK_MDP_VSYNC);
-	
+
 	mdss_mdp_set_clk_rate(MDP_CLK_DEFAULT_RATE);
 	pr_debug("mdp clk rate=%ld\n", mdss_mdp_get_clk_rate(MDSS_CLK_MDP_SRC));
 
@@ -948,9 +951,8 @@ int mdss_iommu_attach(struct mdss_data_type *mdata)
 	struct mdss_iommu_map_type *iomap;
 	int i, rc = 0;
 
-#if defined (CONFIG_FB_MSM_MDSS_DSI_DBG)
 	MDSS_XLOG(mdata->iommu_attached);
-#endif
+
 	if (mdata->iommu_attached) {
 		pr_debug("mdp iommu already attached\n");
 		goto end;
@@ -988,9 +990,8 @@ int mdss_iommu_dettach(struct mdss_data_type *mdata)
 	struct mdss_iommu_map_type *iomap;
 	int i;
 
-#if defined (CONFIG_FB_MSM_MDSS_DSI_DBG)
 	MDSS_XLOG(mdata->iommu_attached);
-#endif
+
 	if (!mdata->iommu_attached) {
 		pr_debug("mdp iommu already dettached\n");
 		return 0;
@@ -1187,7 +1188,6 @@ int mdss_hw_init(struct mdss_data_type *mdata)
 
 	mdata->nmax_concurrent_ad_hw = (mdata->mdp_rev <= MDSS_MDP_HW_REV_102) ?
 									1 : 2;
-
 	pr_debug("MDP hw init done\n");
 
 	return 0;
@@ -1320,8 +1320,6 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	int rc;
 	struct mdss_data_type *mdata;
 
-	pr_info("%s : ++ \n",__func__);
-
 	if (!pdev->dev.of_node) {
 		pr_err("MDP driver only supports device tree probe\n");
 		return -ENOTSUPP;
@@ -1446,8 +1444,6 @@ probe_done:
 		mdss_res = NULL;
 	}
 
-	pr_info("%s : -- \n",__func__);
-
 	return rc;
 }
 
@@ -1536,7 +1532,6 @@ static int mdss_mdp_get_pan_cfg(struct mdss_panel_cfg *pan_cfg)
 		return -EINVAL;
 
 	strlcpy(pan_name, &pan_cfg->arg_cfg[0], sizeof(pan_cfg->arg_cfg));
-#if 0
 	if (pan_name[0] == '0') {
 		pan_cfg->lk_cfg = false;
 	} else if (pan_name[0] == '1') {
@@ -1547,9 +1542,6 @@ static int mdss_mdp_get_pan_cfg(struct mdss_panel_cfg *pan_cfg)
 		pan_cfg->pan_intf = MDSS_PANEL_INTF_INVALID;
 		return -EINVAL;
 	}
-#else
-	pan_cfg->lk_cfg = false;
-#endif
 
 	/* skip lk cfg and delimiter; ex: "0:" */
 	strlcpy(pan_name, &pan_name[2], MDSS_MAX_PANEL_LEN);
@@ -1580,7 +1572,6 @@ static int mdss_mdp_get_pan_cfg(struct mdss_panel_cfg *pan_cfg)
 
 	rc = mdss_mdp_get_pan_intf(pan_intf_str);
 	pan_cfg->pan_intf = (rc < 0) ?  MDSS_PANEL_INTF_INVALID : rc;
-
 	return 0;
 }
 
@@ -2404,7 +2395,7 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 	mdata->has_no_lut_read = of_property_read_bool(pdev->dev.of_node,
 		"qcom,mdss-no-lut-read");
 	mdata->idle_pc_enabled = of_property_read_bool(pdev->dev.of_node,
-		"qcom,mdss-idle-power-collapse-enabled");
+		 "qcom,mdss-idle-power-collapse-enabled");
 
 	prop = of_find_property(pdev->dev.of_node, "batfet-supply", NULL);
 	mdata->batfet_required = prop ? true : false;
@@ -2457,7 +2448,7 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 			"qcom,max-bandwidth-high-kbps", &mdata->max_bw_high);
 	if (rc)
 		pr_debug("max bandwidth (high) property not specified\n");
-	
+
 	mdata->nclk_lvl = mdss_mdp_parse_dt_prop_len(pdev,
 					"qcom,mdss-clk-levels");
 
@@ -2623,7 +2614,6 @@ int mdss_panel_get_boot_cfg(void)
 
 	if (!mdss_res || !mdss_res->pan_cfg.init_done)
 		return -EPROBE_DEFER;
-
 	if (mdss_res->pan_cfg.lk_cfg)
 		rc = 1;
 	else
@@ -2854,7 +2844,7 @@ static int mdss_mdp_runtime_resume(struct device *dev)
 
 	dev_dbg(dev, "pm_runtime: resuming. active overlay cnt=%d\n",
 		atomic_read(&mdata->active_intf_cnt));
-	
+
 	/* do not resume panels when coming out of idle power collapse */
 	if (!mdata->idle_pc)
 		device_for_each_child(dev, &device_on, mdss_fb_suspres_panel);

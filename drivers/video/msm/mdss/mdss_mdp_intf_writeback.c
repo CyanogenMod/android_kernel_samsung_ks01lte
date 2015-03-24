@@ -116,9 +116,6 @@ static int mdss_mdp_writeback_addr_setup(struct mdss_mdp_writeback_ctx *ctx,
 
 	pr_debug("wb_num=%d addr=0x%pa\n", ctx->wb_num, &data.p[0].addr);
 
-	if (ctx->bwc_mode)
-		data.bwc_enabled = 1;
-
 	ret = mdss_mdp_data_check(&data, &ctx->dst_planes);
 	if (ret)
 		return ret;
@@ -388,7 +385,8 @@ exit:
 	return ret;
 }
 
-static int mdss_mdp_writeback_stop(struct mdss_mdp_ctl *ctl)
+static int mdss_mdp_writeback_stop(struct mdss_mdp_ctl *ctl,
+	int panel_power_state)
 {
 	struct mdss_mdp_writeback_ctx *ctx;
 	struct mdss_mdp_vsync_handler *t, *handle;

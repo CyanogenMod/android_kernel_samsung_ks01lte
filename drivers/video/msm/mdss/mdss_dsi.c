@@ -57,7 +57,7 @@ static int mdss_dsi_regulator_init(struct platform_device *pdev)
 	return rc;
 }
 
-static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
+static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -66,75 +66,151 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		ret = -EINVAL;
-		goto error;
+		goto end;
 	}
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
-	pr_debug("%s: enable=%d\n", __func__, enable);
 
-	if (pdata->panel_info.dynamic_switch_pending) {
-		/*
-		 * Current implementation of dynamic mode switch
-		 * relies on the GDSC to be disabled while switching.
-		 */
-		msm_dss_enable_vreg(
-			ctrl_pdata->power_data[DSI_CORE_PM].vreg_config,
-			ctrl_pdata->power_data[DSI_CORE_PM].num_vreg, enable);
-		return 0;
+	ret = mdss_dsi_panel_reset(pdata, 0);
+	if (ret) {
+		pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
+		ret = 0;
 	}
 
-	if (enable) {
-		for (i = 0; i < DSI_MAX_PM; i++) {
-			/*
-			 * Core power module will be enabled when the
-			 * clocks are enabled
-			 */
-			if (DSI_CORE_PM == i)
-				continue;
-			ret = msm_dss_enable_vreg(
-				ctrl_pdata->power_data[i].vreg_config,
-				ctrl_pdata->power_data[i].num_vreg, 1);
-			if (ret) {
-				pr_err("%s: failed to enable vregs for %s\n",
-					__func__, __mdss_dsi_pm_name(i));
-				goto error_enable;
-			}
-		}
-	} else {
-		ret = mdss_dsi_panel_reset(pdata, 0);
+	for (i = DSI_MAX_PM - 1; i >= 0; i--) {
+		/*
+		 * Core power module will be disabled when the
+		 * clocks are disabled
+		 */
+		if (DSI_CORE_PM == i)
+			continue;
+		ret = msm_dss_enable_vreg(
+			ctrl_pdata->power_data[i].vreg_config,
+			ctrl_pdata->power_data[i].num_vreg, 0);
+		if (ret)
+			pr_err("%s: failed to disable vregs for %s\n",
+				__func__, __mdss_dsi_pm_name(i));
+	}
+
+end:
+	return ret;
+}
+
+static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
+{
+	int ret = 0;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	int i = 0;
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	for (i = 0; i < DSI_MAX_PM; i++) {
+		/*
+		 * Core power module will be enabled when the
+		 * clocks are enabled
+		 */
+		if (DSI_CORE_PM == i)
+			continue;
+		ret = msm_dss_enable_vreg(
+			ctrl_pdata->power_data[i].vreg_config,
+			ctrl_pdata->power_data[i].num_vreg, 1);
 		if (ret) {
-			pr_err("%s: Panel reset failed. rc=%d\n",
-					__func__, ret);
+			pr_err("%s: failed to enable vregs for %s\n",
+				__func__, __mdss_dsi_pm_name(i));
 			goto error;
 		}
-
-		for (i = DSI_MAX_PM - 1; i >= 0; i--) {
-			/*
-			 * Core power module will be disabled when the
-			 * clocks are disabled
-			 */
-			if (DSI_CORE_PM == i)
-				continue;
-			ret = msm_dss_enable_vreg(
-				ctrl_pdata->power_data[i].vreg_config,
-				ctrl_pdata->power_data[i].num_vreg, 0);
-			if (ret)
-				pr_err("%s: failed to disable vregs for %s\n",
-					__func__, __mdss_dsi_pm_name(i));
-		}
 	}
 
-error_enable:
+	i--;
+
+	/*
+	 * If continuous splash screen feature is enabled, then we need to
+	 * request all the GPIOs that have already been configured in the
+	 * bootloader. This needs to be done irresepective of whether
+	 * the lp11_init flag is set or not.
+	 */
+	if (pdata->panel_info.cont_splash_enabled ||
+		!pdata->panel_info.mipi.lp11_init) {
+
+		ret = mdss_dsi_panel_reset(pdata, 1);
+		if (ret)
+			pr_err("%s: Panel reset failed. rc=%d\n",
+					__func__, ret);
+	}
+
+error:
 	if (ret) {
 		for (; i >= 0; i--)
 			msm_dss_enable_vreg(
 				ctrl_pdata->power_data[i].vreg_config,
 				ctrl_pdata->power_data[i].num_vreg, 0);
 	}
+	return ret;
+}
 
-error:
-	pr_debug("%s: --\n", __func__);
+static int mdss_dsi_panel_power_lp(struct mdss_panel_data *pdata, int enable)
+{
+	/* Panel power control when entering/exiting lp mode */
+	return 0;
+}
+
+static int mdss_dsi_panel_power_ctrl(struct mdss_panel_data *pdata,
+	int power_state)
+{
+	int ret;
+	struct mdss_panel_info *pinfo;
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+
+	pinfo = &pdata->panel_info;
+	pr_debug("%s: cur_power_state=%d req_power_state=%d\n", __func__,
+		pinfo->panel_power_state, power_state);
+
+	if (pinfo->panel_power_state == power_state) {
+		pr_debug("%s: no change needed\n", __func__);
+		return 0;
+	}
+
+	/*
+	 * If a dynamic mode switch is pending, the regulators should not
+	 * be turned off or on.
+	 */
+	if (pdata->panel_info.dynamic_switch_pending)
+		return 0;
+
+	switch (power_state) {
+	case MDSS_PANEL_POWER_OFF:
+		ret = mdss_dsi_panel_power_off(pdata);
+		break;
+	case MDSS_PANEL_POWER_ON:
+		if (mdss_dsi_is_panel_on_lp(pdata))
+			ret = mdss_dsi_panel_power_lp(pdata, false);
+		else
+			ret = mdss_dsi_panel_power_on(pdata);
+		break;
+	case MDSS_PANEL_POWER_LP1:
+	case MDSS_PANEL_POWER_LP2:
+		ret = mdss_dsi_panel_power_lp(pdata, true);
+		break;
+	default:
+		pr_err("%s: unknown panel power state requested (%d)\n",
+			__func__, power_state);
+		ret = -EINVAL;
+	}
+
+	if (!ret)
+		pinfo->panel_power_state = power_state;
+
 	return ret;
 }
 
@@ -335,14 +411,14 @@ static int mdss_dsi_get_panel_cfg(char *panel_cfg)
 		return 0;
 	}
 
-	pr_info("%s:%d: cfg:[%s]\n", __func__, __LINE__,
+	pr_debug("%s:%d: cfg:[%s]\n", __func__, __LINE__,
 		 pan_cfg->arg_cfg);
 	rc = strlcpy(panel_cfg, pan_cfg->arg_cfg,
 		     sizeof(pan_cfg->arg_cfg));
 	return rc;
 }
 
-static int mdss_dsi_off(struct mdss_panel_data *pdata)
+static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 {
 	int ret = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -353,35 +429,24 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
-	if (!pdata->panel_info.panel_power_on) {
-		pr_warn("%s:%d Panel already off.\n", __func__, __LINE__);
-		return 0;
-	}
-
-	pdata->panel_info.panel_power_on = 0;
-
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
 	mutex_lock(&ctrl_pdata->mutex);
 	panel_info = &ctrl_pdata->panel_data.panel_info;
-	pr_info("%s+: ctrl=%p ndx=%d\n", __func__,
-				ctrl_pdata, ctrl_pdata->ndx);
 
-	if((pdata->panel_info.type == MIPI_CMD_PANEL) && (ctrl_pdata->ndx == DSI_CTRL_0)) {
-		ret = gpio_tlmm_config(GPIO_CFG(
-					ctrl_pdata->disp_te_gpio, 0,
-					GPIO_CFG_INPUT,
-					GPIO_CFG_PULL_DOWN,
-					GPIO_CFG_2MA),
-					GPIO_CFG_ENABLE);
+	pr_debug("%s+: ctrl=%p ndx=%d power_state=%d\n",
+		__func__, ctrl_pdata, ctrl_pdata->ndx, power_state);
 
-		if (ret) {
-			pr_err("%s: unable to config tlmm = %d\n",
-				__func__, ctrl_pdata->disp_te_gpio);
-			gpio_free(ctrl_pdata->disp_te_gpio);
-			return -ENODEV;
-		}
+	if (power_state == panel_info->panel_power_state) {
+		pr_debug("%s: No change in power state %d -> %d\n", __func__,
+			panel_info->panel_power_state, power_state);
+		goto end;
+	}
+
+	if (mdss_panel_is_power_on(power_state)) {
+		pr_debug("%s: dsi_off with panel always on\n", __func__);
+		goto panel_power_ctrl;
 	}
 
 	if (pdata->panel_info.type == MIPI_CMD_PANEL)
@@ -395,11 +460,11 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata)
 
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
 
-	ret = mdss_dsi_panel_power_on(pdata, 0);
+panel_power_ctrl:
+	ret = mdss_dsi_panel_power_ctrl(pdata, power_state);
 	if (ret) {
-		mutex_unlock(&ctrl_pdata->mutex);
 		pr_err("%s: Panel power off failed\n", __func__);
-		return ret;
+		goto end;
 	}
 
 	if (panel_info->dynamic_fps
@@ -407,8 +472,9 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata)
 	    && (panel_info->new_fps != panel_info->mipi.frame_rate))
 		panel_info->mipi.frame_rate = panel_info->new_fps;
 
+end:
 	mutex_unlock(&ctrl_pdata->mutex);
-	pr_info("%s-:\n", __func__);
+	pr_debug("%s-:\n", __func__);
 
 	return ret;
 }
@@ -420,7 +486,8 @@ void mdss_dsi_ctrl_setup(struct mdss_panel_data *pdata)
 	struct mipi_panel_info *mipi;
 	u32 clk_rate;
 	u32 hbp, hfp, vbp, vfp, hspw, vspw, width, height;
-	u32 ystride, bpp, data, dst_bpp;
+	u32 ystride, bpp, dst_bpp;
+	u32 stream_ctrl, stream_total;
 	u32 dummy_xres, dummy_yres;
 	u32 hsync_period, vsync_period;
 
@@ -486,15 +553,25 @@ void mdss_dsi_ctrl_setup(struct mdss_panel_data *pdata)
 
 		ystride = width * bpp + 1;
 
+		if (pinfo->partial_update_enabled &&
+				mdss_dsi_is_panel_on(pdata) && pinfo->roi.w &&
+				pinfo->roi.h) {
+			stream_ctrl = (((pinfo->roi.w * bpp) + 1) << 16) |
+					(mipi->vc << 8) | DTYPE_DCS_LWRITE;
+			stream_total = pinfo->roi.h << 16 | pinfo->roi.w;
+		} else {
+			stream_ctrl = (ystride << 16) | (mipi->vc << 8) |
+					DTYPE_DCS_LWRITE;
+			stream_total = height << 16 | width;
+		}
+
 		/* DSI_COMMAND_MODE_MDP_STREAM_CTRL */
-		data = (ystride << 16) | (mipi->vc << 8) | DTYPE_DCS_LWRITE;
-		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x60, data);
-		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x58, data);
+		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x60, stream_ctrl);
+		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x58, stream_ctrl);
 
 		/* DSI_COMMAND_MODE_MDP_STREAM_TOTAL */
-		data = height << 16 | width;
-		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x64, data);
-		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x5C, data);
+		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x64, stream_total);
+		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x5C, stream_total);
 	}
 }
 
@@ -542,87 +619,59 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	struct mdss_panel_info *pinfo;
 	struct mipi_panel_info *mipi;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	u32 tmp;
+	int cur_power_state;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
 
-	if (pdata->panel_info.panel_power_on) {
-		pr_warn("%s:%d Panel already on.\n", __func__, __LINE__);
-		return 0;
-	}
-
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_info("%s+: ctrl=%p ndx=%d\n",
-				__func__, ctrl_pdata, ctrl_pdata->ndx);
+	cur_power_state = pdata->panel_info.panel_power_state;
+	pr_debug("%s+: ctrl=%p ndx=%d cur_power_state=%d\n", __func__,
+		ctrl_pdata, ctrl_pdata->ndx, cur_power_state);
 
 	pinfo = &pdata->panel_info;
-
-	if((pdata->panel_info.type == MIPI_CMD_PANEL) && (ctrl_pdata->ndx == DSI_CTRL_0)) {
-		ret = gpio_tlmm_config(GPIO_CFG(
-				ctrl_pdata->disp_te_gpio, 1,
-				GPIO_CFG_INPUT,
-				GPIO_CFG_PULL_DOWN,
-				GPIO_CFG_2MA),
-				GPIO_CFG_ENABLE);
-
-		if (ret) {
-			pr_err("%s: unable to config tlmm = %d\n",
-				__func__, ctrl_pdata->disp_te_gpio);
-			gpio_free(ctrl_pdata->disp_te_gpio);
-			return -ENODEV;
-		} else {
-			pr_info("%s: success [disp_te_gpio] gpio_ltmm_config..\n",__func__);
-		}
-	}
 	mipi = &pdata->panel_info.mipi;
 
-	ret = mdss_dsi_panel_power_on(pdata, 1);
+	if (mdss_dsi_is_panel_on_interactive(pdata)) {
+		pr_debug("%s: panel already on\n", __func__);
+		goto end;
+	}
+
+	ret = mdss_dsi_panel_power_ctrl(pdata, MDSS_PANEL_POWER_ON);
 	if (ret) {
-		pr_err("%s:Failed to enable vregs. rc=%d\n", __func__, ret);
+		pr_err("%s:Panel power on failed. rc=%d\n", __func__, ret);
 		return ret;
 	}
 
-	ret = mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 1);
-	if (ret) {
-		pr_err("%s: failed to enable bus clocks. rc=%d\n", __func__,
-			ret);
-		mdss_dsi_panel_power_on(pdata, 0);
-		pdata->panel_info.panel_power_on = 0;
-		return ret;
+	if (cur_power_state != MDSS_PANEL_POWER_OFF) {
+		pr_debug("%s: dsi_on from panel low power state\n", __func__);
+		goto end;
 	}
 
-	pdata->panel_info.panel_power_on = 1;
-
-	mdss_dsi_phy_sw_reset((ctrl_pdata->ctrl_base));
-	mdss_dsi_phy_init(pdata);
-	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 0);
-
+	/*
+	 * Enable DSI clocks.
+	 * This is also enable the DSI core power block and reset/setup
+	 * DSI phy
+	 */
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
 
-	mdss_dsi_ctrl_setup(pdata);
-	mdss_dsi_sw_reset(pdata);
-	mdss_dsi_host_init(pdata);
-
-	/* LP11 */
-	tmp = MIPI_INP((ctrl_pdata->ctrl_base) + 0xac);
-	tmp &= ~(1<<28);
-	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, 0x1F << 16);
-	wmb();
-	msleep(20);
-	/* LP11 */
-	mdss_dsi_panel_reset(pdata, 1);
-
-	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
+	/*
+	 * Issue hardware reset line after enabling the DSI clocks and data
+	 * data lanes for LP11 init
+	 */
+	if (mipi->lp11_init)
+		mdss_dsi_panel_reset(pdata, 1);
 
 	if (mipi->init_delay)
 		usleep(mipi->init_delay);
 
 	if (mipi->force_clk_lane_hs) {
+		u32 tmp;
+
 		tmp = MIPI_INP((ctrl_pdata->ctrl_base) + 0xac);
 		tmp |= (1<<28);
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
@@ -632,7 +681,8 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	if (pdata->panel_info.type == MIPI_CMD_PANEL)
 		mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
 
-	pr_info("%s-:\n", __func__);
+end:
+	pr_debug("%s-:\n", __func__);
 	return 0;
 }
 
@@ -642,8 +692,6 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 	struct mipi_panel_info *mipi;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 
-	pr_debug("%s+:\n", __func__);
-
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
@@ -652,6 +700,18 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 	mipi  = &pdata->panel_info.mipi;
+
+	pr_debug("%s+: ctrl=%p ndx=%d cur_blank_state=%d\n", __func__,
+		ctrl_pdata, ctrl_pdata->ndx, pdata->panel_info.blank_state);
+
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
+
+	if (pdata->panel_info.blank_state == MDSS_PANEL_BLANK_LOW_POWER) {
+		pr_debug("%s: dsi_unblank with panel always on\n", __func__);
+		if (ctrl_pdata->low_power_config)
+			ret = ctrl_pdata->low_power_config(pdata, false);
+		goto error;
+	}
 
 	if (!(ctrl_pdata->ctrl_state & CTRL_STATE_PANEL_INIT)) {
 		if (!pdata->panel_info.dynamic_switch_pending) {
@@ -670,18 +730,17 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 		mdss_dsi_set_tear_on(ctrl_pdata);
 
 error:
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
 	pr_debug("%s-:\n", __func__);
 
 	return ret;
 }
 
-static int mdss_dsi_blank(struct mdss_panel_data *pdata)
+static int mdss_dsi_blank(struct mdss_panel_data *pdata, int power_state)
 {
 	int ret = 0;
 	struct mipi_panel_info *mipi;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-
-	pr_debug("%s+:\n", __func__);
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -692,11 +751,24 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata)
 				panel_data);
 	mipi = &pdata->panel_info.mipi;
 
-        if (pdata->panel_info.type == MIPI_VIDEO_PANEL &&
+	pr_debug("%s+: ctrl=%p ndx=%d power_state=%d\n",
+		__func__, ctrl_pdata, ctrl_pdata->ndx, power_state);
+
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
+
+	if (mdss_panel_is_power_on_lp(power_state)) {
+		pr_debug("%s: low power state requested\n", __func__);
+		if (ctrl_pdata->low_power_config)
+			ret = ctrl_pdata->low_power_config(pdata, true);
+		goto error;
+	}
+
+	if (pdata->panel_info.type == MIPI_VIDEO_PANEL &&
 			ctrl_pdata->off_cmds.link_state == DSI_LP_MODE) {
 		mdss_dsi_sw_reset(pdata);
 		mdss_dsi_host_init(pdata);
 	}
+
 	mdss_dsi_op_mode_config(DSI_CMD_MODE, pdata);
 
 	if (pdata->panel_info.dynamic_switch_pending) {
@@ -726,6 +798,7 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata)
 	}
 
 error:
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
 	pr_debug("%s-:End\n", __func__);
 	return ret;
 }
@@ -755,7 +828,6 @@ int mdss_dsi_cont_splash_on(struct mdss_panel_data *pdata)
 		"Incorrect Ctrl state=0x%x\n", ctrl_pdata->ctrl_state);
 
 	mdss_dsi_reset(ctrl_pdata);
-
 	pr_debug("%s-:End\n", __func__);
 	return ret;
 }
@@ -871,7 +943,7 @@ static int mdss_dsi_dfps_config(struct mdss_panel_data *pdata, int new_fps)
 				panel_data);
 
 	if (!ctrl_pdata->panel_data.panel_info.dynamic_fps) {
-		pr_debug("%s: Dynamic fps not enabled for this panel\n",
+		pr_err("%s: Dynamic fps not enabled for this panel\n",
 					__func__);
 		return -EINVAL;
 	}
@@ -1012,6 +1084,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 {
 	int rc = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	int power_state;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -1037,14 +1110,16 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 			rc = mdss_dsi_unblank(pdata);
 		break;
 	case MDSS_EVENT_BLANK:
+		power_state = (int) (unsigned long) arg;
 		if (ctrl_pdata->off_cmds.link_state == DSI_HS_MODE)
-			rc = mdss_dsi_blank(pdata);
+			rc = mdss_dsi_blank(pdata, power_state);
 		break;
 	case MDSS_EVENT_PANEL_OFF:
+		power_state = (int) (unsigned long) arg;
 		ctrl_pdata->ctrl_state &= ~CTRL_STATE_MDP_ACTIVE;
 		if (ctrl_pdata->off_cmds.link_state == DSI_LP_MODE)
-			rc = mdss_dsi_blank(pdata);
-		rc = mdss_dsi_off(pdata);
+			rc = mdss_dsi_blank(pdata, power_state);
+		rc = mdss_dsi_off(pdata, power_state);
 		break;
 	case MDSS_EVENT_FB_REGISTERED:
 		if (ctrl_pdata->registered) {
@@ -1055,7 +1130,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		break;
 	case MDSS_EVENT_CONT_SPLASH_FINISH:
 		if (ctrl_pdata->off_cmds.link_state == DSI_LP_MODE)
-			rc = mdss_dsi_blank(pdata);
+			rc = mdss_dsi_blank(pdata, MDSS_PANEL_POWER_OFF);
 		ctrl_pdata->ctrl_state &= ~CTRL_STATE_MDP_ACTIVE;
 		rc = mdss_dsi_cont_splash_on(pdata);
 		break;
@@ -1075,7 +1150,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 	case MDSS_EVENT_CONT_SPLASH_BEGIN:
 		if (ctrl_pdata->off_cmds.link_state == DSI_HS_MODE) {
 			/* Panel is Enabled in Bootloader */
-			rc = mdss_dsi_blank(pdata);
+			rc = mdss_dsi_blank(pdata, MDSS_PANEL_POWER_OFF);
 		}
 		break;
 	case MDSS_EVENT_ENABLE_PARTIAL_ROI:
@@ -1093,10 +1168,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 					(int)(unsigned long) arg);
 		break;
 	default:
-		if(ctrl_pdata->event_handler)
-			rc = ctrl_pdata->event_handler(event);
-		else
-			pr_debug("%s: unhandled event=%d\n", __func__, event);
+		pr_debug("%s: unhandled event=%d\n", __func__, event);
 		break;
 	}
 	pr_debug("%s-:event=%d, rc=%d\n", __func__, event, rc);
@@ -1693,18 +1765,19 @@ int dsi_panel_device_register(struct device_node *pan_node,
 	ctrl_pdata->ctrl_state = CTRL_STATE_UNKNOWN;
 
 	if (pinfo->cont_splash_enabled) {
-		pinfo->panel_power_on = 1;
-		rc = mdss_dsi_panel_power_on(&(ctrl_pdata->panel_data), 1);
+		rc = mdss_dsi_panel_power_ctrl(&(ctrl_pdata->panel_data),
+			MDSS_PANEL_POWER_ON);
 		if (rc) {
 			pr_err("%s: Panel power on failed\n", __func__);
 			return rc;
 		}
 
+		pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
 		mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
 		ctrl_pdata->ctrl_state |=
 			(CTRL_STATE_PANEL_INIT | CTRL_STATE_MDP_ACTIVE);
 	} else {
-		pinfo->panel_power_on = 0;
+		pinfo->panel_power_state = MDSS_PANEL_POWER_OFF;
 	}
 
 	rc = mdss_register_panel(ctrl_pdev, &(ctrl_pdata->panel_data));
@@ -1727,7 +1800,7 @@ int dsi_panel_device_register(struct device_node *pan_node,
 		ctrl_pdata->ndx = 1;
 	}
 
-	pr_info("%s: Panel data initialized\n", __func__);
+	pr_debug("%s: Panel data initialized\n", __func__);
 	return 0;
 }
 
@@ -1772,7 +1845,6 @@ static void __exit mdss_dsi_driver_cleanup(void)
 	platform_driver_unregister(&mdss_dsi_ctrl_driver);
 }
 module_exit(mdss_dsi_driver_cleanup);
-
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("DSI controller driver");

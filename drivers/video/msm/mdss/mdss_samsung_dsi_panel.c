@@ -482,8 +482,8 @@ static ssize_t mipi_samsung_disp_get_power(struct device *dev,
 	if (unlikely(mfd->key != MFD_KEY))
 		return -EINVAL;
 
-	rc = snprintf((char *)buf, PAGE_SIZE, "%d\n", mfd->panel_power_on);
-	pr_info("mipi_samsung_disp_get_power(%d)\n", mfd->panel_power_on);
+	rc = snprintf((char *)buf, PAGE_SIZE, "%d\n", mfd->panel_power_state);
+	pr_info("mipi_samsung_disp_get_power(%d)\n", mfd->panel_power_state);
 
 	return rc;
 }
@@ -497,10 +497,10 @@ static ssize_t mipi_samsung_disp_set_power(struct device *dev,
 	if (sscanf(buf, "%u", &power) != 1)
 		return -EINVAL;
 
-	if (power == mfd->panel_power_on)
+	if (power == mfd->panel_power_state)
 		return 0;
 
-	if (power) {
+	if (mdss_panel_is_power_on(power)) {
 		mfd->fbi->fbops->fb_blank(FB_BLANK_UNBLANK, mfd->fbi);
 		mfd->fbi->fbops->fb_pan_display(&mfd->fbi->var, mfd->fbi);
 		mipi_samsung_disp_send_cmd(PANEL_BRIGHT_CTRL, true);
@@ -1140,7 +1140,7 @@ static ssize_t mipi_samsung_disp_acl_store(struct device *dev,
 	else
 		pr_info("%s: Invalid argument!!", __func__);
 
-	if (mfd->panel_power_on) {
+	if (mdss_panel_is_power_on_interactive(mfd->panel_power_state)) {
 #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_WVGA_S6E88A0_PT_PANEL)
 		if (acl_set) {
 			msd.dstat.acl_on = true;
@@ -1220,7 +1220,7 @@ static ssize_t mipi_samsung_disp_siop_store(struct device *dev,
 	else
 		pr_info("%s: Invalid argument!!", __func__);
 
-	if (mfd->panel_power_on) {
+	if (mdss_panel_is_power_on_interactive(mfd->panel_power_state)) {
 		if (siop_set && !(msd.dstat.acl_on||msd.dstat.siop_status)) {
 			msd.dstat.siop_status = true;
 			mipi_samsung_disp_send_cmd(PANEL_BRIGHT_CTRL, true);
@@ -2895,6 +2895,34 @@ exit_free:
 	return -ENOMEM;
 }
 
+static int mdss_dsi_panel_low_power_config(struct mdss_panel_data *pdata,
+	int enable)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+	struct mdss_panel_info *pinfo;
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+
+	pinfo = &pdata->panel_info;
+	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	pr_debug("%s: ctrl=%p ndx=%d enable=%d\n", __func__, ctrl, ctrl->ndx,
+		enable);
+
+	/* Any panel specific low power commands/config */
+	if (enable)
+		pinfo->blank_state = MDSS_PANEL_BLANK_LOW_POWER;
+	else
+		pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
+
+	pr_debug("%s:-\n", __func__);
+	return 0;
+}
+
 static int mdss_panel_parse_dt(struct device_node *np,
 					struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
@@ -2918,8 +2946,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	rc = of_property_read_u32_array(np, "qcom,mdss-pan-size", res, 2);
 	if (rc == 0) {
-		pinfo->width = res[0];
-		pinfo->height = res[1];
+		pinfo->physical_width = res[0];
+		pinfo->physical_height = res[1];
 	}
 
 	rc = of_property_read_u32_array(np, "qcom,mdss-pan-active-res", res, 2);
@@ -3067,8 +3095,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	rc = of_property_read_u32(np, "qcom,mdss-force-clk-lane-hs", &tmp);
 	pinfo->mipi.force_clk_lane_hs = (!rc ? tmp : 0);
 
-	rc = of_property_read_u32(np, "samsung,mdss-early-lcd-on", &tmp);
-			pinfo->early_lcd_on = (!rc ? tmp : 0);
+/*	rc = of_property_read_u32(np, "samsung,mdss-early-lcd-on", &tmp);
+			pinfo->early_lcd_on = (!rc ? tmp : 0);*/
 	rc = of_property_read_u32_array(np,
 		"qcom,mdss-pan-dsi-data-lanes", res, 4);
 	pinfo->mipi.data_lane0 = (!rc ? res[0] : true);
@@ -3603,30 +3631,7 @@ static ssize_t tuning_store(struct device *dev,
 
 static DEVICE_ATTR(tuning, 0664, tuning_show, tuning_store);
 #endif
-static int samsung_dsi_panel_event_handler(int event)
-{
-	pr_debug("SS DSI Event Handler");
-	switch (event) {
-		case MDSS_EVENT_FRAME_UPDATE:
-			if(msd.dstat.wait_disp_on) {
-				mipi_samsung_disp_send_cmd(PANEL_DISPLAY_ON, true);
-				msd.dstat.wait_disp_on = 0;
-			}
-			break;
-#if defined(CONFIG_MDNIE_LITE_TUNING) \
-	&& !defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_WVGA_S6E88A0_PT_PANEL)
-		case MDSS_EVENT_MDNIE_DEFAULT_UPDATE:
-			is_negative_on();
-			break;
-#endif
-		default:
-			pr_err("%s : unknown event \n", __func__);
-			break;
 
-	}
-
-	return 0;
-}
 static int mdss_dsi_panel_blank(struct mdss_panel_data *pdata, int blank)
 {
 	if(blank) {
@@ -3714,10 +3719,10 @@ int mdss_dsi_panel_init(struct device_node *node, struct mdss_dsi_ctrl_pdata *ct
 
 	ctrl_pdata->on = mdss_dsi_panel_on;
 	ctrl_pdata->off = mdss_dsi_panel_off;
+	ctrl_pdata->low_power_config = mdss_dsi_panel_low_power_config;
 	ctrl_pdata->bl_fnc = mdss_dsi_panel_bl_ctrl;
 	ctrl_pdata->registered = mdss_dsi_panel_registered;
 	ctrl_pdata->dimming_init = mdss_dsi_panel_dimming_init;
-	ctrl_pdata->event_handler = samsung_dsi_panel_event_handler;
 	ctrl_pdata->panel_blank = mdss_dsi_panel_blank;
 	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;
 
