@@ -1373,18 +1373,12 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 		return rc;
 	}
 
-	if (req->flags & CMD_REQ_HS_MODE)
-		mdss_dsi_set_tx_power_mode(0, &ctrl->panel_data);
-
 	if (req->flags & CMD_REQ_RX)
 		ret = mdss_dsi_cmdlist_rx(ctrl, req);
 	else if (req->flags & CMD_REQ_SINGLE_TX)
 		ret = mdss_dsi_cmds_single_tx(ctrl,req->cmds,req->cmds_cnt);
 	else
 		ret = mdss_dsi_cmdlist_tx(ctrl, req);
-
-	if (req->flags & CMD_REQ_HS_MODE)
-		mdss_dsi_set_tx_power_mode(1, &ctrl->panel_data);
 
 	mdss_iommu_ctrl(0);
 	mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);
@@ -1514,6 +1508,8 @@ void mdss_dsi_ack_err_status(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	if (status) {
 		MIPI_OUTP(base + 0x0068, status);
+		/* Writing of an extra 0 needed to clear error bits */
+		MIPI_OUTP(base + 0x0068, 0);
 		pr_err("%s: status=%x\n", __func__, status);		
 	}
 }

@@ -290,6 +290,7 @@ struct mdss_dsi_ctrl_pdata {
 	u8 ctrl_state;
 	int panel_mode;
 	int irq_cnt;
+	int mdss_dsi_clk_on;
 	int rst_gpio;
 	int disp_en_gpio;
 	int disp_te_gpio;

@@ -86,7 +86,9 @@ static inline u32 mdss_mdp_video_line_count(struct mdss_mdp_ctl *ctl)
 	if (!ctl || !ctl->priv_data)
 		goto line_count_exit;
 	ctx = ctl->priv_data;
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
 	line_cnt = mdp_video_read(ctx, MDSS_MDP_REG_INTF_LINE_COUNT);
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 line_count_exit:
 	return line_cnt;
 }
@@ -125,8 +127,6 @@ static int mdss_mdp_video_timegen_setup(struct mdss_mdp_ctl *ctl,
 	u32 den_polarity, hsync_polarity, vsync_polarity;
 	u32 display_hctl, active_hctl, hsync_ctl, polarity_ctl;
 	struct mdss_mdp_video_ctx *ctx;
-	struct mdss_mdp_ctl *sctl = NULL;
-	u32 flush_bits;
 
 	ctx = ctl->priv_data;
 	hsync_period = p->hsync_pulse_width + p->h_back_porch +
@@ -143,16 +143,6 @@ static int mdss_mdp_video_timegen_setup(struct mdss_mdp_ctl *ctl,
 		display_v_start += p->hsync_pulse_width + p->h_back_porch;
 		display_v_end -= p->h_front_porch;
 	}
-
-	sctl = mdss_mdp_get_split_ctl(ctl);
-
-	flush_bits = mdss_mdp_ctl_read(ctl, MDSS_MDP_REG_CTL_FLUSH);
-	flush_bits |= BIT(31) >>
-		(ctl->intf_num - MDSS_MDP_INTF0);
-
-	if (sctl)
-		flush_bits |= BIT(31) >>
-			(sctl->intf_num - MDSS_MDP_INTF0);
 
 	hsync_start_x = p->h_back_porch + p->hsync_pulse_width;
 	hsync_end_x = hsync_period - p->h_front_porch - 1;
@@ -725,6 +715,9 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		WARN(1, "commit without wait! ctl=%d", ctl->num);
 	}
 
+	if(pdata->panel_info.cont_splash_enabled)
+		return rc;
+
 	MDSS_XLOG(ctl->num, ctl->underrun_cnt);
 
 	if (!ctx->timegen_en) {
@@ -738,12 +731,6 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		}
 
 		pr_debug("enabling timing gen for intf=%d\n", ctl->intf_num);
-
-		if (pdata->panel_info.cont_splash_enabled &&
-			!ctl->mfd->splash_info.splash_logo_enabled) {
-			rc = wait_for_completion_timeout(&ctx->vsync_comp,
-					usecs_to_jiffies(VSYNC_TIMEOUT_US));
-		}
 
 		rc = mdss_iommu_ctrl(1);
 		if (IS_ERR_VALUE(rc)) {
@@ -813,8 +800,16 @@ int mdss_mdp_video_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 		ret = mdss_mdp_ctl_intf_event(ctl,
 			MDSS_EVENT_CONT_SPLASH_FINISH, NULL);
 	}
+	else
+	{
+		mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_CONT_SPLASH_BEGIN, NULL);
+		mdp_video_write(ctx, MDSS_MDP_REG_INTF_TIMING_ENGINE_EN, 0);
+		ctx->timegen_en = false;
+		mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_OFF, NULL);
+		mdss_mdp_ctl_intf_event(ctl,MDSS_EVENT_CONT_SPLASH_FINISH, NULL);
+		mdss_mdp_ctl_intf_event(ctl,MDSS_EVENT_UNBLANK, NULL);
+	}
 
-	mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_CONT_SPLASH_FINISH, NULL);
 error:
 	pdata->panel_info.cont_splash_enabled = 0;
 	return ret;

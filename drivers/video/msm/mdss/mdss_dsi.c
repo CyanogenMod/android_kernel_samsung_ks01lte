@@ -390,20 +390,10 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata)
 	/* disable DSI controller */
 	mdss_dsi_controller_cfg(0, pdata);
 
-	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
-
-	ret = mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 1);
-	if (ret) {
-		pr_err("%s: failed to enable bus clocks. rc=%d\n", __func__,
-			ret);
-		mdss_dsi_panel_power_on(pdata, 0);
-		return ret;
-	}
-
 	/* disable DSI phy */
 	mdss_dsi_phy_disable(ctrl_pdata);
 
-	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 0);
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
 
 	ret = mdss_dsi_panel_power_on(pdata, 0);
 	if (ret) {
@@ -597,8 +587,6 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 		return ret;
 	}
 
-	pdata->panel_info.panel_power_on = 1;
-
 	ret = mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 1);
 	if (ret) {
 		pr_err("%s: failed to enable bus clocks. rc=%d\n", __func__,
@@ -607,6 +595,8 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 		pdata->panel_info.panel_power_on = 0;
 		return ret;
 	}
+
+	pdata->panel_info.panel_power_on = 1;
 
 	mdss_dsi_phy_sw_reset((ctrl_pdata->ctrl_base));
 	mdss_dsi_phy_init(pdata);
@@ -621,11 +611,13 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	/* LP11 */
 	tmp = MIPI_INP((ctrl_pdata->ctrl_base) + 0xac);
 	tmp &= ~(1<<28);
-	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, 0x1F << 16);
 	wmb();
 	msleep(20);
 	/* LP11 */
 	mdss_dsi_panel_reset(pdata, 1);
+
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
 
 	if (mipi->init_delay)
 		usleep(mipi->init_delay);
@@ -700,6 +692,11 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata)
 				panel_data);
 	mipi = &pdata->panel_info.mipi;
 
+        if (pdata->panel_info.type == MIPI_VIDEO_PANEL &&
+			ctrl_pdata->off_cmds.link_state == DSI_LP_MODE) {
+		mdss_dsi_sw_reset(pdata);
+		mdss_dsi_host_init(pdata);
+	}
 	mdss_dsi_op_mode_config(DSI_CMD_MODE, pdata);
 
 	if (pdata->panel_info.dynamic_switch_pending) {
@@ -758,14 +755,6 @@ int mdss_dsi_cont_splash_on(struct mdss_panel_data *pdata)
 		"Incorrect Ctrl state=0x%x\n", ctrl_pdata->ctrl_state);
 
 	mdss_dsi_reset(ctrl_pdata);
-
-	if (ctrl_pdata->on_cmds.link_state == DSI_LP_MODE) {
-		ret = mdss_dsi_unblank(pdata);
-		if (ret) {
-			pr_err("%s: unblank failed\n", __func__);
-			return ret;
-		}
-	}
 
 	pr_debug("%s-:End\n", __func__);
 	return ret;
@@ -1065,7 +1054,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		}
 		break;
 	case MDSS_EVENT_CONT_SPLASH_FINISH:
-		if (ctrl_pdata->on_cmds.link_state == DSI_LP_MODE)
+		if (ctrl_pdata->off_cmds.link_state == DSI_LP_MODE)
 			rc = mdss_dsi_blank(pdata);
 		ctrl_pdata->ctrl_state &= ~CTRL_STATE_MDP_ACTIVE;
 		rc = mdss_dsi_cont_splash_on(pdata);
@@ -1084,7 +1073,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		}
 		break;
 	case MDSS_EVENT_CONT_SPLASH_BEGIN:
-		if (ctrl_pdata->on_cmds.link_state == DSI_HS_MODE) {
+		if (ctrl_pdata->off_cmds.link_state == DSI_HS_MODE) {
 			/* Panel is Enabled in Bootloader */
 			rc = mdss_dsi_blank(pdata);
 		}
