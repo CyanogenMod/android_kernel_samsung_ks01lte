@@ -271,8 +271,8 @@ static unsigned long msm_cpp_queue_buffer_info(struct cpp_device *cpp_dev,
 		goto QUEUE_BUFF_ERROR1;
 	}
 	rc = ion_map_iommu(cpp_dev->client, buff->map_info.ion_handle,
-		cpp_dev->domain_num, 0, (dma_addr_t)SZ_4K, 0,
-		(dma_addr_t *)&buff->map_info.phy_addr,
+		cpp_dev->domain_num, 0, SZ_4K, 0,
+		(unsigned long *)&buff->map_info.phy_addr,
 		&buff->map_info.len, 0, 0);
 	if (rc < 0) {
 		pr_err("ION mmap failed\n");

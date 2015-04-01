@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -537,7 +537,9 @@
 	spi_eth_vreg: spi_eth_phy_vreg {
 		compatible = "regulator-fixed";
 		regulator-name = "ethernet_phy";
+		/* mpp 5 is used for another function
 		gpio = <&pm8941_mpps 5 0>;
+		*/
 		enable-active-high;
 	};
 
