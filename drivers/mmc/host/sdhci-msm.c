@@ -1115,28 +1115,6 @@ static int sdhci_msm_dt_parse_vreg_info(struct device *dev,
 		ret = -ENOMEM;
 		return ret;
 	}
-#if defined(CONFIG_SEC_PATEK_PROJECT)
-	if (!strcmp(dev_name(dev), "msm_sdcc.3")) {
-		if (!strcmp(vreg_name, "vdd")) {
-			vreg->reg = regulator_get(dev, "max77826_ldo10");
-			dev_info(dev, "max77826_ldo10 is for %s\n", vreg_name);
-		}
-		else if (!strcmp(vreg_name, "vdd-io")) {
-			vreg->reg = regulator_get(dev, "max77826_ldo4");
-			dev_info(dev, "max77826_ldo4 is for %s\n", vreg_name);
-		}
-
-		if (IS_ERR(vreg->reg))
-			vreg->reg = NULL;
-
-		if (!vreg->reg)
-			dev_err(dev, "Settng Regulator for %s is failed\n", vreg_name);
-		else if (!strcmp(vreg_name, "vdd-io")) {
-			vreg->set_voltage_sup = true;
-			regulator_set_voltage(vreg->reg, 2950000, 2950000);
-		}
-	}
-#endif
 
 	vreg->name = vreg_name;
 
@@ -1600,16 +1578,16 @@ static int sdhci_msm_bus_get_vote_for_bw(struct sdhci_msm_host *host,
  */
 static inline int sdhci_msm_bus_set_vote(struct sdhci_msm_host *msm_host,
 					     int vote,
-					     unsigned long flags)
+					     unsigned long *flags)
 {
 	struct sdhci_host *host =  platform_get_drvdata(msm_host->pdev);
 	int rc = 0;
 
 	if (vote != msm_host->msm_bus_vote.curr_vote) {
-		spin_unlock_irqrestore(&host->lock, flags);
+		spin_unlock_irqrestore(&host->lock, *flags);
 		rc = msm_bus_scale_client_update_request(
 				msm_host->msm_bus_vote.client_handle, vote);
-		spin_lock_irqsave(&host->lock, flags);
+		spin_lock_irqsave(&host->lock, *flags);
 		if (rc) {
 			pr_err("%s: msm_bus_scale_client_update_request() failed: bus_client_handle=0x%x, vote=%d, err=%d\n",
 				mmc_hostname(host->mmc),
@@ -1642,7 +1620,7 @@ static void sdhci_msm_bus_work(struct work_struct *work)
 	/* don't vote for 0 bandwidth if any request is in progress */
 	if (!host->mrq) {
 		sdhci_msm_bus_set_vote(msm_host,
-			msm_host->msm_bus_vote.min_bw_vote, flags);
+			msm_host->msm_bus_vote.min_bw_vote, &flags);
 	} else
 		pr_warning("%s: %s: Transfer in progress. skipping bus voting to 0 bandwidth\n",
 			   mmc_hostname(host->mmc), __func__);
@@ -1664,7 +1642,7 @@ static void sdhci_msm_bus_cancel_work_and_set_vote(struct sdhci_host *host,
 	cancel_delayed_work_sync(&msm_host->msm_bus_vote.vote_work);
 	spin_lock_irqsave(&host->lock, flags);
 	vote = sdhci_msm_bus_get_vote_for_bw(msm_host, bw);
-	sdhci_msm_bus_set_vote(msm_host, vote, flags);
+	sdhci_msm_bus_set_vote(msm_host, vote, &flags);
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
@@ -1857,11 +1835,6 @@ static int sdhci_msm_vreg_enable(struct sdhci_msm_reg_data *vreg)
 {
 	int ret = 0;
 
-	if (!vreg->reg) {
-		pr_err("%s: %s Cannot find Regulator\n", __func__, vreg->name);
-		return ret;
-	}
-
 #if defined(CONFIG_ARCH_MSM8974)\
 	|| defined(CONFIG_MACH_FRESCOLTESKT)||defined(CONFIG_MACH_FRESCOLTEKTT)||defined(CONFIG_MACH_FRESCOLTELGT)
 	if (vreg->rpm_reg) {
@@ -1901,11 +1874,6 @@ static int sdhci_msm_vreg_enable(struct sdhci_msm_reg_data *vreg)
 static int sdhci_msm_vreg_disable(struct sdhci_msm_reg_data *vreg)
 {
 	int ret = 0;
-
-	if (!vreg->reg) {
-		pr_err("%s: %s Cannot find Regulator\n", __func__, vreg->name);
-		return ret;
-	}
 
 	/* Never disable regulator marked as always_on */
 	if (vreg->is_enabled && !vreg->is_always_on) {
@@ -2051,31 +2019,9 @@ static int sdhci_msm_vreg_init(struct device *dev,
 			goto out;
 	}
 	if (curr_vdd_io_reg) {
-#if defined(CONFIG_ARCH_MSM8974)\
-	|| defined(CONFIG_MACH_FRESCOLTESKT)||defined(CONFIG_MACH_FRESCOLTEKTT)||defined(CONFIG_MACH_FRESCOLTELGT)
-		if (pdata->nonremovable) {
-			/* Only for emmc */
-			curr_vdd_io_reg->rpm_reg = rpm_regulator_get(
-				dev,
-				curr_vdd_io_reg->name);
-			if (IS_ERR_OR_NULL(curr_vdd_io_reg->rpm_reg)) {
-				dev_err(dev, "rpm-reg get: failed: %ld\n",
-					PTR_ERR(curr_vdd_io_reg->rpm_reg));
-				curr_vdd_io_reg->rpm_reg = NULL;
-			} else {
-				dev_dbg(dev, "rpm-reg get: success\n");
-			}
-		} else {
-			curr_vdd_io_reg->rpm_reg = NULL;
-			ret = sdhci_msm_vreg_init_reg(dev, curr_vdd_io_reg);
-			if (ret)
-				goto vdd_reg_deinit;
-		}
-#else
 		ret = sdhci_msm_vreg_init_reg(dev, curr_vdd_io_reg);
 		if (ret)
 			goto vdd_reg_deinit;
-#endif
 	}
 	ret = sdhci_msm_vreg_reset(pdata);
 	if (ret)
