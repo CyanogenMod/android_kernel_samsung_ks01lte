@@ -1062,7 +1062,7 @@ config SGLTE_QSC_MODEM
 
 config UID_CPUTIME
 	tristate "Per-UID cpu time statistics"
-	default n
+	depends on PROFILING
 	help
 	  Per UID based cpu time statistics exported to /proc/uid_cputime
 
