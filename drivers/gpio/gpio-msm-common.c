@@ -19,6 +19,7 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
+#include <linux/syscore_ops.h>
 #include <linux/irqdomain.h>
 #include <linux/of.h>
 #include <linux/err.h>
@@ -412,6 +413,7 @@ static struct irq_chip msm_gpio_irq_chip = {
 	.irq_disable	= msm_gpio_irq_disable,
 };
 
+#ifdef CONFIG_PM
 static int msm_gpio_suspend(void)
 {
 	unsigned long irq_flags;
@@ -452,8 +454,8 @@ void msm_gpio_show_resume_irq(void)
 #endif
 				pr_warning("%s: %d(gpio-%d) triggered\n",
 						__func__, irq, i);
-			log_wakeup_reason(irq);
 		}
+		log_base_wakeup_reason(irq);
 	}
 	spin_unlock_irqrestore(&tlmm_lock, irq_flags);
 }
@@ -641,6 +643,7 @@ static int __devinit msm_gpio_probe(struct platform_device *pdev)
 				ret);
 		return ret;
 	}
+	register_syscore_ops(&msm_gpio_syscore_ops);
 	return 0;
 }
 
@@ -655,6 +658,7 @@ static int __devexit msm_gpio_remove(struct platform_device *pdev)
 {
 	int ret;
 
+	unregister_syscore_ops(&msm_gpio_syscore_ops);
 	ret = gpiochip_remove(&msm_gpio.gpio_chip);
 	if (ret < 0)
 		return ret;
