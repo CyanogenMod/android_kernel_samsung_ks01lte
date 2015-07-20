@@ -1105,10 +1105,10 @@ static int dsi_pll_enable_seq_m(void)
 	pll_locked = dsi_pll_toggle_lock_detect_and_check_status();
 	for (i = 0; (i < SEQ_M_MAX_COUNTER) && !pll_locked; i++) {
 		DSS_REG_W(mdss_dsi_base, DSI_0_PHY_PLL_UNIPHY_PLL_PWRGEN_CFG,
-				0x00);
+			0x00);
 		udelay(50);
 		DSS_REG_W(mdss_dsi_base,
-					DSI_0_PHY_PLL_UNIPHY_PLL_GLB_CFG, 0x05);
+			DSI_0_PHY_PLL_UNIPHY_PLL_GLB_CFG, 0x05);
 		udelay(100);
 		DSS_REG_W(mdss_dsi_base,
 			DSI_0_PHY_PLL_UNIPHY_PLL_GLB_CFG, 0x0f);
@@ -1138,6 +1138,8 @@ static int dsi_pll_enable_seq_d(void)
 	 */
 	DSS_REG_W(mdss_dsi_base, DSI_0_PHY_PLL_UNIPHY_PLL_PWRGEN_CFG, 0x00);
 	udelay(50);
+	DSS_REG_W(mdss_dsi_base, DSI_0_PHY_PLL_UNIPHY_PLL_GLB_CFG, 0x01);
+	udelay(200);
 	DSS_REG_W(mdss_dsi_base, DSI_0_PHY_PLL_UNIPHY_PLL_GLB_CFG, 0x05);
 	udelay(200);
 	DSS_REG_W(mdss_dsi_base, DSI_0_PHY_PLL_UNIPHY_PLL_GLB_CFG, 0x07);
@@ -2008,7 +2010,6 @@ static int edp_pll_ready_poll(void)
 	if (status)
 		return 1;
 
-	pr_err("%s: PLL NOT ready\n", __func__);
 	return 0;
 }
 
