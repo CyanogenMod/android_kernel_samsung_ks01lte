@@ -42,10 +42,12 @@ module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
 #define ANDROID_ALARM_WAKEUP_MASK ( \
 	ANDROID_ALARM_RTC_WAKEUP_MASK | \
-	ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP_MASK)
+	ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP_MASK | \
+	ANDROID_ALARM_RTC_POWEROFF_WAKEUP_MASK)
 
 static int alarm_opened;
 static DEFINE_SPINLOCK(alarm_slock);
+static DEFINE_MUTEX(alarm_mutex);
 static struct wakeup_source alarm_wake_lock;
 static DECLARE_WAIT_QUEUE_HEAD(alarm_wait_queue);
 static uint32_t alarm_pending;
@@ -65,9 +67,11 @@ static struct devalarm alarms[ANDROID_ALARM_TYPE_COUNT];
 
 static int is_wakeup(enum android_alarm_type type)
 {
-	return (type == ANDROID_ALARM_RTC_WAKEUP ||
+	if (type == ANDROID_ALARM_RTC_WAKEUP ||
 		type == ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP ||
-		type == ANDROID_ALARM_RTC_POWEROFF_WAKEUP);
+		type == ANDROID_ALARM_RTC_POWEROFF_WAKEUP)
+		return 1;
+	return 0;
 }
 
 
@@ -82,9 +86,12 @@ static void devalarm_start(struct devalarm *alrm, ktime_t exp)
 
 static int devalarm_try_to_cancel(struct devalarm *alrm)
 {
+	int ret;
 	if (is_wakeup(alrm->type))
-		return alarm_try_to_cancel(&alrm->u.alrm);
-	return hrtimer_try_to_cancel(&alrm->u.hrt);
+		ret = alarm_try_to_cancel(&alrm->u.alrm);
+	else
+		ret = hrtimer_try_to_cancel(&alrm->u.hrt);
+	return ret;
 }
 
 static void devalarm_cancel(struct devalarm *alrm)
@@ -95,11 +102,12 @@ static void devalarm_cancel(struct devalarm *alrm)
 		hrtimer_cancel(&alrm->u.hrt);
 }
 
-static void alarm_clear(enum android_alarm_type alarm_type)
+static void alarm_clear(enum android_alarm_type alarm_type, struct timespec *ts)
 {
 	uint32_t alarm_type_mask = 1U << alarm_type;
 	unsigned long flags;
 
+	mutex_lock(&alarm_mutex);
 	spin_lock_irqsave(&alarm_slock, flags);
 	alarm_dbg(IO, "alarm %d clear\n", alarm_type);
 	devalarm_try_to_cancel(&alarms[alarm_type]);
@@ -111,6 +119,9 @@ static void alarm_clear(enum android_alarm_type alarm_type)
 	alarm_enabled &= ~alarm_type_mask;
 	spin_unlock_irqrestore(&alarm_slock, flags);
 
+	if (alarm_type == ANDROID_ALARM_RTC_POWEROFF_WAKEUP)
+		set_power_on_alarm(ts->tv_sec, 0);
+	mutex_unlock(&alarm_mutex);
 }
 
 static void alarm_set(enum android_alarm_type alarm_type,
@@ -189,6 +200,7 @@ static int alarm_get_time(enum android_alarm_type alarm_type,
 	switch (alarm_type) {
 	case ANDROID_ALARM_RTC_WAKEUP:
 	case ANDROID_ALARM_RTC:
+	case ANDROID_ALARM_RTC_POWEROFF_WAKEUP:
 		getnstimeofday(ts);
 		break;
 	case ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP:
@@ -232,8 +244,9 @@ static long alarm_do_ioctl(struct file *file, unsigned int cmd,
 
 	switch (ANDROID_ALARM_BASE_CMD(cmd)) {
 	case ANDROID_ALARM_CLEAR(0):
-		alarm_clear(alarm_type);
+		alarm_clear(alarm_type, ts);
 		break;
+
 	case ANDROID_ALARM_SET(0):
 		alarm_set(alarm_type, ts);
 		break;
@@ -266,12 +279,15 @@ static long alarm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		case ANDROID_ALARM_SET_AND_WAIT(0):
 		case ANDROID_ALARM_SET(0):
 		case ANDROID_ALARM_SET_RTC:
+		case ANDROID_ALARM_CLEAR(0):
 			if (copy_from_user(&ts, (void __user *)arg, sizeof(ts)))
 				return -EFAULT;
 			break;
 	}
 
 	rv = alarm_do_ioctl(file, cmd, &ts);
+	if (rv)
+		return rv;
 
 	switch (ANDROID_ALARM_BASE_CMD(cmd)) {
 		case ANDROID_ALARM_GET_TIME(0):
@@ -280,73 +296,8 @@ static long alarm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			break;
 	}
 
->>>>>>> 3df0bd9... staging: alarm-dev: Refactor alarm-dev ioctl code in prep for compat_ioctl
-	return rv;
-}
-
-static long alarm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
-{
-
-	struct timespec ts;
-	int rv;
-
-	switch (ANDROID_ALARM_BASE_CMD(cmd)) {
-	case ANDROID_ALARM_SET_AND_WAIT(0):
-	case ANDROID_ALARM_SET(0):
-	case ANDROID_ALARM_SET_RTC:
-	case ANDROID_ALARM_CLEAR(0):
-		if (copy_from_user(&ts, (void __user *)arg, sizeof(ts)))
-			return -EFAULT;
-		break;
-	}
-
-	rv = alarm_do_ioctl(file, cmd, &ts);
-	if (rv)
-		return rv;
-
-	switch (ANDROID_ALARM_BASE_CMD(cmd)) {
-	case ANDROID_ALARM_GET_TIME(0):
-		if (copy_to_user((void __user *)arg, &ts, sizeof(ts)))
-			return -EFAULT;
-		break;
-	}
-
 	return 0;
 }
-#ifdef CONFIG_COMPAT
-static long alarm_compat_ioctl(struct file *file, unsigned int cmd,
-							unsigned long arg)
-{
-
-	struct timespec ts;
-	int rv;
-
-	switch (ANDROID_ALARM_BASE_CMD(cmd)) {
-	case ANDROID_ALARM_SET_AND_WAIT_COMPAT(0):
-	case ANDROID_ALARM_SET_COMPAT(0):
-	case ANDROID_ALARM_SET_RTC_COMPAT:
-		if (compat_get_timespec(&ts, (void __user *)arg))
-			return -EFAULT;
-		/* fall through */
-	case ANDROID_ALARM_GET_TIME_COMPAT(0):
-		cmd = ANDROID_ALARM_COMPAT_TO_NORM(cmd);
-		break;
-	}
-
-	rv = alarm_do_ioctl(file, cmd, &ts);
-	if (rv)
-		return rv;
-
-	switch (ANDROID_ALARM_BASE_CMD(cmd)) {
-	case ANDROID_ALARM_GET_TIME(0): /* NOTE: we modified cmd above */
-		if (compat_put_timespec(&ts, (void __user *)arg))
-			return -EFAULT;
-		break;
-	}
-
-	return 0;
-}
-#endif
 
 static int alarm_open(struct inode *inode, struct file *file)
 {
@@ -360,7 +311,7 @@ static int alarm_release(struct inode *inode, struct file *file)
 	unsigned long flags;
 
 	spin_lock_irqsave(&alarm_slock, flags);
-	if (file->private_data) {
+	if (file->private_data != 0) {
 		for (i = 0; i < ANDROID_ALARM_TYPE_COUNT; i++) {
 			uint32_t alarm_type_mask = 1U << i;
 			if (alarm_enabled & alarm_type_mask) {
@@ -427,9 +378,6 @@ static const struct file_operations alarm_fops = {
 	.unlocked_ioctl = alarm_ioctl,
 	.open = alarm_open,
 	.release = alarm_release,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl = alarm_compat_ioctl,
-#endif
 };
 
 static struct miscdevice alarm_device = {
