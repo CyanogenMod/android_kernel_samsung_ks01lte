@@ -1989,8 +1989,8 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
 int regulator_set_voltage(struct regulator *regulator, int min_uV, int max_uV)
 {
 	struct regulator_dev *rdev = regulator->rdev;
-	int ret = 0;
 	int old_min_uV, old_max_uV;
+	int ret = 0;
 
 	mutex_lock(&rdev->mutex);
 
@@ -2012,10 +2012,10 @@ int regulator_set_voltage(struct regulator *regulator, int min_uV, int max_uV)
 	ret = regulator_check_voltage(rdev, &min_uV, &max_uV);
 	if (ret < 0)
 		goto out;
-
 	/* restore original values in case of error */
 	old_min_uV = regulator->min_uV;
 	old_max_uV = regulator->max_uV;
+
 	regulator->min_uV = min_uV;
 	regulator->max_uV = max_uV;
 
@@ -2024,9 +2024,8 @@ int regulator_set_voltage(struct regulator *regulator, int min_uV, int max_uV)
 		goto out2;
 
 	ret = _regulator_do_set_voltage(rdev, min_uV, max_uV);
-	if (ret < 0)
+	if(ret < 0)
 		goto out2;
-
 out:
 	mutex_unlock(&rdev->mutex);
 	return ret;
@@ -2312,6 +2311,21 @@ out:
 	return ret;
 }
 
+static unsigned int __regulator_get_mode(struct regulator_dev *rdev)
+{
+	int ret;
+
+	/* sanity check */
+	if (!rdev->desc->ops->get_mode) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = rdev->desc->ops->get_mode(rdev);
+out:
+	return ret;
+}
+
 /**
  * regulator_get_mode - get regulator operating mode
  * @regulator: regulator source
@@ -2576,7 +2590,7 @@ static void regulator_bulk_enable_async(void *data, async_cookie_t cookie)
 int regulator_bulk_enable(int num_consumers,
 			  struct regulator_bulk_data *consumers)
 {
-	ASYNC_DOMAIN_EXCLUSIVE(async_domain);
+	LIST_HEAD(async_domain);
 	int i;
 	int ret = 0;
 
@@ -3062,6 +3076,63 @@ static int reg_debug_mode_get(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(reg_mode_fops, reg_debug_mode_get,
 			reg_debug_mode_set, "%llu\n");
 
+static int regulator_check_str(struct regulator *reg,
+	   unsigned int *slen, char *snames)
+{
+	if (reg->enabled && reg->supply_name) {
+		if (*slen + strlen(reg->supply_name) + 3 > 80)
+			return -ENOMEM;
+		*slen += snprintf(snames + *slen,
+				strlen(reg->supply_name) + 3,
+				", %s", reg->supply_name);
+	}
+	return 0;
+}
+
+void regulator_showall_enabled(void)
+{
+	struct regulator_dev *rdev;
+	unsigned int cnt = 0;
+	unsigned int slen;
+	struct regulator *reg;
+	char snames[80];
+
+	pr_info("---Enabled regulators---\n");
+	mutex_lock(&regulator_list_mutex);
+	list_for_each_entry(rdev, &regulator_list, list) {
+		mutex_lock(&rdev->mutex);
+		if (_regulator_is_enabled(rdev)) {
+			if (rdev->desc->ops) {
+				slen = 0;
+				list_for_each_entry(reg,
+						&rdev->consumer_list, list) {
+					if (regulator_check_str(reg,
+								&slen, snames))
+						break;
+				}
+
+				pr_info("%s: %duV, 0x%x mode%s\n",
+						rdev_get_name(rdev),
+						_regulator_get_voltage(rdev),
+						__regulator_get_mode(rdev),
+						slen ? snames : ", null");
+			} else {
+				pr_info("%s enabled\n", rdev_get_name(rdev));
+			}
+			cnt++;
+		}
+		mutex_unlock(&rdev->mutex);
+	}
+	mutex_unlock(&regulator_list_mutex);
+
+	if (cnt)
+		pr_info("---Enabled regulator count: %d---\n", cnt);
+	else
+		pr_info("---No regulators enabled---\n");
+
+	return;
+}
+
 static int reg_debug_optimum_mode_set(void *data, u64 val)
 {
 	int err_info;
@@ -3391,8 +3462,6 @@ unset_supplies:
 	unset_regulator_supplies(rdev);
 
 scrub:
-	if (rdev->supply)
-		regulator_put(rdev->supply);
 	kfree(rdev->constraints);
 	device_unregister(&rdev->dev);
 	/* device core frees rdev */
@@ -3707,6 +3776,17 @@ static int __init regulator_init_complete(void)
 
 		if (!enabled)
 			goto unlock;
+
+		/* Do not disable lod13, ldo14 for continuous splash booting (LCD driver)
+		 * kr0124.cho@samsung.com
+		 */
+		if (rdev_get_id(rdev) == 12 || rdev_get_id(rdev) == 13)
+			goto unlock;
+
+#if defined(CONFIG_MACH_CHAGALL_KDI)	// LCD power(ldo4)
+		if (rdev_get_id(rdev) == 3) 
+			goto unlock;
+#endif
 
 		if (has_full_constraints) {
 			/* We log since this may kill the system if it

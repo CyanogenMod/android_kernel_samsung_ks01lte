@@ -844,6 +844,11 @@ static int spmi_register_controller(struct spmi_controller *ctrl)
 	dev_dbg(&ctrl->dev, "Bus spmi-%d registered: dev:0x%p\n",
 					ctrl->nr, &ctrl->dev);
 
+#if (!defined(CONFIG_MACH_CT01) && !defined(CONFIG_MACH_CT01_CHN_CU))
+	/* make global controller */
+	spmi_ctrl_extra = ctrl;
+#endif
+
 	spmi_dfs_add_controller(ctrl);
 	return 0;
 

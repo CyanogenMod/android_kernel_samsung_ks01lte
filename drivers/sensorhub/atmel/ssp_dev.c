@@ -54,6 +54,7 @@ static irqreturn_t sensordata_irq_thread_fn(int iIrq, void *dev_id)
 	
 	ts = ktime_to_timespec(ktime_get_boottime());
 	data->timestamp = ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+
 	select_irq_msg(data);
 	data->uIrqCnt++;
 

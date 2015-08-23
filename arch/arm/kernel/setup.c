@@ -110,6 +110,9 @@ EXPORT_SYMBOL(boot_reason);
 unsigned int cold_boot;
 EXPORT_SYMBOL(cold_boot);
 
+char* (*arch_read_hardware_id)(void);
+EXPORT_SYMBOL(arch_read_hardware_id);
+
 #ifdef MULTI_CPU
 struct processor processor __read_mostly;
 #endif
@@ -149,11 +152,6 @@ static const char *cpu_name;
 static const char *machine_name;
 static char __initdata cmd_line[COMMAND_LINE_SIZE];
 struct machine_desc *machine_desc __initdata;
-
-#ifdef CONFIG_SEC_DEBUG_SUBSYS
-const char *unit_name;
-EXPORT_SYMBOL(unit_name);
-#endif
 
 static char default_command_line[COMMAND_LINE_SIZE] __initdata = CONFIG_CMDLINE;
 static union { char c[4]; unsigned long l; } endian_test __initdata = { { 'l', '?', '?', 'b' } };
@@ -761,15 +759,6 @@ static int __init parse_tag_serialnr(const struct tag *tag)
 
 __tagtable(ATAG_SERIAL, parse_tag_serialnr);
 
-static int __init msm_serialnr_setup(char *p)
-{
-	system_serial_low = simple_strtoul(p, NULL, 16);
-	system_serial_high = (system_serial_low&0xFFFF0000)>>16;
-	system_serial_low = system_serial_low&0x0000FFFF;
-	return 0;
-}
-early_param("androidboot.serialno", msm_serialnr_setup);
-
 static int __init parse_tag_revision(const struct tag *tag)
 {
 	system_rev = tag->u.revision.rev;
@@ -991,9 +980,6 @@ void __init setup_arch(char **cmdline_p)
 		mdesc = setup_machine_tags(machine_arch_type);
 	machine_desc = mdesc;
 	machine_name = mdesc->name;
-#ifdef CONFIG_SEC_DEBUG_SUBSYS
-	unit_name = machine_name;
-#endif
 
 	setup_dma_zone(mdesc);
 
@@ -1158,7 +1144,10 @@ static int c_show(struct seq_file *m, void *v)
 
 	seq_puts(m, "\n");
 
-	seq_printf(m, "Hardware\t: %s\n", machine_name);
+	if (!arch_read_hardware_id)
+		seq_printf(m, "Hardware\t: %s\n", machine_name);
+	else
+		seq_printf(m, "Hardware\t: %s\n", arch_read_hardware_id());
 	seq_printf(m, "Revision\t: %04x\n", system_rev);
 	seq_printf(m, "Serial\t\t: %08x%08x\n",
 		   system_serial_high, system_serial_low);

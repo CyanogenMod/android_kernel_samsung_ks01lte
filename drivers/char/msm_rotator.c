@@ -186,8 +186,7 @@ int msm_rotator_iommu_map_buf(int mem_id, int domain,
 	if (rot_iommu_split_domain) {
 		if (secure) {
 			if (ion_phys(msm_rotator_dev->client,
-				*pihdl, (ion_phys_addr_t *)start,
-				(unsigned *)len)) {
+				*pihdl, start, (unsigned *)len)) {
 				pr_err("%s:%d: ion_phys map failed\n",
 					 __func__, __LINE__);
 				return -ENOMEM;
@@ -195,7 +194,7 @@ int msm_rotator_iommu_map_buf(int mem_id, int domain,
 		} else {
 			if (ion_map_iommu(msm_rotator_dev->client,
 				*pihdl,	domain, GEN_POOL,
-				SZ_4K, 0, (dma_addr_t *)start, len, 0,
+				SZ_4K, 0, start, len, 0,
 				ION_IOMMU_UNMAP_DELAYED)) {
 				pr_err("ion_map_iommu() failed\n");
 				return -EINVAL;
@@ -204,8 +203,7 @@ int msm_rotator_iommu_map_buf(int mem_id, int domain,
 	} else {
 		if (ion_map_iommu(msm_rotator_dev->client,
 			*pihdl,	ROTATOR_SRC_DOMAIN, GEN_POOL,
-			SZ_4K, 0, (dma_addr_t *)start, len, 0,
-			ION_IOMMU_UNMAP_DELAYED)) {
+			SZ_4K, 0, start, len, 0, ION_IOMMU_UNMAP_DELAYED)) {
 			pr_err("ion_map_iommu() failed\n");
 			return -EINVAL;
 		}
@@ -307,8 +305,11 @@ static void disable_rot_clks(void)
 
 static void msm_rotator_rot_clk_work_f(struct work_struct *work)
 {
+	if(msm_rotator_dev->processing == 1)
+		pr_err("%s(): msm_rotator is now on processing\n", __func__);
+
 	if (mutex_trylock(&msm_rotator_dev->rotator_lock)) {
-		if (msm_rotator_dev->rot_clk_state == CLK_EN) {
+		if ((msm_rotator_dev->rot_clk_state == CLK_EN) && (msm_rotator_dev->processing == 0)) {
 			disable_rot_clks();
 			msm_rotator_dev->rot_clk_state = CLK_DIS;
 		} else if (msm_rotator_dev->rot_clk_state == CLK_SUSPEND)

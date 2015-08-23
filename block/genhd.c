@@ -901,7 +901,7 @@ static struct kobject *base_probe(dev_t devt, int *partno, void *data)
 
 static int __init genhd_device_init(void)
 {
-	int error, ret;
+	int error;
 
 	block_class.dev_kobj = sysfs_dev_block_kobj;
 	error = class_register(&block_class);
@@ -910,9 +910,7 @@ static int __init genhd_device_init(void)
 	bdev_map = kobj_map_init(base_probe, &block_class_lock);
 	blk_dev_init();
 
-	ret = register_blkdev(BLOCK_EXT_MAJOR, "blkext");
-	if(ret)
-		return ret;
+	register_blkdev(BLOCK_EXT_MAJOR, "blkext");
 
 	/* create top-level block dir */
 	if (!sysfs_deprecated)
@@ -1125,13 +1123,6 @@ static int disk_uevent(struct device *dev, struct kobj_uevent_env *env)
 		cnt++;
 	disk_part_iter_exit(&piter);
 	add_uevent_var(env, "NPARTS=%u", cnt);
-#ifdef CONFIG_USB_STORAGE_DETECT
-	if (disk->interfaces == GENHD_IF_USB) {
-		add_uevent_var(env, "MEDIAPRST=%d", disk->media_present);
-		printk(KERN_INFO "%s %d, disk->media_present=%d, cnt=%d\n",
-				__func__, __LINE__, disk->media_present, cnt);
-	}
-#endif
 	return 0;
 }
 
@@ -1611,15 +1602,12 @@ static void disk_events_workfn(struct work_struct *work)
 	struct gendisk *disk = ev->disk;
 	char *envp[ARRAY_SIZE(disk_uevents) + 1] = { };
 	unsigned int clearing = ev->clearing;
-	unsigned int events = 0;
+	unsigned int events;
 	unsigned long intv;
 	int nr_events = 0, i;
 
-#ifdef CONFIG_USB_STORAGE_DETECT
-	if (disk->interfaces != GENHD_IF_USB)
-		/* check events */
-		events = disk->fops->check_events(disk, clearing);
-#endif
+	/* check events */
+	events = disk->fops->check_events(disk, clearing);
 
 	/* accumulate pending events and schedule next poll if necessary */
 	spin_lock_irq(&ev->lock);
@@ -1642,13 +1630,9 @@ static void disk_events_workfn(struct work_struct *work)
 	for (i = 0; i < ARRAY_SIZE(disk_uevents); i++)
 		if (events & disk->events & (1 << i))
 			envp[nr_events++] = disk_uevents[i];
-#ifdef CONFIG_USB_STORAGE_DETECT
-		if (disk->interfaces != GENHD_IF_USB) {
-			if (nr_events)
-				kobject_uevent_env(&disk_to_dev(disk)->kobj,
-							KOBJ_CHANGE, envp);
-		}
-#endif
+
+	if (nr_events)
+		kobject_uevent_env(&disk_to_dev(disk)->kobj, KOBJ_CHANGE, envp);
 }
 
 /*

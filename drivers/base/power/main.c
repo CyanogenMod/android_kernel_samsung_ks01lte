@@ -1124,8 +1124,6 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 	pm_callback_t callback = NULL;
 	char *info = NULL;
 	int error = 0;
-	struct timer_list timer;
-	struct dpm_drv_wd_data data;
 	struct dpm_watchdog wd;
 	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
 

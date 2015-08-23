@@ -18,7 +18,6 @@
 #include <linux/platform_device.h>
 #include <linux/mutex.h>
 #include <linux/cpu.h>
-#include <linux/qpnp/pin.h>
 #include <linux/of.h>
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
@@ -33,16 +32,6 @@
 #include "rpm-notifier.h"
 #include "spm.h"
 #include "idle.h"
-
-#include <mach/gpiomux.h>
-
-#ifdef CONFIG_SEC_GPIO_DVS
-#include <linux/secgpio_dvs.h>
-#endif
-
-#ifdef CONFIG_GPIO_PCAL6416A
-#include <linux/i2c/pcal6416a.h>
-#endif
 
 #define SCLK_HZ (32768)
 
@@ -135,10 +124,6 @@ static int msm_pm_sleep_time_override;
 module_param_named(sleep_time_override,
 	msm_pm_sleep_time_override, int, S_IRUGO | S_IWUSR | S_IWGRP);
 static uint64_t suspend_wake_time;
-
-static int msm_pm_sleep_sec_debug;
-module_param_named(secdebug,
-	msm_pm_sleep_sec_debug, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
 static int num_powered_cores;
 static struct hrtimer lpm_hrtimer;
@@ -824,25 +809,6 @@ static int lpm_suspend_prepare(void)
 
 	suspend_in_progress = true;
 	msm_mpm_suspend_prepare();
-
-#ifdef CONFIG_SEC_GPIO_DVS
-	/************************ Caution !!! ****************************
-	 * This functiongit a must be located in appropriate SLEEP position
-	 * in accordance with the specification of each BB vendor.
-	 ************************ Caution !!! ****************************/
-	gpio_dvs_check_sleepgpio();
-#endif
-
-#ifdef CONFIG_SEC_PM_DEBUG
-	if (msm_pm_sleep_sec_debug) {
-		msm_gpio_print_enabled();
-		qpnp_debug_suspend_show();
-#ifdef CONFIG_GPIO_PCAL6416A
-		expander_print_all();
-#endif
-	}
-#endif
-
 	return 0;
 }
 

@@ -639,6 +639,7 @@ static const struct intr_data intr_tbl_v2[] = {
 	{WCD9XXX_IRQ_SPEAKER_CLIPPING, false},
 	{WCD9XXX_IRQ_VBAT_MONITOR_ATTACK, false},
 	{WCD9XXX_IRQ_VBAT_MONITOR_RELEASE, false},
+	{WCD9XXX_IRQ_RESERVED_2, false},
 };
 
 static int wcd9xxx_device_init(struct wcd9xxx *wcd9xxx)
@@ -872,6 +873,22 @@ static int wcd9xxx_init_supplies(struct wcd9xxx *wcd9xxx,
 				"regulator %s err = %d\n", __func__,
 				wcd9xxx->supplies[i].supply, ret);
 			goto err_get;
+		}
+
+		/* Enabling Codec Buck Voltage to avoid voltage swing from 1.8 - 2.1V during sleep */
+		if(strcmp("cdc-vdd-buck",wcd9xxx->supplies[i].supply) == 0)
+		{
+			ret = regulator_enable(wcd9xxx->supplies[i].consumer);
+			if (ret) {
+				pr_err("%s: Setting regulator voltage failed for "
+					"regulator %s err = %d\n", __func__,
+					wcd9xxx->supplies[i].supply, ret);
+				goto err_get;
+			} else {
+				pr_err("%s: Setting regulator voltage success for "
+					"regulator %s err = %d\n", __func__,
+					wcd9xxx->supplies[i].supply, ret);
+			}
 		}
 
 		ret = regulator_set_optimum_mode(wcd9xxx->supplies[i].consumer,

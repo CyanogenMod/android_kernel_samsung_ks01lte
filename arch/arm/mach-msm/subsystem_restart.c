@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -39,9 +39,6 @@
 #include <mach/socinfo.h>
 #include <mach/subsystem_notif.h>
 #include <mach/subsystem_restart.h>
-#ifdef CONFIG_SEC_DEBUG
-#include <mach/sec_debug.h>
-#endif
 
 #include "smd_private.h"
 
@@ -265,9 +262,6 @@ static int enable_ramdumps;
 module_param(enable_ramdumps, int, S_IRUGO | S_IWUSR);
 
 struct workqueue_struct *ssr_wq;
-struct workqueue_struct *panic_wq;
-struct delayed_work panic_dwork;
-char subsys_name[20];
 
 static LIST_HEAD(restart_log_list);
 static DEFINE_MUTEX(soc_order_reg_lock);
@@ -472,16 +466,20 @@ static void subsystem_powerup(struct subsys_device *dev, void *data)
 
 	pr_info("[%p]: Powering up %s\n", current, name);
 	init_completion(&dev->err_ready);
-        if (dev->desc->powerup(dev->desc) < 0) {
-                notify_each_subsys_device(&dev, 1, SUBSYS_POWERUP_FAILURE, NULL);
+
+	if (dev->desc->powerup(dev->desc) < 0) {
+		notify_each_subsys_device(&dev, 1, SUBSYS_POWERUP_FAILURE,
+								NULL);
 		panic("[%p]: Powerup error: %s!", current, name);
-        }
+	}
+
 	ret = wait_for_err_ready(dev);
 	if (ret) {
-                notify_each_subsys_device(&dev, 1, SUBSYS_POWERUP_FAILURE,NULL);
+		notify_each_subsys_device(&dev, 1, SUBSYS_POWERUP_FAILURE,
+								NULL);
 		panic("[%p]: Timed out waiting for error ready: %s!",
 			current, name);
-        }
+	}
 	subsys_set_state(dev, SUBSYS_ONLINE);
 }
 
@@ -509,10 +507,11 @@ static int subsys_start(struct subsys_device *subsys)
 
 	init_completion(&subsys->err_ready);
 	ret = subsys->desc->start(subsys->desc);
-	if (ret) {
-                notify_each_subsys_device(&subsys, 1, SUBSYS_POWERUP_FAILURE,NULL);
+	if (ret){
+		notify_each_subsys_device(&subsys, 1, SUBSYS_POWERUP_FAILURE,
+									NULL);
 		return ret;
-        }
+	}
 
 	if (subsys->desc->is_not_loadable) {
 		subsys_set_state(subsys, SUBSYS_ONLINE);
@@ -524,10 +523,10 @@ static int subsys_start(struct subsys_device *subsys)
 		/* pil-boot succeeded but we need to shutdown
 		 * the device because error ready timed out.
 		 */
-                notify_each_subsys_device(&subsys, 1, SUBSYS_POWERUP_FAILURE, NULL);
+		notify_each_subsys_device(&subsys, 1, SUBSYS_POWERUP_FAILURE,
+									NULL);
 		subsys->desc->stop(subsys->desc);
-        }
-	else
+	} else
 		subsys_set_state(subsys, SUBSYS_ONLINE);
 
 	return ret;
@@ -627,22 +626,9 @@ void subsystem_put(void *subsystem)
 			subsys->desc->name, __func__))
 		goto err_out;
 	if (!--subsys->count) {
-#if 0
 		subsys_stop(subsys);
 		if (subsys->do_ramdump_on_put)
 			subsystem_ramdump(subsys, NULL);
-#else
-		if (strncmp(subsys->desc->name, "modem", 5)) {
-			subsys_stop(subsys);
-			if (subsys->do_ramdump_on_put)
-				subsystem_ramdump(subsys, NULL);
-		}
-		else {
-			pr_err("subsys: block modem put stop for stabilty\n");
-			subsys->count++;
-		}
-#endif
-
 	}
 	mutex_unlock(&track->lock);
 
@@ -725,10 +711,6 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	track->p_state = SUBSYS_NORMAL;
 	wake_unlock(&dev->wake_lock);
 	spin_unlock_irqrestore(&track->s_lock, flags);
-
-	/* Workaround for ssr exception when ap was during sleep.
-	Hold wake lock for 15 sec to prevent ap sleep. */
-	wake_lock_timeout(&dev->wake_lock, 15*HZ);
 }
 
 static void __subsystem_restart_dev(struct subsys_device *dev)
@@ -774,17 +756,6 @@ int subsystem_restart_dev(struct subsys_device *dev)
 
 	name = dev->desc->name;
 
-#ifdef CONFIG_SEC_DEBUG
-#if 0 //def CONFIG_SEC_SSR_DEBUG_LEVEL_CHK /* Temporarily blocking until requested by cp or pl team */
-	if (!sec_debug_is_enabled_for_ssr())
-#else
-	if (!sec_debug_is_enabled())
-#endif
-		dev->restart_level = RESET_SUBSYS_COUPLED; //Why is it delete the RESET_SUBSYS_INDEPENDENT on MSM8974 ?
-	else
-		dev->restart_level = RESET_SOC;
-#endif
-
 	/*
 	 * If a system reboot/shutdown is underway, ignore subsystem errors.
 	 * However, print a message so that we know that a subsystem behaved
@@ -805,29 +776,7 @@ int subsystem_restart_dev(struct subsys_device *dev)
 		__subsystem_restart_dev(dev);
 		break;
 	case RESET_SOC:
-#ifdef CONFIG_SEC_DEBUG
-		/*
-		 * If the silent log function is enabled for CP and CP is in
-		 * trouble, diag_mdlog (APP) should be terminated before
-		 * a panic occurs, since it can flush logs to SD card
-		 * when it is over.
-		 * We should guarantee time the App needs for saving logs
-		 * as well, so we use a delayed workqueue.
-		 */
-		if(silent_log_panic_handler())
-		{
-			pr_err("%s crashed: subsys-restart: Resetting the SoC\n",
-				name);
-			strncpy(subsys_name, name, sizeof(subsys_name)-1);
-			subsys_name[sizeof(subsys_name)-1] = '\0';
-			queue_delayed_work(panic_wq, &panic_dwork, 300);
-			dump_stack();
-		} else
-			panic("%s crashed: subsys-restart: Resetting the SoC",
-				name);
-#else
 		panic("subsys-restart: Resetting the SoC - %s crashed.", name);
-#endif
 		break;
 	default:
 		panic("subsys-restart: Unknown restart level!\n");
@@ -1322,31 +1271,12 @@ static int __init ssr_init_soc_restart_orders(void)
 	return 0;
 }
 
-static void panic_for_silentLog_work(struct work_struct *work)
-{
-	panic("%s crashed: subsys-restart: Resetting the SoC", subsys_name);
-}
-
 static int __init subsys_restart_init(void)
 {
 	int ret;
-#if 0 //It shoud be modified with dev struct for CONFIG_SEC_DEBUG on MSM8947
-#ifdef CONFIG_SEC_SSR_DEBUG_LEVEL_CHK
-	if (!sec_debug_is_enabled_for_ssr())
-#else
-	if (!sec_debug_is_enabled())
-#endif
-		dev->restart_level = RESET_SUBSYS_INDEPENDENT;
-	else
-		dev->restart_level = RESET_SOC;
-#endif
 
 	ssr_wq = alloc_workqueue("ssr_wq", WQ_CPU_INTENSIVE, 0);
 	BUG_ON(!ssr_wq);
-
-	panic_wq = create_singlethread_workqueue("subsys_panic_wq");
-	BUG_ON(!panic_wq);
-	INIT_DELAYED_WORK(&panic_dwork, panic_for_silentLog_work);
 
 	ret = bus_register(&subsys_bus_type);
 	if (ret)
@@ -1365,7 +1295,6 @@ err_debugfs:
 	bus_unregister(&subsys_bus_type);
 err_bus:
 	destroy_workqueue(ssr_wq);
-	destroy_workqueue(panic_wq);
 	return ret;
 }
 arch_initcall(subsys_restart_init);
