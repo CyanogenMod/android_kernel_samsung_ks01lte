@@ -1562,12 +1562,12 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #if defined(CONFIG_USE_INPUTLOCATION_FOR_ENG)
 //#ifndef SEC_PRODUCT_SHIP
 			/* TODO : Remove version information when H/W dose not changed */
-			dev_info(&rmi4_data->i2c_client->dev, "[%d][R] 0x%02x M[%d], Ver[%02X%02X%02X%02X]\n",
+			dev_dbg(&rmi4_data->i2c_client->dev, "[%d][R] 0x%02x M[%d], Ver[%02X%02X%02X%02X]\n",
 				finger, finger_status, rmi4_data->finger[finger].mcount,
 				rmi4_data->ic_revision_of_ic, rmi4_data->panel_revision,
 				rmi4_data->fw_version_of_ic, rmi4_data->glove_mode_enables);
 #else
-			dev_info(&rmi4_data->i2c_client->dev, "[%d][R] 0x%02x M[%d], Ver[%02X%02X%02X%02X]\n",
+			dev_dbg(&rmi4_data->i2c_client->dev, "[%d][R] 0x%02x M[%d], Ver[%02X%02X%02X%02X]\n",
 				finger, finger_status, rmi4_data->finger[finger].mcount,
 				rmi4_data->ic_revision_of_ic, rmi4_data->panel_revision,
 				rmi4_data->fw_version_of_ic, rmi4_data->glove_mode_enables);

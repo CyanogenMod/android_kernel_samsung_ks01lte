@@ -744,7 +744,7 @@ int set_freq_limit(unsigned long id, unsigned int freq)
 		cpufreq_min_touch = NULL;
 	}
 
-	pr_debug("%s: id=%d freq=%d\n", __func__, (int)id, freq);
+	pr_info("%s: id=%d freq=%d\n", __func__, (int)id, freq);
 
 	/* min lock */
 	if (id & DVFS_TOUCH_ID) {
