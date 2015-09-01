@@ -1341,7 +1341,7 @@ static ssize_t mipi_samsung_backlight_store(struct device *dev,
 {
 	int bl_level = atoi(buf);
 
-	pr_info("%s : level (%d)\n",__func__,bl_level);
+	pr_debug("%s : level (%d)\n",__func__,bl_level);
 
 	msd.dstat.bright_level = bl_level;
 	mipi_samsung_disp_send_cmd(PANEL_BRIGHT_CTRL, true);

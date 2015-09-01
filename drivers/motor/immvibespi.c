@@ -163,7 +163,7 @@ static int32_t ImmVibeSPI_ForceOut_AmpDisable(u_int8_t nActuatorIndex)
 #endif
 			}
 		}
-		printk(KERN_DEBUG "tspdrv: %s\n", __func__);
+		pr_debug("tspdrv: %s\n", __func__);
 #if defined(CONFIG_MOTOR_DRV_MAX77803)
 		max77803_vibtonz_en(0);
 #elif defined(CONFIG_MOTOR_DRV_MAX77804K)
@@ -220,7 +220,7 @@ static int32_t ImmVibeSPI_ForceOut_AmpEnable(u_int8_t nActuatorIndex)
 #endif
 			}
 		}
-		printk(KERN_DEBUG "tspdrv: %s\n", __func__);
+		pr_debug("tspdrv: %s\n", __func__);
 #if defined(CONFIG_MOTOR_DRV_MAX77803)
 		max77803_vibtonz_en(1);
 #elif defined(CONFIG_MOTOR_DRV_MAX77804K)

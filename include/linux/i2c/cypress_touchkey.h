@@ -15,7 +15,7 @@ extern struct class *sec_class;
 /* extern int ISSP_main(void); */
 
 /* DVFS feature : TOUCH BOOSTER */
-#define TSP_BOOSTER
+#undef TSP_BOOSTER
 #ifdef TSP_BOOSTER
 #include <linux/cpufreq.h>
 
