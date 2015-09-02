@@ -278,8 +278,8 @@ static inline void mdss_fb_update_notify_update(struct msm_fb_data_type *mfd)
 	}
 }
 #ifdef CONFIG_FB_MSM_CAMERA_CSC
+extern u8 prev_csc_update;
 extern u8 csc_update;
-extern u8 pre_csc_update;
 #endif
 
 static inline bool mdss_fb_is_power_off(struct msm_fb_data_type *mfd)

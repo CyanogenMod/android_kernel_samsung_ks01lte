@@ -1559,10 +1559,6 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	ATRACE_END("sspp_programming");
 	mutex_unlock(&mdp5_data->list_lock);
 
-#ifdef CONFIG_FB_MSM_CAMERA_CSC
-	if (pre_csc_update != csc_update)
-			pre_csc_update = csc_update;
-#endif
 	mdp5_data->kickoff_released = false;
 
 	if (mfd->panel.type == WRITEBACK_PANEL) {
@@ -2152,6 +2148,20 @@ static void mdss_mdp_overlay_handle_vsync(struct mdss_mdp_ctl *ctl,
 	}
 
 	pr_debug("vsync on fb%d play_cnt=%d\n", mfd->index, ctl->play_cnt);
+#ifdef CONFIG_FB_MSM_CAMERA_CSC
+	if (csc_update != prev_csc_update) {
+		struct mdss_mdp_pipe *pipe, *next;
+
+		list_for_each_entry_safe(pipe, next, &mdp5_data->pipes_used,
+				list) {
+			if (pipe->type == MDSS_MDP_PIPE_TYPE_VIG) {
+				mdss_mdp_csc_setup(MDSS_MDP_BLOCK_SSPP, pipe->num, 1,
+						MDSS_MDP_CSC_YUV2RGB);
+			}
+		}
+		prev_csc_update = csc_update;
+	}
+#endif
 
 	mdp5_data->vsync_time = t;
 	sysfs_notify_dirent(mdp5_data->vsync_event_sd);

@@ -56,6 +56,11 @@
 #define FORCE_500CD
 #endif
 
+#if defined(CONFIG_MACH_KS01SKT) || defined(CONFIG_MACH_KS01KTT) || defined(CONFIG_MACH_KS01LGT) \
+       || defined(CONFIG_MACH_HLTESKT) || defined(CONFIG_MACH_HLTELGT) || defined(CONFIG_MACH_HLTEKTT)
+#define octa_manufacture_date
+#endif
+
 #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_FULL_HD_PT_PANEL)
 //#define TEMPERATURE_ELVSS
 #define HBM_RE
@@ -66,6 +71,11 @@
 #endif
 
 #define DT_CMD_HDR 6
+
+#if defined(octa_manufacture_date)
+static struct dsi_cmd nv_date_read_cmds;
+char mdate_buffer[10];
+#endif
 
 static struct dsi_buf dsi_panel_tx_buf;
 static struct dsi_buf dsi_panel_rx_buf;
@@ -229,7 +239,7 @@ static int lcd_attached = 1;
 static int lcd_id = 0;
 static char board_rev;
 
-int mipi_samsung_disp_send_cmd(
+static int mipi_samsung_disp_send_cmd(
 		enum mipi_samsung_cmd_list cmd,
 		unsigned char lock);
 
@@ -1190,6 +1200,27 @@ static ssize_t mipi_samsung_disp_acl_store(struct device *dev,
 	return size;
 }
 
+#if defined(octa_manufacture_date)
+static ssize_t manufacture_date_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	u16 year;
+	u8 month;
+	u8 day;
+
+	pr_info("C8 41th : %02x\n", mdate_buffer[0]);
+	pr_info("C8 42th : %02x\n", mdate_buffer[1]);
+
+	year = ((mdate_buffer[0] & 0xF0)>>4) + 2011;
+	month = mdate_buffer[0] & 0x0F;
+	day = mdate_buffer[1] & 0x1F;
+
+	sprintf(buf, "%d, %d, %d\n", year, month, day);
+
+	return strlen(buf);
+}
+#endif
+
 static ssize_t mipi_samsung_disp_siop_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
@@ -1369,8 +1400,6 @@ static int mdss_dsi_panel_dimming_init(struct mdss_panel_data *pdata);
 static ssize_t mipi_samsung_auto_brightness_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
-	static int first_auto_br = 0;
-
 #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_FULL_HD_PT_PANEL)
 	if (!msd.manufacture_id) {
 		msd.manufacture_id = mipi_samsung_manufacture_id(msd.pdata);
@@ -1395,13 +1424,6 @@ static ssize_t mipi_samsung_auto_brightness_store(struct device *dev,
 		msd.dstat.auto_brightness = 7;
 	else
 		pr_info("%s: Invalid argument!!", __func__);
-
-	if (!first_auto_br) {
-		pr_info("%s : skip first auto brightness store (%d) (%d)!!\n",
-				__func__, msd.dstat.auto_brightness, msd.dstat.bright_level);
-		first_auto_br++;
-		return size;
-	}
 
 #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_WVGA_S6E88A0_PT_PANEL)
 	if (msd.dstat.on == 1 && msd.mfd->resume_state == MIPI_RESUME_STATE) {
@@ -1598,6 +1620,11 @@ static DEVICE_ATTR(partial_disp, S_IRUGO | S_IWUSR | S_IWGRP,
 			mipi_samsung_disp_partial_disp_store);
 #endif
 
+#if defined(octa_manufacture_date)
+static DEVICE_ATTR(manufacture_date, S_IRUGO,
+			manufacture_date_show, NULL);
+#endif
+
 #if defined(FORCE_500CD)
 static DEVICE_ATTR(force_500cd, S_IRUGO | S_IWUSR | S_IWGRP,
 			mipi_samsung_force_500cd_show,
@@ -1746,8 +1773,13 @@ static int mipi_samsung_read_nv_mem(struct mdss_panel_data *pdata, struct dsi_cm
 {
 	int nv_size = 0;
 	int nv_read_cnt = 0;
-	int i = 0;
+	int i = 0, j = 0;
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG_OCTA_VIDEO_720P_PT_PANEL) \
+	|| defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_FULL_HD_PT_PANEL) \
+	|| defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_FULL_HD_PT_PANEL)
+	j = 5; // do not repeat
+#endif
 	mipi_samsung_disp_send_cmd(PANEL_NV_MTP_READ_REGISTER_SET_CMDS, true);
 	mipi_samsung_disp_send_cmd(PANEL_MTP_ENABLE, true);
 
@@ -1758,8 +1790,12 @@ static int mipi_samsung_read_nv_mem(struct mdss_panel_data *pdata, struct dsi_cm
 		int count = 0;
 		int read_size = nv_read_cmds->read_size[i];
 		int read_startoffset = nv_read_cmds->read_startoffset[i];
-		count = samsung_nv_read(&(nv_read_cmds->cmd_desc[i]),
-				&buffer[nv_read_cnt], read_size, pdata, read_startoffset);
+		do {
+			count = samsung_nv_read(&(nv_read_cmds->cmd_desc[i]),
+					&buffer[nv_read_cnt], read_size, pdata, read_startoffset);
+			if (j++ == 5)
+				break;
+		} while(buffer[0] != 0x0 && buffer[0] != 0x1);
 		nv_read_cnt += count;
 		if (count != read_size)
 			pr_err("Error reading LCD NV data !!!!\n");
@@ -1904,7 +1940,7 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 	}
 }
 
-int mipi_samsung_disp_send_cmd(
+static int mipi_samsung_disp_send_cmd(
 		enum mipi_samsung_cmd_list cmd,
 		unsigned char lock)
 {
@@ -2175,6 +2211,10 @@ static int mdss_dsi_panel_dimming_init(struct mdss_panel_data *pdata)
 		/* Set the mtp read buffer pointer and read the NVM value*/
 		mipi_samsung_read_nv_mem(pdata, &nv_mtp_read_cmds, msd.sdimconf->mtp_buffer);
 
+#if defined(octa_manufacture_date)
+		mipi_samsung_read_nv_mem(pdata, &nv_date_read_cmds, mdate_buffer);
+#endif
+
 #ifdef LDI_FPS_CHANGE
 		if(msd.id3 >= 0x21) {
 			mipi_samsung_read_nv_mem(msd.pdata, &read_ldi_fps_cmds, &ldi_fps_buffer);
@@ -2377,11 +2417,8 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	pr_info("mdss_dsi_panel_on DSI_MODE = %d ++\n",mipi->mode);
 	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
-	if (!msd.manufacture_id) {
+	if (!msd.manufacture_id)
 		msd.manufacture_id = mipi_samsung_manufacture_id(pdata);
-		if (set_panel_rev(msd.manufacture_id) < 0)
-			pr_err("%s : can't find panel id.. \n", __func__);
-	}
 	if (!msd.dstat.is_smart_dim_loaded)
 		mdss_dsi_panel_dimming_init(pdata);
 
@@ -3095,8 +3132,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	rc = of_property_read_u32(np, "qcom,mdss-force-clk-lane-hs", &tmp);
 	pinfo->mipi.force_clk_lane_hs = (!rc ? tmp : 0);
 
-/*	rc = of_property_read_u32(np, "samsung,mdss-early-lcd-on", &tmp);
-			pinfo->early_lcd_on = (!rc ? tmp : 0);*/
 	rc = of_property_read_u32_array(np,
 		"qcom,mdss-pan-dsi-data-lanes", res, 4);
 	pinfo->mipi.data_lane0 = (!rc ? res[0] : true);
@@ -3245,7 +3280,10 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_samsung_parse_panel_cmd(np, &display_qcom_off_cmds,
 				"qcom,panel-off-cmds");
-
+#if defined(octa_manufacture_date)
+	mdss_samsung_parse_panel_cmd(np, &nv_date_read_cmds,
+				"samsung,panel-nv-mdate-read-cmds");
+#endif
 	mdss_samsung_parse_panel_cmd(np, &nv_mtp_read_cmds,
 				"samsung,panel-nv-mtp-read-cmds");
 
@@ -3661,6 +3699,9 @@ static struct attribute *panel_sysfs_attributes[] = {
 #if defined(FORCE_500CD)
 	&dev_attr_force_500cd.attr,
 #endif
+#if defined(octa_manufacture_date)
+	&dev_attr_manufacture_date.attr,
+#endif
 	NULL
 };
 static const struct attribute_group panel_sysfs_group = {
@@ -3693,10 +3734,8 @@ int mdss_dsi_panel_init(struct device_node *node, struct mdss_dsi_ctrl_pdata *ct
 #endif
 	pr_debug("%s:%d", __func__, __LINE__);
 
-	if (!node || !ctrl_pdata) {
-		pr_err("%s: Invalid arguments\n", __func__);
+	if (!node)
 		return -ENODEV;
-	}
 
 	panel_name = of_get_property(node, "label", NULL);
 	if (!panel_name)

@@ -871,9 +871,6 @@ static int pp_vig_pipe_setup(struct mdss_mdp_pipe *pipe, u32 *op)
 			 * is a previously configured pipe need to re-configure
 			 * CSC matrix
 			 */
-#ifdef CONFIG_FB_MSM_CAMERA_CSC
-		if (pre_csc_update != csc_update)
-#endif
 			mdss_mdp_csc_setup(MDSS_MDP_BLOCK_SSPP, pipe->num, 1,
 					   MDSS_MDP_CSC_YUV2RGB);
 		}

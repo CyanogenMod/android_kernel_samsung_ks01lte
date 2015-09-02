@@ -727,9 +727,6 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		WARN(1, "commit without wait! ctl=%d", ctl->num);
 	}
 
-/*	if(pdata->panel_info.cont_splash_enabled)
-		return rc; */
-
 	MDSS_XLOG(ctl->num, ctl->underrun_cnt);
 
 	if (!ctx->timegen_en) {
@@ -822,8 +819,8 @@ int mdss_mdp_video_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 		mdp_video_write(ctx, MDSS_MDP_REG_INTF_TIMING_ENGINE_EN, 0);
 		ctx->timegen_en = false;
 		mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_OFF, NULL);
-		mdss_mdp_ctl_intf_event(ctl,MDSS_EVENT_CONT_SPLASH_FINISH, NULL);
-		mdss_mdp_ctl_intf_event(ctl,MDSS_EVENT_UNBLANK, NULL);
+		mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_CONT_SPLASH_FINISH, NULL);
+		mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_UNBLANK, NULL);
 	}
 
 error:
