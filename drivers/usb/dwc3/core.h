@@ -71,6 +71,8 @@
 #define DWC3_DEVICE_EVENT_WAKEUP		4
 #define DWC3_DEVICE_EVENT_HIBER_REQ		5
 #define DWC3_DEVICE_EVENT_EOPF			6
+/* For version 2.30a and above */
+#define DWC3_DEVICE_EVENT_SUSPEND		6
 #define DWC3_DEVICE_EVENT_SOF			7
 #define DWC3_DEVICE_EVENT_ERRATIC_ERROR		9
 #define DWC3_DEVICE_EVENT_CMD_CMPL		10
@@ -138,6 +140,7 @@
 #define DWC3_GEVNTCOUNT(n)	(0xc40c + (n * 0x10))
 
 #define DWC3_GHWPARAMS8		0xc600
+#define DWC3_GFLADJ		0xc630
 
 /* Device Registers */
 #define DWC3_DCFG		0xc700
@@ -219,6 +222,12 @@
 /* Global HWPARAMS6 Register */
 #define DWC3_GHWPARAMS6_SRP_SUPPORT	(1 << 10)
 
+/* Global Frame Length Adjustment Register */
+#define DWC3_GFLADJ_REFCLK_240MHZDECR_PLS1	(1 << 31)
+#define DWC3_GFLADJ_REFCLK_240MHZ_DECR		(0x7F << 24)
+#define DWC3_GFLADJ_REFCLK_LPM_SEL		(1 << 23)
+#define DWC3_GFLADJ_REFCLK_FLADJ		(0x3FFF << 8)
+
 /* Device Configuration Register */
 #define DWC3_DCFG_LPM_CAP	(1 << 22)
 #define DWC3_DCFG_DEVADDR(addr)	((addr) << 3)
@@ -282,6 +291,8 @@
 #define DWC3_DEVTEN_ERRTICERREN		(1 << 9)
 #define DWC3_DEVTEN_SOFEN		(1 << 7)
 #define DWC3_DEVTEN_EOPFEN		(1 << 6)
+/* For version 2.30a and above*/
+#define DWC3_DEVTEN_SUSPEND		(1 << 6)
 #define DWC3_DEVTEN_HIBERNATIONREQEVTEN	(1 << 5)
 #define DWC3_DEVTEN_WKUPEVTEN		(1 << 4)
 #define DWC3_DEVTEN_ULSTCNGEN		(1 << 3)
@@ -621,6 +632,14 @@ struct dwc3_hwparams {
 /* HWPARAMS1 */
 #define DWC3_NUM_INT(n)		(((n) & (0x3f << 15)) >> 15)
 
+/* HWPARAMS3 */
+#define DWC3_NUM_IN_EPS_MASK	(0x1f << 18)
+#define DWC3_NUM_EPS_MASK	(0x3f << 12)
+#define DWC3_NUM_EPS(p)		(((p)->hwparams3 &		\
+			(DWC3_NUM_EPS_MASK)) >> 12)
+#define DWC3_NUM_IN_EPS(p)	(((p)->hwparams3 &		\
+			(DWC3_NUM_IN_EPS_MASK)) >> 18)
+
 /* HWPARAMS7 */
 #define DWC3_RAM1_DEPTH(n)	((n) & 0xffff)
 
@@ -688,6 +707,8 @@ struct dwc3_scratchpad_array {
  * @u2pel: parameter from Set SEL request.
  * @u1sel: parameter from Set SEL request.
  * @u1pel: parameter from Set SEL request.
+ * @num_out_eps: number of out endpoints
+ * @num_in_eps: number of in endpoints
  * @ep0_next_event: hold the next expected event
  * @ep0state: state of endpoint zero
  * @link_state: link state
@@ -706,8 +727,10 @@ struct dwc3 {
 	dma_addr_t		ep0_trb_addr;
 	dma_addr_t		ep0_bounce_addr;
 	struct dwc3_request	ep0_usb_req;
+
 	/* device lock */
 	spinlock_t		lock;
+
 	struct device		*dev;
 
 	struct dwc3_otg		*dotg;
@@ -743,6 +766,7 @@ struct dwc3 {
 #define DWC3_REVISION_210A	0x5533210a
 #define DWC3_REVISION_220A	0x5533220a
 #define DWC3_REVISION_230A	0x5533230a
+#define DWC3_REVISION_250A	0x5533250a
 
 	unsigned		is_selfpowered:1;
 	unsigned		three_stage_setup:1;
@@ -767,6 +791,9 @@ struct dwc3 {
 
 	u8			speed;
 
+	u8			num_out_eps;
+	u8			num_in_eps;
+
 	void			*mem;
 
 	struct dwc3_hwparams	hwparams;
@@ -781,12 +808,6 @@ struct dwc3 {
 	/* Indicate if software connect was issued by the usb_gadget_driver */
 	bool			softconnect;
 	void (*notify_event) (struct dwc3 *, unsigned);
-#if defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_F_PROJECT) || defined(CONFIG_SEC_K_PROJECT)
-	enum usb_device_speed	speed_limit;
-	struct work_struct reconnect_work;
-	int			ss_host_avail;
-	bool		reconnect;
-#endif
 	int			tx_fifo_size;
 	bool			tx_fifo_reduced;
 };
@@ -797,8 +818,8 @@ struct dwc3 {
 
 struct dwc3_event_type {
 	u32	is_devspec:1;
-	u32	type:6;
-	u32	reserved8_31:25;
+	u32	type:7;
+	u32	reserved8_31:24;
 } __packed;
 
 #define DWC3_DEPEVT_XFERCOMPLETE	0x01
