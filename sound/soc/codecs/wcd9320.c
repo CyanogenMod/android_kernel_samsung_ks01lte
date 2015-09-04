@@ -3630,7 +3630,7 @@ static int taiko_hphl_dac_event(struct snd_soc_dapm_widget *w,
 		ret = wcd9xxx_mbhc_get_impedance(&taiko_p->mbhc,
 					&impedl, &impedr);
 		if (!ret)
-			wcd9xxx_clsh_imped_config(codec, 0);
+			wcd9xxx_clsh_imped_config(codec, impedl);
 		else
 			dev_err(codec->dev, "Failed to get mbhc impedance %d\n",
 						ret);
@@ -7741,7 +7741,7 @@ static int taiko_post_reset_cb(struct wcd9xxx *wcd9xxx)
 		ret = wcd9xxx_mbhc_init(&taiko->mbhc, &taiko->resmgr, codec,
 					taiko_enable_mbhc_micbias,
 					&mbhc_cb, &cdc_intr_ids,
-					rco_clk_rate, false);
+					rco_clk_rate, true);
 		if (ret)
 			pr_err("%s: mbhc init failed %d\n", __func__, ret);
 		else
@@ -7952,7 +7952,7 @@ static int taiko_codec_probe(struct snd_soc_codec *codec)
 	ret = wcd9xxx_mbhc_init(&taiko->mbhc, &taiko->resmgr, codec,
 				taiko_enable_mbhc_micbias,
 				&mbhc_cb, &cdc_intr_ids,
-				rco_clk_rate, false);
+				rco_clk_rate, true);
 
 	if (ret) {
 		pr_err("%s: mbhc init failed %d\n", __func__, ret);
