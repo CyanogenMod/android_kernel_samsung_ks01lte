@@ -243,9 +243,8 @@ static int mipi_samsung_disp_send_cmd(
 		enum mipi_samsung_cmd_list cmd,
 		unsigned char lock);
 
-#if !defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_WVGA_S6E88A0_PT_PANEL)
 extern void mdss_dsi_panel_touchsensing(int enable);
-#endif
+static struct delayed_work touchsensing_work;
 
 int set_panel_rev(unsigned int id)
 {
@@ -2119,27 +2118,26 @@ unknown_command:
 	return -EINVAL;
 }
 
-#if !defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_WVGA_S6E88A0_PT_PANEL)
 void mdss_dsi_panel_touchsensing(int enable)
+{
+	if (enable)
+		schedule_delayed_work(&touchsensing_work,
+			msecs_to_jiffies(50));
+}
+
+static void mdss_dsi_panel_touchsensing_work(struct work_queue *work)
 {
 	if(!msd.dstat.on)
 	{
-		pr_err("%s: No panel on! %d\n", __func__, enable);
+		pr_err("%s: No panel on!\n", __func__);
 		return;
 	}
-#if defined(CONFIG_MACH_KS01SKT) || defined(CONFIG_MACH_KS01KTT)\
-		|| defined(CONFIG_MACH_KS01LGT) || defined(CONFIG_MACH_JACTIVESKT)\
-		|| defined(CONFIG_MACH_JS01LTEDCM) || defined(CONFIG_MACH_JS01LTESBM)
-	if(enable)
-		mipi_samsung_disp_send_cmd(PANEL_TOUCHSENSING_ON, true);
-#else
-	if(enable)
-		mipi_samsung_disp_send_cmd(PANEL_TOUCHSENSING_ON, true);
-	else
-		mipi_samsung_disp_send_cmd(PANEL_TOUCHSENSING_OFF, true);
-#endif
+
+	pr_err("%s: Sending touchsensing on cmds\n", __func__);
+
+	mipi_samsung_disp_send_cmd(PANEL_TOUCHSENSING_ON, true);
 }
-#endif
+
 static int mdss_dsi_panel_registered(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -3870,6 +3868,7 @@ int mdss_dsi_panel_init(struct device_node *node, struct mdss_dsi_ctrl_pdata *ct
 	 *  will be powered on later on.
 	 */
 	msd.dstat.on = 0;
+	INIT_DELAYED_WORK(&touchsensing_work, mdss_dsi_panel_touchsensing_work);
 	return 0;
 }
 
