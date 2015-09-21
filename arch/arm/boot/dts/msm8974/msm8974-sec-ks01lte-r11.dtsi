@@ -22,15 +22,6 @@
 };
 
 &soc {
-	qcom,ion {
-		qcom,ion-heap@16 { /* Camera*/
-			qcom,memory-reservation-size = <0x0>;
-		};
-		qcom,ion-heap@28 { /* AUDIO HEAP */
-			qcom,memory-reservation-size = <0x314000>;
-		};
-	};
-
 	serial@f991e000 {
 		status = "ok";
 	};
@@ -100,9 +91,7 @@
 	qcom,mdss_mdp@fd900000 {
 		qcom,mdss-pref-prim-intf = "dsi";
 		mdss_fb0: qcom,mdss_fb_primary {
-			qcom,memory-reservation-size = <0x1F40000>;	/* 32 MB allocaed for fb0 */
-			qcom,memory-alt-reservation-size = <0x1F40000>;	/* Framebuffer reservation only for LPM or recovery boot mode */
-			qcom,memblock-reserve = <0x03200000 0x01F00000>;
+			qcom,memblock-reserve = <0x03200000 0x01E00000>;
 		};
 	};
 
@@ -397,15 +386,6 @@
 		qcom,model = "msm8974-taiko-cdp-snd-card";
 		qcom,hdmi-audio-rx;
 		qcom,cdc-micbias2-headset-only;
-	};
-
-	usb2_otg_sw: regulator-tpd4s214 {
-		compatible = "regulator-fixed";
-		regulator-name = "usb2_otg_sw";
-		gpio = <&pm8941_gpios 18 0>;
-		parent-supply = <&pm8941_boost>;
-		startup-delay-us = <17000>;
-		enable-active-high;
 	};
 
 	hsic_host: hsic@f9a00000 {
