@@ -129,22 +129,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 	}
 
 	i--;
-
-	/*
-	 * If continuous splash screen feature is enabled, then we need to
-	 * request all the GPIOs that have already been configured in the
-	 * bootloader. This needs to be done irresepective of whether
-	 * the lp11_init flag is set or not.
-	 */
-	if (pdata->panel_info.cont_splash_enabled ||
-		!pdata->panel_info.mipi.lp11_init) {
-
-		ret = mdss_dsi_panel_reset(pdata, 1);
-		if (ret)
-			pr_err("%s: Panel reset failed. rc=%d\n",
-					__func__, ret);
-	}
-
+	/* Panel reset function moved on lp11 state */
 error:
 	if (ret) {
 		for (; i >= 0; i--)
@@ -620,6 +605,7 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	struct mipi_panel_info *mipi;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	int cur_power_state;
+	u32 tmp;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -652,22 +638,28 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 		goto end;
 	}
 
-	/*
-	 * Enable DSI clocks.
-	 * This is also enable the DSI core power block and reset/setup
-	 * DSI phy
-	 */
+/*	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 1);
+
+	mdss_dsi_phy_sw_reset((ctrl_pdata->ctrl_base));
+	mdss_dsi_phy_init(pdata);
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 0); */
+
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
 
-	/*
-	 * Issue hardware reset line after enabling the DSI clocks and data
-	 * data lanes for LP11 init
-	 */
-	if (mipi->lp11_init)
-		mdss_dsi_panel_reset(pdata, 1);
+//	mdss_dsi_ctrl_setup(pdata);
+	mdss_dsi_sw_reset(pdata);
+	mdss_dsi_host_init(pdata);
 
-	if (mipi->init_delay)
-		usleep(mipi->init_delay);
+	/* LP11 */
+	tmp = MIPI_INP((ctrl_pdata->ctrl_base) + 0xac);
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, 0x1F << 16);
+	wmb();
+	msleep(20);
+	/* LP11 */
+
+	mdss_dsi_panel_reset(pdata, 1);
+
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, tmp);
 
 	if (mipi->force_clk_lane_hs) {
 		u32 tmp;

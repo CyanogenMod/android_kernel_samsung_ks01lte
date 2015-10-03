@@ -76,7 +76,7 @@
 #define OCP_ATTEMPT 1
 
 #define FW_READ_ATTEMPTS 15
-#define FW_READ_TIMEOUT 4000000
+#define FW_READ_TIMEOUT 2000000
 
 #define BUTTON_POLLING_SUPPORTED true
 
@@ -101,7 +101,7 @@
  * Invalid voltage range for the detection
  * of plug type with current source
  */
-#define WCD9XXX_CS_MEAS_INVALD_RANGE_LOW_MV 110
+#define WCD9XXX_CS_MEAS_INVALD_RANGE_LOW_MV 160
 #define WCD9XXX_CS_MEAS_INVALD_RANGE_HIGH_MV 170
 
 /*
@@ -121,10 +121,10 @@
 /* RX_HPH_CNP_WG_TIME increases by 0.24ms */
 #define WCD9XXX_WG_TIME_FACTOR_US	240
 
-#define WCD9XXX_V_CS_HS_MAX 500
-#define WCD9XXX_V_CS_NO_MIC 5
+#define WCD9XXX_V_CS_HS_MAX 650
+#define WCD9XXX_V_CS_NO_MIC 0
 #define WCD9XXX_MB_MEAS_DELTA_MAX_MV 80
-#define WCD9XXX_CS_MEAS_DELTA_MAX_MV 10
+#define WCD9XXX_CS_MEAS_DELTA_MAX_MV 12
 
 static int impedance_detect_en;
 module_param(impedance_detect_en, int,
@@ -190,7 +190,7 @@ static void wcd9xxx_mbhc_calc_thres(struct wcd9xxx_mbhc *mbhc);
 
 static bool wcd9xxx_mbhc_polling(struct wcd9xxx_mbhc *mbhc)
 {
-	return mbhc->polling_active;
+	return snd_soc_read(mbhc->codec, WCD9XXX_A_CDC_MBHC_EN_CTL) & 0x1;
 }
 
 static void wcd9xxx_turn_onoff_override(struct wcd9xxx_mbhc *mbhc, bool on)
@@ -219,7 +219,6 @@ static void wcd9xxx_pause_hs_polling(struct wcd9xxx_mbhc *mbhc)
 /* called under codec_resource_lock acquisition */
 static void wcd9xxx_start_hs_polling(struct wcd9xxx_mbhc *mbhc)
 {
-	s16 v_brh, v_b1_hu;
 	struct snd_soc_codec *codec = mbhc->codec;
 	int mbhc_state = mbhc->mbhc_state;
 
@@ -260,17 +259,6 @@ static void wcd9xxx_start_hs_polling(struct wcd9xxx_mbhc *mbhc)
 		/* set to max */
 		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B6_CTL, 0x7F);
 		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B5_CTL, 0xFF);
-
-		v_brh = wcd9xxx_get_current_v(mbhc, WCD9XXX_CURRENT_V_BR_H);
-		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B10_CTL,
-				(v_brh >> 8) & 0xFF);
-		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B9_CTL,
-				v_brh & 0xFF);
-		v_b1_hu = wcd9xxx_get_current_v(mbhc, WCD9XXX_CURRENT_V_B1_HU);
-		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B3_CTL,
-				v_b1_hu & 0xFF);
-		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B4_CTL,
-				(v_b1_hu >> 8) & 0xFF);
 	}
 
 	snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_EN_CTL, 0x1);

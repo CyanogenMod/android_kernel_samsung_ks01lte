@@ -218,8 +218,6 @@ struct dsi_panel_cmds {
 	int link_state;
 };
 
-#define CMD_REQ_SINGLE_TX 0x0010
-
 struct dsi_kickoff_action {
 	struct list_head act_entry;
 	void (*action) (void *);
@@ -253,7 +251,7 @@ enum {
 
 #define DSI_EV_PLL_UNLOCKED		0x0001
 #define DSI_EV_MDP_FIFO_UNDERFLOW	0x0002
-#define DSI_EV_DSI_FIFO_EMPTY		0x0003
+#define DSI_EV_DSI_FIFO_EMPTY		0x0004
 #define DSI_EV_MDP_BUSY_RELEASE		0x80000000
 
 struct mdss_dsi_ctrl_pdata {
@@ -333,12 +331,10 @@ struct mdss_dsi_ctrl_pdata {
 	int mdp_busy;
 	struct mutex mutex;
 	struct mutex cmd_mutex;
-	struct mutex dfps_mutex;
 
 	u32 ulps_clamp_ctrl_off;
 	u32 ulps_phyrst_ctrl_off;
 	bool ulps;
-	bool core_power;
 	bool mmss_clamp;
 
 	struct dsi_buf tx_buf;
@@ -402,9 +398,6 @@ void mdss_dsi_phy_sw_reset(unsigned char *ctrl_base);
 void mdss_dsi_cmd_test_pattern(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_video_test_pattern(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl);
-
-int mdss_dsi_cmds_single_tx(struct mdss_dsi_ctrl_pdata *ctrl,
-                 struct dsi_cmd_desc *cmds, int cnt);
 
 void mdss_dsi_ctrl_init(struct device *ctrl_dev,
 			struct mdss_dsi_ctrl_pdata *ctrl);

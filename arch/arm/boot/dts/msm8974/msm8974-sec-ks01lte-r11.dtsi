@@ -91,7 +91,7 @@
 	qcom,mdss_mdp@fd900000 {
 		qcom,mdss-pref-prim-intf = "dsi";
 		mdss_fb0: qcom,mdss_fb_primary {
-			qcom,memblock-reserve = <0x03200000 0x01E00000>;
+			qcom,memblock-reserve = <0x03200000 0x01F00000>;
 		};
 	};
 

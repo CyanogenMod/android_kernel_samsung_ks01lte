@@ -96,20 +96,21 @@ extern int msm_show_resume_irq_mask;
 #endif
 
 #ifdef CONFIG_ANDROID_PERSISTENT_RAM
-/* CONFIG_SEC_DEBUG reserving memory for persistent RAM*/
-#define RAMCONSOLE_PHYS_ADDR 0x1FB00000
-static struct persistent_ram_descriptor per_ram_descs[] __initdata = {
+#define RAMCONSOLE_PHYS_ADDR PLAT_PHYS_OFFSET + SZ_1G + SZ_256M
+static struct platform_device *ram_console_dev;
+
+static struct persistent_ram_descriptor msm_prd[] __initdata = {
 {
 	.name = "ram_console",
 	.size = SZ_1M,
 }
 };
 
-static struct persistent_ram per_ram __initdata = {
-	.descs = per_ram_descs,
-	.num_descs = ARRAY_SIZE(per_ram_descs),
+static struct persistent_ram msm_pr __initdata = {
+	.descs = msm_prd,
+	.num_descs = ARRAY_SIZE(msm_prd),
 	.start = RAMCONSOLE_PHYS_ADDR,
-	.size = SZ_1M
+	.size = SZ_1M,
 };
 #endif
 
@@ -357,7 +358,7 @@ void __init msm_8974_reserve(void)
 {
 	of_scan_flat_dt(dt_scan_for_memory_reserve, NULL);
 #ifdef CONFIG_ANDROID_PERSISTENT_RAM
-	persistent_ram_early_init(&per_ram);
+	persistent_ram_early_init(&msm_pr);
 #endif
 }
 
@@ -425,6 +426,26 @@ void __init msm8974_add_drivers(void)
 	tsens_tm_init_driver();
 	msm_thermal_device_init();
 }
+
+#ifdef CONFIG_ANDROID_PERSISTENT_RAM
+static void __init sec_config_ramconsole(void)
+{
+	int ret;
+
+	ram_console_dev = platform_device_alloc("ram_console", -1);
+	if (!ram_console_dev) {
+		pr_err("%s: Unable to allocate memory for RAM console device",
+				__func__);
+		return;
+	}
+
+	ret = platform_device_add(ram_console_dev);
+	if (ret) {
+		pr_err("%s: Unable to add RAM console device", __func__);
+		return;
+	}
+}
+#endif
 
 static struct of_dev_auxdata msm_hsic_host_adata[] = {
 	OF_DEV_AUXDATA("qcom,hsic-host", 0xF9A00000, "msm_hsic_host", NULL),
@@ -510,6 +531,9 @@ void __init msm8974_init(void)
 
 	platform_add_devices(common_devices, ARRAY_SIZE(common_devices));
 
+#ifdef CONFIG_ANDROID_PERSISTENT_RAM
+	sec_config_ramconsole();
+#endif
 #if defined (CONFIG_MOTOR_DRV_ISA1400)
         vienna_motor_init();
 #endif

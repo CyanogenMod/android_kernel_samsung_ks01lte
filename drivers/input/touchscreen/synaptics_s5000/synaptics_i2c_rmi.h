@@ -80,8 +80,8 @@
  * Basically this define is not recommeded.
  */
 /* To recovery the device from ghost touch  */
-#define TSP_PATTERN_TRACKING_METHOD
-#define PATTERN_TRACKING_FOR_FULLSCREEN
+#undef TSP_PATTERN_TRACKING_METHOD
+#undef PATTERN_TRACKING_FOR_FULLSCREEN
 
 #if defined(TSP_PATTERN_TRACKING_METHOD)
 #define TSP_PT_MAX_GHOSTCHECK_FINGER	10

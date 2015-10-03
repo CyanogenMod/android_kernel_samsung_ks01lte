@@ -39,12 +39,6 @@
 #include <linux/magic.h>
 #include "ecryptfs_kernel.h"
 
-
-#ifdef CONFIG_WTL_ENCRYPTION_FILTER
-#include <linux/ctype.h>
-#endif
-
-
 /**
  * Module parameter that defines the ecryptfs_verbosity level.
  */
@@ -183,12 +177,6 @@ enum { ecryptfs_opt_sig, ecryptfs_opt_ecryptfs_sig,
        ecryptfs_opt_fn_cipher, ecryptfs_opt_fn_cipher_key_bytes,
        ecryptfs_opt_unlink_sigs, ecryptfs_opt_mount_auth_tok_only,
        ecryptfs_opt_check_dev_ruid,
-#ifdef CONFIG_WTL_ENCRYPTION_FILTER
-	ecryptfs_opt_enable_filtering,
-#endif
-#ifdef CONFIG_CRYPTO_FIPS
-	ecryptfs_opt_enable_cc,
-#endif
        ecryptfs_opt_err };
 
 static const match_table_t tokens = {
@@ -206,12 +194,6 @@ static const match_table_t tokens = {
 	{ecryptfs_opt_unlink_sigs, "ecryptfs_unlink_sigs"},
 	{ecryptfs_opt_mount_auth_tok_only, "ecryptfs_mount_auth_tok_only"},
 	{ecryptfs_opt_check_dev_ruid, "ecryptfs_check_dev_ruid"},
-#ifdef CONFIG_WTL_ENCRYPTION_FILTER
-	{ecryptfs_opt_enable_filtering, "ecryptfs_enable_filtering=%s"},
-#endif
-#ifdef CONFIG_CRYPTO_FIPS
-	{ecryptfs_opt_enable_cc, "ecryptfs_enable_cc=%s"},
-#endif
 	{ecryptfs_opt_err, NULL}
 };
 
@@ -252,57 +234,7 @@ static void ecryptfs_init_mount_crypt_stat(
 	mutex_init(&mount_crypt_stat->global_auth_tok_list_mutex);
 	mount_crypt_stat->flags |= ECRYPTFS_MOUNT_CRYPT_STAT_INITIALIZED;
 }
-#ifdef CONFIG_WTL_ENCRYPTION_FILTER
 
-static int parse_enc_file_filter_parms(
-	struct ecryptfs_mount_crypt_stat *mcs, char *str)
-{
-	char *token = NULL;
-	int count = 0;
-	mcs->max_name_filter_len = 0;
-	while ((token = strsep(&str, "|")) != NULL) {
-		if (count >= ENC_NAME_FILTER_MAX_INSTANCE)
-			return -1;
-		strncpy(mcs->enc_filter_name[count++],
-			token, ENC_NAME_FILTER_MAX_LEN);
-		if (mcs->max_name_filter_len < strlen(token))
-			mcs->max_name_filter_len = strlen(token);
-	}
-	return 0;
-}
-
-
-static int parse_enc_ext_filter_parms(
-	struct ecryptfs_mount_crypt_stat *mcs, char *str)
-{
-	char *token = NULL;
-	int count = 0;
-	while ((token = strsep(&str, "|")) != NULL) {
-		if (count >= ENC_EXT_FILTER_MAX_INSTANCE)
-			return -1;
-		strncpy(mcs->enc_filter_ext[count++],
-			token, ENC_EXT_FILTER_MAX_LEN);
-	}
-	return 0;
-}
-
-static int parse_enc_filter_parms(
-	struct ecryptfs_mount_crypt_stat *mcs, char *str)
-{
-	char *token = NULL;
-	if (!strcmp("*", str)) {
-		mcs->flags |= ECRYPTFS_ENABLE_NEW_PASSTHROUGH;
-		return 0;
-	}
-	token = strsep(&str, ":");
-	if (token != NULL)
-		parse_enc_file_filter_parms(mcs, token);
-	token = strsep(&str, ":");
-	if (token != NULL)
-		parse_enc_ext_filter_parms(mcs, token);
-	return 0;
-}
-#endif
 /**
  * ecryptfs_parse_options
  * @sb: The ecryptfs super block
@@ -349,9 +281,6 @@ static int ecryptfs_parse_options(struct ecryptfs_sb_info *sbi, char *options,
 	char *cipher_key_bytes_src;
 	char *fn_cipher_key_bytes_src;
 	u8 cipher_code;
-#ifdef CONFIG_CRYPTO_FIPS
-	char *cc_mode_src;
-#endif
 
 	*check_ruid = 0;
 
@@ -462,26 +391,6 @@ static int ecryptfs_parse_options(struct ecryptfs_sb_info *sbi, char *options,
 		case ecryptfs_opt_check_dev_ruid:
 			*check_ruid = 1;
 			break;
-#ifdef CONFIG_WTL_ENCRYPTION_FILTER
-		case ecryptfs_opt_enable_filtering:
-			rc = parse_enc_filter_parms(mount_crypt_stat,
-							 args[0].from);
-			if (rc) {
-				printk(KERN_ERR "Error attempting to parse encryption "
-							"filtering parameters.\n");
-				rc = -EINVAL;
-				goto out;
-			}
-			mount_crypt_stat->flags |= ECRYPTFS_ENABLE_FILTERING;
-			break;
-#endif
-#ifdef CONFIG_CRYPTO_FIPS
-		case ecryptfs_opt_enable_cc:
-			cc_mode_src = args[0].from;
-			ecryptfs_cc_mode_set((int)simple_strtol(cc_mode_src,
-						   &cc_mode_src, 0));
-			break;
-#endif
 		case ecryptfs_opt_err:
 		default:
 			printk(KERN_WARNING
@@ -585,6 +494,7 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 {
 	struct super_block *s;
 	struct ecryptfs_sb_info *sbi;
+	struct ecryptfs_mount_crypt_stat *mount_crypt_stat;
 	struct ecryptfs_dentry_info *root_info;
 	const char *err = "Getting sb failed";
 	struct inode *inode;
@@ -603,6 +513,7 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 		err = "Error parsing options";
 		goto out;
 	}
+	mount_crypt_stat = &sbi->mount_crypt_stat;
 
 	s = sget(fs_type, NULL, set_anon_super, NULL);
 	if (IS_ERR(s)) {
@@ -648,11 +559,19 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 
 	/**
 	 * Set the POSIX ACL flag based on whether they're enabled in the lower
-	 * mount. Force a read-only eCryptfs mount if the lower mount is ro.
-	 * Allow a ro eCryptfs mount even when the lower mount is rw.
+	 * mount.
 	 */
 	s->s_flags = flags & ~MS_POSIXACL;
-	s->s_flags |= path.dentry->d_sb->s_flags & (MS_RDONLY | MS_POSIXACL);
+	s->s_flags |= path.dentry->d_sb->s_flags & MS_POSIXACL;
+
+	/**
+	 * Force a read-only eCryptfs mount when:
+	 *   1) The lower mount is ro
+	 *   2) The ecryptfs_encrypted_view mount option is specified
+	 */
+	if (path.dentry->d_sb->s_flags & MS_RDONLY ||
+	    mount_crypt_stat->flags & ECRYPTFS_ENCRYPTED_VIEW_ENABLED)
+		s->s_flags |= MS_RDONLY;
 
 	s->s_maxbytes = path.dentry->d_sb->s_maxbytes;
 	s->s_blocksize = path.dentry->d_sb->s_blocksize;

@@ -73,12 +73,12 @@ static ssize_t ssp_sensorhub_write(struct file *file, const char __user *buf,
 	else if (buf[0] == MSG2SSP_INST_LIB_NOTI) {
 		if (buf[2] == MSG2SSP_AP_STATUS_WAKEUP) {
 			ret = ssp_send_cmd(hub_data->ssp_data, MSG2SSP_AP_STATUS_WAKEUP);
-			enable_debug_timer(hub_data->ssp_data);
+//			enable_debug_timer(hub_data->ssp_data);
 			if (ret != SUCCESS)
 				pr_err("[SSP] : %s MSG2SSP_AP_STATUS_WAKEUP failed(%d)\n",
 					__func__, ret);
 		} else if (buf[2] == MSG2SSP_AP_STATUS_SLEEP) {
-			disable_debug_timer(hub_data->ssp_data);
+//			disable_debug_timer(hub_data->ssp_data);
 			ret = ssp_send_cmd(hub_data->ssp_data, MSG2SSP_AP_STATUS_SLEEP);
 			if (ret != SUCCESS)
 				pr_err("[SSP] : %s MSG2SSP_AP_STATUS_SLEEP failed(%d)\n",

@@ -243,7 +243,6 @@ static int mipi_samsung_disp_send_cmd(
 		enum mipi_samsung_cmd_list cmd,
 		unsigned char lock);
 
-extern void mdss_dsi_panel_touchsensing(int enable);
 static struct delayed_work touchsensing_work;
 
 int set_panel_rev(unsigned int id)
@@ -1658,50 +1657,34 @@ void mdss_dsi_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl, struct dsi_cmd_desc *c
 
 	memset(&cmdreq, 0, sizeof(cmdreq));
 
-	if (flag & CMD_REQ_SINGLE_TX) {
-		cmdreq.flags = CMD_REQ_SINGLE_TX | CMD_CLK_CTRL | CMD_REQ_COMMIT;
-	}else
-		cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
-
 	cmdreq.cmds = cmds;
 	cmdreq.cmds_cnt = cnt;
+	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+
+	if (flag & CMD_REQ_UNICAST)
+		cmdreq.flags |= CMD_REQ_UNICAST;
+
 	cmdreq.rlen = 0;
 	cmdreq.cb = NULL;
-	/*
-	 * This mutex is to sync up with dynamic FPS changes
-	 * so that DSI lockups shall not happen
-	 */
-	BUG_ON(msd.ctrl_pdata == NULL);
-	mutex_lock(&msd.ctrl_pdata->dfps_mutex);
+
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
-	mutex_unlock(&msd.ctrl_pdata->dfps_mutex);
 }
 
 u32 mdss_dsi_cmd_receive(struct mdss_dsi_ctrl_pdata *ctrl, struct dsi_cmd_desc *cmd, int rlen)
 {
 	struct dcs_cmd_req cmdreq;
-	char *buf;
-
-	buf = kmalloc(sizeof(rlen), GFP_KERNEL);
 	memset(&cmdreq, 0, sizeof(cmdreq));
 	cmdreq.cmds = cmd;
 	cmdreq.cmds_cnt = 1;
 	cmdreq.flags = CMD_REQ_RX | CMD_REQ_COMMIT;
-	cmdreq.rbuf = buf;
+	cmdreq.rbuf = ctrl->rx_buf.data;
 	cmdreq.rlen = rlen;
 	cmdreq.cb = NULL; /* call back */
-	/*
-	 * This mutex is to sync up with dynamic FPS changes
-	 * so that DSI lockups shall not happen
-	 */
-	BUG_ON(msd.ctrl_pdata == NULL);
-	mutex_lock(&msd.ctrl_pdata->dfps_mutex);
+
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
-	mutex_unlock(&msd.ctrl_pdata->dfps_mutex);
 	/*
 	 * blocked here, untill call back called
 	 */
-	kfree(buf);
 	return ctrl->rx_buf.len;
 }
 
@@ -1990,7 +1973,7 @@ static int mipi_samsung_disp_send_cmd(
 
 			/* Single Tx use for DSI_VIDEO_MODE Only */
 			if(msd.pdata->panel_info.mipi.mode == DSI_VIDEO_MODE)
-				flag = CMD_REQ_SINGLE_TX;
+				flag = CMD_REQ_UNICAST;
 			else
 				flag = 0;
 
@@ -2125,7 +2108,7 @@ void mdss_dsi_panel_touchsensing(int enable)
 			msecs_to_jiffies(50));
 }
 
-static void mdss_dsi_panel_touchsensing_work(struct work_queue *work)
+static void mdss_dsi_panel_touchsensing_work(struct work_struct *work)
 {
 	if(!msd.dstat.on)
 	{

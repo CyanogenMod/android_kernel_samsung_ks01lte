@@ -133,7 +133,7 @@ struct vibrator_platform_data vibrator_drvdata;
  */
 
 #define BASE_STRENGTH 126
-static unsigned int pwm_val = 100;
+static int8_t strength_val = 126;
 
 static int set_vibetonz(int timeout)
 {
@@ -148,7 +148,7 @@ static int set_vibetonz(int timeout)
 	} else {
 		pr_debug("tspdrv: ENABLE\n");
 		if (vibrator_drvdata.vib_model == HAPTIC_PWM) {
-			strength = (int8_t) (BASE_STRENGTH * pwm_val / 100);
+			strength = strength_val;
 			/* 90% duty cycle */
 			ImmVibeSPI_ForceOut_SetSamples(0, 8, 1, &strength);
 		} else { /* HAPTIC_MOTOR */
@@ -163,7 +163,7 @@ static int set_vibetonz(int timeout)
 
 static ssize_t pwm_value_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%u\n", pwm_val);
+	return sprintf(buf, "%u\n", strength_val * 100 / BASE_STRENGTH);
 }
 
 ssize_t pwm_value_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -174,14 +174,14 @@ ssize_t pwm_value_store(struct device *dev, struct device_attribute *attr, const
 		return -EINVAL;
 
 	if (new_pwm_val < 0 || new_pwm_val > 100) {
-		pr_info("[VIB] %s: new pwm_val %d is out of [0, 100] range\n", __func__, pwm_val);
+		pr_info("[VIB] %s: new pwm_val %d is out of [0, 100] range\n", __func__, new_pwm_val);
 		return -EINVAL;
 	} else {
-		pr_info("[VIB] %s: pwm_val=%d\n", __func__, pwm_val);
+		pr_info("[VIB] %s: pwm_val=%d\n", __func__, new_pwm_val);
 	}
 
-	if (new_pwm_val != pwm_val)
-		pwm_val = new_pwm_val;
+	if (new_pwm_val != (strength_val * 100 / BASE_STRENGTH))
+		strength_val = (int8_t) (BASE_STRENGTH * new_pwm_val / 100);
 
 	return count;
 }

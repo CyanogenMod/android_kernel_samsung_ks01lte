@@ -200,9 +200,9 @@ static ssize_t set_enable_irq(struct device *dev,
 	pr_info("[SSP] %s - %d start\n", __func__, dTemp);
 	if (dTemp) {
 		reset_mcu(data);
-		enable_debug_timer(data);
+//		enable_debug_timer(data);
 	} else if (!dTemp) {
-		disable_debug_timer(data);
+//		disable_debug_timer(data);
 		ssp_enable(data, 0);
 	} else
 		pr_err("[SSP] %s - invalid value\n", __func__);

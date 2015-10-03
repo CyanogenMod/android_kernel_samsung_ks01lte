@@ -33,9 +33,6 @@
 #define SLIM_ROOT_FREQ	24576000
 #define LADDR_RETRY	5
 
-#ifdef CONFIG_SND_SOC_ES325_SLIM
-#define PREVENT_SLIMBUS_SLEEP_IN_FW_DL
-#endif
 #define NGD_BASE_V1(r)	(((r) % 2) ? 0x800 : 0xA00)
 #define NGD_BASE_V2(r)	(((r) % 2) ? 0x1000 : 0x2000)
 #define NGD_BASE(r, v) ((v) ? NGD_BASE_V2(r) : NGD_BASE_V1(r))
@@ -83,19 +80,6 @@ enum ngd_offsets {
 enum ngd_status {
 	NGD_LADDR		= 1 << 1,
 };
-
-#if defined(PREVENT_SLIMBUS_SLEEP_IN_FW_DL)
-static int es325_slim_write_flag = 0;
-void msm_slim_es325_write_flag_set(int flag)
-{
-       pr_info("%s():es325_slim_write_flag = %d\n", __func__, flag);
-       if(es325_slim_write_flag != flag) {
-               es325_slim_write_flag = flag;
-               pr_info("%s():es325_slim_write_flag = %d\n", __func__, es325_slim_write_flag);
-       }
-}
-EXPORT_SYMBOL(msm_slim_es325_write_flag_set);
-#endif
 
 static int ngd_slim_runtime_resume(struct device *device);
 static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart);
@@ -1190,7 +1174,7 @@ static int ngd_slim_rx_msgq_thread(void *data)
 
 	while (!kthread_should_stop()) {
 		set_current_state(TASK_INTERRUPTIBLE);
-		wait_for_completion(notify);
+		wait_for_completion_interruptible(notify);
 		/* 1 irq notification per message */
 		if (dev->use_rx_msgqs != MSM_MSGQ_ENABLED) {
 			msm_slim_rx_dequeue(dev, (u8 *)buffer);
@@ -1236,7 +1220,7 @@ static int ngd_notify_slaves(void *data)
 
 	while (!kthread_should_stop()) {
 		set_current_state(TASK_INTERRUPTIBLE);
-		wait_for_completion(&dev->qmi.slave_notify);
+		wait_for_completion_interruptible(&dev->qmi.slave_notify);
 		/* Probe devices for first notification */
 		if (!i) {
 			i++;
@@ -1580,22 +1564,6 @@ static int __devexit ngd_slim_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#if defined(PREVENT_SLIMBUS_SLEEP_IN_FW_DL)
-#ifdef CONFIG_PM_RUNTIME
-static int ngd_slim_runtime_idle(struct device *device)
-{
-	struct platform_device *pdev = to_platform_device(device);
-	struct msm_slim_ctrl *dev = platform_get_drvdata(pdev);
-	if (dev->state == MSM_CTRL_AWAKE && es325_slim_write_flag == 0)
-		dev->state = MSM_CTRL_IDLE;
-	dev_dbg(device, "pm_runtime: idle...\n");
-	if ( dev->state == MSM_CTRL_IDLE && es325_slim_write_flag == 0){
-		pm_request_autosuspend(device);
-	}
-	return -EAGAIN;
-}
-#endif
-#else
 #ifdef CONFIG_PM_RUNTIME
 static int ngd_slim_runtime_idle(struct device *device)
 {
@@ -1609,7 +1577,6 @@ static int ngd_slim_runtime_idle(struct device *device)
 	pm_request_autosuspend(device);
 	return -EAGAIN;
 }
-#endif
 #endif
 
 /*

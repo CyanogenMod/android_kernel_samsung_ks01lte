@@ -100,13 +100,11 @@ struct sec_battery_info {
 
 	struct delayed_work polling_work;
 	struct alarm polling_alarm;
-	ktime_t last_poll_time;
 
 	/* event set */
 	unsigned int event;
 	unsigned int event_wait;
 	struct alarm event_termination_alarm;
-	ktime_t	last_event_time;
 
 	/* battery check */
 	unsigned int check_count;

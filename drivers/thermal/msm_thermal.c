@@ -1288,7 +1288,7 @@ exit:
 	return ret;
 }
 
-static void do_freq_control(long temp)
+static void __ref do_freq_control(long temp)
 {
 	uint32_t cpu = 0;
 	uint32_t max_freq = cpus[cpu].limited_max_freq;
@@ -1330,11 +1330,14 @@ static void do_freq_control(long temp)
 	put_online_cpus();
 }
 
-static void check_temp(struct work_struct *work)
+static void __ref check_temp(struct work_struct *work)
 {
 	static int limit_init;
 	long temp = 0;
 	int ret = 0;
+
+	if (!msm_thermal_probed)
+		return;
 
 	do_therm_reset();
 
@@ -1345,10 +1348,6 @@ static void check_temp(struct work_struct *work)
 		goto reschedule;
 	}
 
-	do_core_control(temp);
-	do_psm();
-	do_ocr();
-
 	if (!limit_init) {
 		ret = msm_thermal_get_freq_table();
 		if (ret)
@@ -1357,7 +1356,10 @@ static void check_temp(struct work_struct *work)
 			limit_init = 1;
 	}
 
+	do_core_control(temp);
 	do_vdd_restriction();
+	do_psm();
+	do_ocr();
 	do_freq_control(temp);
 
 reschedule:
@@ -3226,6 +3228,7 @@ int __init msm_thermal_late_init(void)
 	msm_thermal_add_default_temp_limit_nodes();
 
 	interrupt_mode_init();
+
 	return 0;
 }
 late_initcall(msm_thermal_late_init);

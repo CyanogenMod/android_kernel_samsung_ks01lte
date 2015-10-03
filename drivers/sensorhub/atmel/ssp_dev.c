@@ -485,7 +485,7 @@ static int ssp_probe(struct i2c_client *client,
 	ssp_enable(data, true);
 	pr_info("[SSP]: %s - probe success!\n", __func__);
 
-	enable_debug_timer(data);
+//	enable_debug_timer(data);
 
 	iRet = 0;
 	if (data->fw_dl_state == FW_DL_STATE_NEED_TO_SCHEDULE) {
@@ -544,7 +544,7 @@ static void ssp_shutdown(struct i2c_client *client)
 	unregister_early_suspend(&data->early_suspend);
 #endif
 
-	disable_debug_timer(data);
+//	disable_debug_timer(data);
 
 	free_irq(data->iIrq, data);
 	gpio_free(data->mcu_int1);
@@ -577,7 +577,7 @@ static void ssp_early_suspend(struct early_suspend *handler)
 	data = container_of(handler, struct ssp_data, early_suspend);
 
 	func_dbg();
-	disable_debug_timer(data);
+//	disable_debug_timer(data);
 
 #ifdef CONFIG_SENSORS_SSP_SENSORHUB
 	/* give notice to user that AP goes to sleep */
@@ -595,7 +595,7 @@ static void ssp_late_resume(struct early_suspend *handler)
 	data = container_of(handler, struct ssp_data, early_suspend);
 
 	func_dbg();
-	enable_debug_timer(data);
+//	enable_debug_timer(data);
 
 #ifdef CONFIG_SENSORS_SSP_SENSORHUB
 	/* give notice to user that AP goes to sleep */

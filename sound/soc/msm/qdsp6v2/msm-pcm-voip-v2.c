@@ -33,7 +33,6 @@
 #include "audio_ocmem.h"
 
 #define SHARED_MEM_BUF 2
-#define VOIP_MIN_Q_LEN 4
 #define VOIP_MAX_Q_LEN 10
 #define VOIP_MAX_VOC_PKT_SIZE 4096
 #define VOIP_MIN_VOC_PKT_SIZE 320
@@ -206,10 +205,10 @@ static struct snd_pcm_hardware msm_pcm_hardware = {
 	.rate_max =             16000,
 	.channels_min =         1,
 	.channels_max =         1,
-	.buffer_bytes_max =	sizeof(struct voip_buf_node) * VOIP_MIN_Q_LEN,
+	.buffer_bytes_max =	sizeof(struct voip_buf_node) * VOIP_MAX_Q_LEN,
 	.period_bytes_min =	VOIP_MIN_VOC_PKT_SIZE,
 	.period_bytes_max =	VOIP_MAX_VOC_PKT_SIZE,
-	.periods_min =		VOIP_MIN_Q_LEN,
+	.periods_min =		VOIP_MAX_Q_LEN,
 	.periods_max =		VOIP_MAX_Q_LEN,
 	.fifo_size =            0,
 };
@@ -801,7 +800,6 @@ static int msm_pcm_playback_copy(struct snd_pcm_substream *substream, int a,
 				(!list_empty(&prtd->free_in_queue) ||
 				prtd->state == VOIP_STOPPED),
 				1 * HZ);
-
 	if (prtd->voip_reset) {
 		pr_debug("%s: RESET event happened during VoIP\n", __func__);
 		return -ENETRESET;
@@ -1267,14 +1265,10 @@ static int msm_pcm_hw_params(struct snd_pcm_substream *substream,
 	struct voip_buf_node *buf_node = NULL;
 	int i = 0, offset = 0;
 
-	int periods = VOIP_MIN_Q_LEN;
 	pr_debug("%s: voip\n", __func__);
 
 	mutex_lock(&voip_info.lock);
 
-	periods = params_periods(params);
-	pr_info("%s: periods = %d\n", __func__, periods);
-	runtime->hw.buffer_bytes_max = sizeof(struct voip_buf_node) * periods;
 	dma_buf->dev.type = SNDRV_DMA_TYPE_DEV;
 	dma_buf->dev.dev = substream->pcm->card->dev;
 	dma_buf->private_data = NULL;
@@ -1292,7 +1286,7 @@ static int msm_pcm_hw_params(struct snd_pcm_substream *substream,
 	memset(dma_buf->area, 0, runtime->hw.buffer_bytes_max);
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		for (i = 0; i < periods; i++) {
+		for (i = 0; i < VOIP_MAX_Q_LEN; i++) {
 			buf_node = (void *)dma_buf->area + offset;
 
 			list_add_tail(&buf_node->list,
@@ -1300,7 +1294,7 @@ static int msm_pcm_hw_params(struct snd_pcm_substream *substream,
 			offset = offset + sizeof(struct voip_buf_node);
 		}
 	} else {
-		for (i = 0; i < periods; i++) {
+		for (i = 0; i < VOIP_MAX_Q_LEN; i++) {
 			buf_node = (void *) dma_buf->area + offset;
 			list_add_tail(&buf_node->list,
 					&voip_info.free_out_queue);

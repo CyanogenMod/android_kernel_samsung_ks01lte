@@ -138,6 +138,7 @@ static int devfreq_clock_probe(struct platform_device *pdev)
 			p->freq_table[j++] = f / 1000;
 	}
 	p->max_state = j;
+	p->initial_freq = data[len-1];
 	devm_kfree(dev, data);
 
 	if (p->max_state == 0) {

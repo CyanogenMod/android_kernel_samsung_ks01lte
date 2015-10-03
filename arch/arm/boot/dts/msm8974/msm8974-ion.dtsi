@@ -16,12 +16,12 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-                qcom,ion-heap@16 { /* Camera*/
-                        compatible = "qcom,msm-ion-reserve";
-                        reg = <16>;
-                        linux,contiguous-region = <&camera_mem>;
-                        qcom,ion-heap-type = "DMA";
-                };
+		qcom,ion-heap@16 { /* Camera*/
+			compatible = "qcom,msm-ion-reserve";
+			reg = <16>;
+			linux,contiguous-region = <&camera_mem>;
+			qcom,ion-heap-type = "DMA";
+		};
 
 		qcom,ion-heap@25 {
 			reg = <25>;

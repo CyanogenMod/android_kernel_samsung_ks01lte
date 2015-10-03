@@ -266,13 +266,6 @@ struct dwc3_msm {
 
 static struct usb_ext_notification *usb_ext;
 
-#if defined(CONFIG_SEC_VIENNA_PROJECT) || defined(CONFIG_SEC_V2_PROJECT) \
-|| defined(CONFIG_SEC_K_PROJECT) \
-|| defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_F_PROJECT)
-int sec_qcom_usb_rdrv;
-EXPORT_SYMBOL(sec_qcom_usb_rdrv);
-#endif
-
 /**
  *
  * Read register with debug info.
@@ -1201,6 +1194,7 @@ devote_3p3:
 static int dwc3_hsusb_ldo_enable(struct dwc3_msm *dwc, int on)
 {
 	int rc = 0;
+
 	dev_dbg(dwc->dev, "reg (%s)\n", on ? "HPM" : "LPM");
 
 	if (!on)
@@ -2310,7 +2304,6 @@ error:
 
 static irqreturn_t msm_dwc3_irq(int irq, void *data)
 {
-#ifndef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 	struct dwc3_msm *mdwc = data;
 
 	if (atomic_read(&mdwc->in_lpm)) {
@@ -2321,7 +2314,7 @@ static irqreturn_t msm_dwc3_irq(int irq, void *data)
 	} else {
 		pr_info_ratelimited("%s: IRQ outside LPM\n", __func__);
 	}
-#endif
+
 	return IRQ_HANDLED;
 }
 
@@ -2750,18 +2743,6 @@ dwc3_msm_ext_chg_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			pr_debug("%s:voltage request successful\n", __func__);
 		else
 			pr_debug("%s:voltage request failed\n", __func__);
-		break;
-	case MSM_USB_EXT_CHG_TYPE:
-		if (get_user(val, (int __user *)arg)) {
-			pr_err("%s: get_user failed\n\n", __func__);
-			ret = -EFAULT;
-			break;
-		}
-
-		if (val)
-			pr_debug("%s:charger is external charger\n", __func__);
-		else
-			pr_debug("%s:charger is not ext charger\n", __func__);
 		break;
 	default:
 		ret = -EINVAL;
@@ -3212,7 +3193,7 @@ static int __devinit dwc3_msm_probe(struct platform_device *pdev)
 	if (mdwc->ext_xceiv.otg_capability ||
 			!mdwc->charger.charging_disabled) {
 		mdwc->usb_psy.name = "dwc-usb";
-		mdwc->usb_psy.type = POWER_SUPPLY_TYPE_UNKNOWN;
+		mdwc->usb_psy.type = POWER_SUPPLY_TYPE_USB;
 		mdwc->usb_psy.supplied_to = dwc3_msm_pm_power_supplied_to;
 		mdwc->usb_psy.num_supplicants = ARRAY_SIZE(
 						dwc3_msm_pm_power_supplied_to);

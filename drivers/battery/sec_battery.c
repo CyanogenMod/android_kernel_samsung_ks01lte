@@ -25,8 +25,6 @@
 #define TUNER_IS_OFF 0
 #endif
 
-#define SEC_BAT_CHECK_PERIOD	(20LL * NSEC_PER_SEC)
-
 #ifdef CONFIG_SAMSUNG_BATTERY_DISALLOW_DEEP_SLEEP
 struct clk * xo_chr = NULL;
 #endif
@@ -1239,10 +1237,9 @@ static void sec_bat_chg_temperature_check(
 static void sec_bat_event_program_alarm(
 	struct sec_battery_info *battery, int seconds)
 {
-	ktime_t kt;
+	ktime_t next = ktime_set(seconds, 0);
 
-	kt = ns_to_ktime(SEC_BAT_CHECK_PERIOD);
-	alarm_start_relative(&battery->event_termination_alarm, kt);
+	alarm_start_relative(&battery->event_termination_alarm, next);
 }
 static enum alarmtimer_restart
 sec_bat_event_expired_timer_func(struct alarm *alarm, ktime_t now)
@@ -1289,7 +1286,6 @@ static void sec_bat_event_set(
 			return;	/* nothing to clear */
 		}
 		battery->event_wait = event;
-		battery->last_event_time = ktime_get_boottime();
 
 		sec_bat_event_program_alarm(battery,
 			battery->pdata->event_waiting_time);
@@ -1984,10 +1980,9 @@ static void sec_bat_polling_work(struct work_struct *work)
 static void sec_bat_program_alarm(
 				struct sec_battery_info *battery, int seconds)
 {
-	ktime_t kt;
+	ktime_t next = ktime_set(seconds, 0);
 
-	kt = ns_to_ktime(SEC_BAT_CHECK_PERIOD);
-	alarm_start_relative(&battery->polling_alarm, kt);
+	alarm_start_relative(&battery->polling_alarm, next);
 }
 
 static enum alarmtimer_restart
@@ -2146,7 +2141,6 @@ static void sec_bat_set_polling(
 				polling_time_temp * HZ);
 		break;
 	case SEC_BATTERY_MONITOR_ALARM:
-		battery->last_poll_time = ktime_get_boottime();
 		if (battery->pdata->monitor_initial_count) {
 			battery->pdata->monitor_initial_count--;
 			sec_bat_program_alarm(battery, 1);
@@ -4559,7 +4553,6 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 			sec_bat_polling_work);
 		break;
 	case SEC_BATTERY_MONITOR_ALARM:
-		battery->last_poll_time = ktime_get_boottime();
 		alarm_init(&battery->polling_alarm,
 			ALARM_REALTIME,
 			sec_bat_alarm);

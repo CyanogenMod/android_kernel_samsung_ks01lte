@@ -2788,7 +2788,7 @@ static void __exit sps_exit(void)
 #endif
 }
 
-arch_initcall(sps_init);
+arch_initcall_sync(sps_init);
 module_exit(sps_exit);
 
 MODULE_LICENSE("GPL v2");

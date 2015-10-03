@@ -98,7 +98,6 @@ void mdss_dsi_ctrl_init(struct device *ctrl_dev,
 	spin_lock_init(&ctrl->mdp_lock);
 	mutex_init(&ctrl->mutex);
 	mutex_init(&ctrl->cmd_mutex);
-	mutex_init(&ctrl->dfps_mutex);
 	mdss_dsi_buf_alloc(ctrl_dev, &ctrl->tx_buf, SZ_4K);
 	mdss_dsi_buf_alloc(ctrl_dev, &ctrl->rx_buf, SZ_4K);
 	ctrl->cmdlist_commit = mdss_dsi_cmdlist_commit;
@@ -770,14 +769,14 @@ int mdss_dsi_cmds_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 
 			mctrl->cmd_cfg_restore =
 					__mdss_dsi_cmd_mode_config(mctrl, 1);
-		} else {
+		} else if (!ctrl->do_unicast) {
 			/* broadcast cmds, let cmd_trigger do it */
 			return 0;
 		}
 	}
 
-	pr_debug("%s: ctrl=%d\n", __func__,
-				ctrl->ndx);
+	pr_debug("%s: ctrl=%d do_unicast=%d\n", __func__,
+				ctrl->ndx, ctrl->do_unicast);
 
 do_send:
 	ctrl->cmd_cfg_restore = __mdss_dsi_cmd_mode_config(ctrl, 1);
@@ -788,14 +787,16 @@ do_send:
 		cnt = -EINVAL;
 	}
 
-	if (mctrl && mctrl->cmd_cfg_restore) {
-		__mdss_dsi_cmd_mode_config(mctrl, 0);
-		mctrl->cmd_cfg_restore = false;
-	}
+	if (!ctrl->do_unicast) {
+		if (mctrl && mctrl->cmd_cfg_restore) {
+			__mdss_dsi_cmd_mode_config(mctrl, 0);
+			mctrl->cmd_cfg_restore = false;
+		}
 
-	if (ctrl->cmd_cfg_restore) {
-		__mdss_dsi_cmd_mode_config(ctrl, 0);
-		ctrl->cmd_cfg_restore = false;
+		if (ctrl->cmd_cfg_restore) {
+			__mdss_dsi_cmd_mode_config(ctrl, 0);
+			ctrl->cmd_cfg_restore = false;
+		}
 	}
 
 	return cnt;
@@ -998,98 +999,6 @@ end:
 	return rp->len;
 }
 
-/*
- * mipi_dsi_cmds_single_tx:
- * thread context only
- */
-int mdss_dsi_cmds_single_tx(struct mdss_dsi_ctrl_pdata *pdata,
-		 struct dsi_cmd_desc *cmds, int cnt)
-{
-	struct dsi_cmd_desc *cm;
-
-	int i, j = 0, k = 0, cmd_len = 0;
-	char *cmds_tx;
-	char *bp;
-	struct mdss_dsi_ctrl_pdata *ctrl = pdata;
-	struct mdss_dsi_ctrl_pdata *mctrl = NULL;
-	struct dsi_buf *tp = &ctrl->tx_buf;
-
-	pr_debug("%s:++\n",__func__);
-
-	/*Set Last Bit, only for last packet */
-	for (i = 0; i < cnt; i++) {
-		if(cmds[i].dchdr.dtype != DTYPE_GEN_LWRITE &&
-			cmds[i].dchdr.dtype != DTYPE_DCS_LWRITE ) {
-			pr_err("Single TX expects only Long Packets,"\
-				"Short packet encountered, return fail\n");
-			return -1;
-		}
-		cmds[i].dchdr.last = 0;
-	}
-	cmds[cnt-1].dchdr.last = 1;
-
-	/*
-	 * Turn on cmd mode in order to transmit the commands.
-	 * For video mode, do not send cmds more than one pixel line,
-	 * since it only transmit it during BLLP.
-	 */
-	
-	if (mdss_dsi_sync_wait_enable(ctrl)) {
-		if (mdss_dsi_sync_wait_trigger(ctrl)) {
-			mctrl = mdss_dsi_get_other_ctrl(ctrl);
-			if (!mctrl) {
-				pr_warn("%s: sync_wait, NULL at other control\n",
-							__func__);
-				goto do_send;
-			}
-
-			mctrl->cmd_cfg_restore =
-					__mdss_dsi_cmd_mode_config(mctrl, 1);
-		} else {
-			/* broadcast cmds, let cmd_trigger do it */
-			return 0;
-		}
-	}
-
-	pr_debug("%s: ctrl=%d\n", __func__,
-				ctrl->ndx);
-
-do_send:
-	ctrl->cmd_cfg_restore = __mdss_dsi_cmd_mode_config(ctrl, 1);
-
-	cm = cmds;
-	cmds_tx = kmalloc((1024 + DSI_HOST_HDR_SIZE) * cnt, GFP_KERNEL);
-	mdss_dsi_buf_init(tp);
-	mdss_dsi_enable_irq(pdata, DSI_CMD_TERM);
-	for (i = 0; i < cnt; i++) {
-		mdss_dsi_buf_init(tp);
-		mdss_dsi_cmd_dma_add(tp, cm);
-		bp = tp->data;
-		for (j = 0; j < tp->len; j++) {
-			*(cmds_tx + k) = *bp++;
-			k++;
-		}
-		cmd_len = cmd_len + tp->len;
-		cm++;
-	}
-	tp->data = cmds_tx;
-	tp->len = cmd_len;
-	mdss_dsi_cmd_dma_tx(ctrl, tp);
-	kfree(cmds_tx);
-
-	if (mctrl && mctrl->cmd_cfg_restore) {
-		__mdss_dsi_cmd_mode_config(mctrl, 0);
-		mctrl->cmd_cfg_restore = false;
-	}
-
-	if (ctrl->cmd_cfg_restore) {
-		__mdss_dsi_cmd_mode_config(ctrl, 0);
-		ctrl->cmd_cfg_restore = false;
-	}
-
-	return cnt;
-}
-
 #define DMA_TX_TIMEOUT 200
 
 static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
@@ -1104,12 +1013,6 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 
 	len = ALIGN(tp->len, 4);
 	ctrl->dma_size = ALIGN(tp->len, SZ_4K);
-
-	tp->dmap = dma_map_single(&dsi_dev, tp->data, ctrl->dma_size, DMA_TO_DEVICE);
-	if (dma_mapping_error(&dsi_dev, tp->dmap)) {
-		pr_err("%s: dmap mapp failed\n", __func__);
-		return -ENOMEM;
-	}
 
 	if (is_mdss_iommu_attached()) {
 		int ret = msm_iommu_map_contig_buffer(tp->dmap,
@@ -1143,6 +1046,14 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 
 	MIPI_OUTP((ctrl->ctrl_base) + 0x090, 0x01);
 	wmb();
+
+	if (ctrl->do_unicast) {
+		/* let cmd_trigger to kickoff later */
+		pr_debug("%s: SKIP, ndx=%d do_unicast=%d\n", __func__,
+					ctrl->ndx, ctrl->do_unicast);
+		ret = tp->len;
+		goto end;
+	}
 
 	ret = wait_for_completion_timeout(&ctrl->dma_comp,
 				msecs_to_jiffies(DMA_TX_TIMEOUT));
@@ -1295,6 +1206,13 @@ int mdss_dsi_cmdlist_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 {
 	int ret, ret_val = -EINVAL;
 
+	if (mdss_dsi_sync_wait_enable(ctrl)) {
+		ctrl->do_unicast = false;
+		if (!ctrl->cmd_sync_wait_trigger &&
+					req->flags & CMD_REQ_UNICAST)
+			ctrl->do_unicast = true;
+	}
+
 	ret = mdss_dsi_cmds_tx(ctrl, req->cmds, req->cmds_cnt);
 
 	if (!IS_ERR_VALUE(ret))
@@ -1372,12 +1290,16 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 		return rc;
 	}
 
+	if (req->flags & CMD_REQ_HS_MODE)
+		mdss_dsi_set_tx_power_mode(0, &ctrl->panel_data);
+
 	if (req->flags & CMD_REQ_RX)
 		ret = mdss_dsi_cmdlist_rx(ctrl, req);
-	else if (req->flags & CMD_REQ_SINGLE_TX)
-		ret = mdss_dsi_cmds_single_tx(ctrl,req->cmds,req->cmds_cnt);
 	else
 		ret = mdss_dsi_cmdlist_tx(ctrl, req);
+
+	if (req->flags & CMD_REQ_HS_MODE)
+		mdss_dsi_set_tx_power_mode(1, &ctrl->panel_data);
 
 	mdss_iommu_ctrl(0);
 	mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);

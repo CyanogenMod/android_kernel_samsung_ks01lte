@@ -337,10 +337,6 @@ static int __check_block_validity(struct inode *inode, const char *func,
 {
 	if (!ext4_data_block_valid(EXT4_SB(inode->i_sb), map->m_pblk,
 				   map->m_len)) {
-		printk(KERN_ERR "printing inode..\n");
-		print_block_data(inode->i_sb, 0, (unsigned char *)inode,
-				0, EXT4_INODE_SIZE(inode->i_sb));
-
 		ext4_error_inode(inode, func, line, map->m_pblk,
 				 "lblock %lu mapped to illegal pblock "
 				 "(length %d)", (unsigned long) map->m_lblk,
@@ -3680,6 +3676,9 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		inode->i_uid |= le16_to_cpu(raw_inode->i_uid_high) << 16;
 		inode->i_gid |= le16_to_cpu(raw_inode->i_gid_high) << 16;
 	}
+#ifdef CONFIG_MACH_FIND7
+	ext4_fill_inode(sb, inode);
+#endif
 	set_nlink(inode, le16_to_cpu(raw_inode->i_links_count));
 
 	ext4_clear_state_flags(ei);	/* Only relevant on 32-bit archs */
@@ -3840,16 +3839,6 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 	return inode;
 
 bad_inode:
-	/* for debugging, woojoong.lee */
-	printk(KERN_ERR "iloc info, offset : %lu,"
-			, iloc.offset);
-	printk(KERN_ERR " group# : %u\n", iloc.block_group);
-	printk(KERN_ERR "sb info, inodes per group : %lu,"
-			, EXT4_SB(sb)->s_inodes_per_group);
-	printk(KERN_ERR " inode size : %d\n"
-			, EXT4_SB(sb)->s_inode_size);
-	print_bh(sb, iloc.bh, 0, EXT4_BLOCK_SIZE(sb));
-	/* end */
 	brelse(iloc.bh);
 	iget_failed(inode);
 	return ERR_PTR(ret);
@@ -3917,6 +3906,9 @@ static int ext4_do_update_inode(handle_t *handle,
 		memset(raw_inode, 0, EXT4_SB(inode->i_sb)->s_inode_size);
 
 	ext4_get_inode_flags(ei);
+#ifdef CONFIG_MACH_FIND7
+	ext4_fill_inode(inode->i_sb, inode);
+#endif
 	raw_inode->i_mode = cpu_to_le16(inode->i_mode);
 	if (!(test_opt(inode->i_sb, NO_UID32))) {
 		raw_inode->i_uid_low = cpu_to_le16(low_16_bits(inode->i_uid));

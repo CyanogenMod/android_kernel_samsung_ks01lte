@@ -1500,7 +1500,7 @@ static struct clk_freq_tbl ftbl_gcc_gp_clk[] = {
 	F(16000000, gpll0,  1,  2,  75),
 	F(19200000,   cxo,  1,  0,   0),
 	F(24000000, gpll0,  5,  1,   5),
-        F(125000000,  gpll0,   1,   5,  24),
+	F(125000000,  gpll0,   1,   5,  24),
 	F_END
 };
 

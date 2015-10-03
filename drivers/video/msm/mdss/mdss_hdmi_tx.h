@@ -86,7 +86,9 @@ struct hdmi_tx_ctrl {
 	struct work_struct cable_notify_work;
 
 	bool hdcp_feature_on;
+	bool ds_registered;
 	u32 present_hdcp;
+
 	u8 spd_vendor_name[9];
 	u8 spd_product_description[17];
 

@@ -661,26 +661,11 @@ static int mdss_dsi_core_power_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 	}
 
 	if (enable) {
-		if (!ctrl->core_power) {
-			/* enable mdss gdsc */
-			pr_debug("%s: Enable MDP FS\n", __func__);
-			rc = msm_dss_enable_vreg(
-				ctrl->power_data[DSI_CORE_PM].vreg_config,
-				ctrl->power_data[DSI_CORE_PM].num_vreg, 1);
-			if (rc) {
-				pr_err("%s: failed to enable vregs for %s\n",
-					__func__,
-					__mdss_dsi_pm_name(DSI_CORE_PM));
-				goto error;
-			}
-			ctrl->core_power = true;
-		}
-
 		rc = mdss_dsi_bus_clk_start(ctrl);
 		if (rc) {
 			pr_err("%s: Failed to start bus clocks. rc=%d\n",
 				__func__, rc);
-			goto error_bus_clk_start;
+			goto error;
 		}
 
 		/*
@@ -712,57 +697,17 @@ static int mdss_dsi_core_power_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 				goto error_ulps;
 			}
 		}
-
-		rc = mdss_dsi_clamp_ctrl(ctrl, 0);
-		if (rc) {
-			pr_err("%s: Failed to disable dsi clamps. rc=%d\n",
-				__func__, rc);
-			goto error_ulps;
-		}
 	} else {
-		/* Enable DSI clamps only if entering idle power collapse */
-		if (pdata->panel_info.blank_state != MDSS_PANEL_BLANK_BLANK) {
-			rc = mdss_dsi_clamp_ctrl(ctrl, 1);
-			if (rc)
-				pr_err("%s: Failed to enable dsi clamps. rc=%d\n",
-					__func__, rc);
-		}
-
 		/*
 		 * disable bus clocks irrespective of whether dsi phy was
 		 * successfully clamped or not
 		 */
 		mdss_dsi_bus_clk_stop(ctrl);
-
-		/* disable mdss gdsc only if dsi phy was successfully clamped*/
-		if (rc) {
-			pr_debug("%s: leaving mdss gdsc on\n", __func__);
-		} else {
-			pr_debug("%s: Disable MDP FS\n", __func__);
-			rc = msm_dss_enable_vreg(
-				ctrl->power_data[DSI_CORE_PM].vreg_config,
-				ctrl->power_data[DSI_CORE_PM].num_vreg, 0);
-			if (rc) {
-				pr_warn("%s: failed to disable vregs for %s\n",
-					__func__,
-					__mdss_dsi_pm_name(DSI_CORE_PM));
-				rc = 0;
-			} else {
-				ctrl->core_power = false;
-			}
-		}
 	}
 	return rc;
 
 error_ulps:
 	mdss_dsi_bus_clk_stop(ctrl);
-error_bus_clk_start:
-	if (msm_dss_enable_vreg(ctrl->power_data[DSI_CORE_PM].vreg_config,
-		ctrl->power_data[DSI_CORE_PM].num_vreg, 0))
-		pr_warn("%s: failed to disable vregs for %s\n",
-			__func__, __mdss_dsi_pm_name(DSI_CORE_PM));
-	else
-		ctrl->core_power = false;
 error:
 	return rc;
 }
@@ -793,7 +738,6 @@ static int mdss_dsi_clk_ctrl_sub(struct mdss_dsi_ctrl_pdata *ctrl,
 {
 	int rc = 0;
 	struct mdss_panel_data *pdata;
-	bool core_power_enabled = false;
 
 	if (!ctrl) {
 		pr_err("%s: Invalid arg\n", __func__);
@@ -813,7 +757,6 @@ static int mdss_dsi_clk_ctrl_sub(struct mdss_dsi_ctrl_pdata *ctrl,
 					__func__, rc);
 				goto error;
 			}
-			core_power_enabled = true;
 		}
 		if (clk_type & DSI_LINK_CLKS) {
 			rc = mdss_dsi_link_clk_start(ctrl);
@@ -831,13 +774,6 @@ static int mdss_dsi_clk_ctrl_sub(struct mdss_dsi_ctrl_pdata *ctrl,
 					goto error_ulps_exit;
 				}
 			}
-
-			/*
-			 * If we are coming out of idle power collapse, then
-			 * reset DSI controller state
-			 */
-			if (core_power_enabled)
-				mdss_dsi_reset(ctrl);
 		}
 	} else {
 		if (clk_type & DSI_LINK_CLKS) {

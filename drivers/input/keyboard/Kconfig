@@ -627,6 +627,12 @@ config SENSORS_HALL
 	help
 	  Say Y here to enable the HALL
 
+config SENSORS_HALL_IRQ_CTRL
+        bool "SENSORS_HALL_IRQ_CTRL"
+	depends on !SEC_FACTORY
+	default n
+	help
+	  Say Y here to enable the IRQ control function
 
 source "drivers/input/keyboard/cypress_touchkey/Kconfig"
 source "drivers/input/keyboard/cypress_touchkey_h/Kconfig"
