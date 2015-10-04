@@ -450,12 +450,12 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 	} else
 		leds_on(led, true, true, brightness);
 
-	leds_set_slope_mode(client, led, 0, 15, 15, 0,
-				(delay_on_time + AN30259A_TIME_UNIT - 1) /
+	leds_set_slope_mode(client, led, 0, 15, 8, 0,
+				(delay_on_time + AN30259A_TIME_UNIT) /
 				AN30259A_TIME_UNIT,
-				(delay_off_time + AN30259A_TIME_UNIT - 1) /
+				(delay_off_time + AN30259A_TIME_UNIT) /
 				AN30259A_TIME_UNIT,
-				0, 0, 0, 0);
+				1, 1, 1, 1);
 }
 
 static ssize_t store_an30259a_led_lowpower(struct device *dev,
@@ -543,7 +543,7 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 		return count;
 	}
 	/*Reset an30259a*/
-	an30259a_start_led_pattern(LED_OFF);
+	//an30259a_start_led_pattern(LED_OFF);
 
 	/*Set LED blink mode*/
 	led_r_brightness = ((u32)led_brightness & LED_R_MASK)
