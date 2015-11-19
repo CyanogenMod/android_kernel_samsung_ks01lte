@@ -32,10 +32,6 @@ int sysctl_nr_open __read_mostly = 1024*1024;
 int sysctl_nr_open_min = BITS_PER_LONG;
 int sysctl_nr_open_max = 1024 * 1024; /* raised later */
 
-#ifdef CONFIG_SEC_FILE_LEAK_DEBUG
-extern void	sec_debug_EMFILE_error_proc(void);
-#endif
-
 /*
  * We use this list to defer free fdtables that have vmalloced
  * sets/arrays. By keeping a per-cpu list, we avoid having to embed
@@ -220,10 +216,6 @@ static int expand_fdtable(struct files_struct *files, int nr)
 	 * caller and alloc_fdtable().  Cheaper to catch it here...
 	 */
 	if (unlikely(new_fdt->max_fds <= nr)) {
-
-#ifdef CONFIG_SEC_FILE_LEAK_DEBUG
-		sec_debug_EMFILE_error_proc();
-#endif
 		__free_fdtable(new_fdt);
 		return -EMFILE;
 	}
@@ -263,26 +255,16 @@ int expand_files(struct files_struct *files, int nr)
 	 * N.B. For clone tasks sharing a files structure, this test
 	 * will limit the total number of files that can be opened.
 	 */
-	if (nr >= rlimit(RLIMIT_NOFILE)) {
-
-#ifdef CONFIG_SEC_FILE_LEAK_DEBUG
-		sec_debug_EMFILE_error_proc();
-#endif
+	if (nr >= rlimit(RLIMIT_NOFILE))
 		return -EMFILE;
-	}
 
 	/* Do we need to expand? */
 	if (nr < fdt->max_fds)
 		return 0;
 
 	/* Can we expand? */
-	if (nr >= sysctl_nr_open) {
-
-#ifdef CONFIG_SEC_FILE_LEAK_DEBUG
-		sec_debug_EMFILE_error_proc();
-#endif
+	if (nr >= sysctl_nr_open)
 		return -EMFILE;
-	}
 
 	/* All good, so we try */
 	return expand_fdtable(files, nr);
@@ -351,10 +333,6 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 
 		/* beyond sysctl_nr_open; nothing to do */
 		if (unlikely(new_fdt->max_fds < open_files)) {
-
-#ifdef CONFIG_SEC_FILE_LEAK_DEBUG
-			sec_debug_EMFILE_error_proc();
-#endif
 			__free_fdtable(new_fdt);
 			*errorp = -EMFILE;
 			goto out_release;

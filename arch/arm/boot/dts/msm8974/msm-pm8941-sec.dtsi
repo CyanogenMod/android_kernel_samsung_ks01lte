@@ -89,6 +89,7 @@
 	};
 
 	bif_ctrl: qcom,bsi@1b00 {
+		status = "disabled";
 		compatible = "qcom,qpnp-bsi";
 		reg = <0x1b00 0x100>,
 		      <0x1208 0x1>;

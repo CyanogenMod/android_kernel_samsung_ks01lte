@@ -333,17 +333,14 @@ static struct async *async_getcompleted(struct dev_state *ps)
 static struct async *async_getpending(struct dev_state *ps,
 					     void __user *userurb)
 {
-	unsigned long flags;
 	struct async *as;
 
-	spin_lock_irqsave(&ps->lock, flags);
 	list_for_each_entry(as, &ps->async_pending, asynclist)
 		if (as->userurb == userurb) {
 			list_del_init(&as->asynclist);
-			spin_unlock_irqrestore(&ps->lock, flags);
 			return as;
 		}
-	spin_unlock_irqrestore(&ps->lock, flags);
+
 	return NULL;
 }
 
@@ -398,6 +395,7 @@ static void cancel_bulk_urbs(struct dev_state *ps, unsigned bulk_addr)
 __releases(ps->lock)
 __acquires(ps->lock)
 {
+	struct urb *urb;
 	struct async *as;
 
 	/* Mark all the pending URBs that match bulk_addr, up to but not
@@ -420,8 +418,11 @@ __acquires(ps->lock)
 	list_for_each_entry(as, &ps->async_pending, asynclist) {
 		if (as->bulk_status == AS_UNLINK) {
 			as->bulk_status = 0;		/* Only once */
+			urb = as->urb;
+			usb_get_urb(urb);
 			spin_unlock(&ps->lock);		/* Allow completions */
-			usb_unlink_urb(as->urb);
+			usb_unlink_urb(urb);
+			usb_put_urb(urb);
 			spin_lock(&ps->lock);
 			goto rescan;
 		}
@@ -473,6 +474,7 @@ static void async_completed(struct urb *urb)
 
 static void destroy_async(struct dev_state *ps, struct list_head *list)
 {
+	struct urb *urb;
 	struct async *as;
 	unsigned long flags;
 
@@ -480,10 +482,13 @@ static void destroy_async(struct dev_state *ps, struct list_head *list)
 	while (!list_empty(list)) {
 		as = list_entry(list->next, struct async, asynclist);
 		list_del_init(&as->asynclist);
+		urb = as->urb;
+		usb_get_urb(urb);
 
 		/* drop the spinlock so the completion handler can run */
 		spin_unlock_irqrestore(&ps->lock, flags);
-		usb_kill_urb(as->urb);
+		usb_kill_urb(urb);
+		usb_put_urb(urb);
 		spin_lock_irqsave(&ps->lock, flags);
 	}
 	spin_unlock_irqrestore(&ps->lock, flags);
@@ -677,7 +682,25 @@ static int check_ctrlrecip(struct dev_state *ps, unsigned int requesttype,
 	index &= 0xff;
 	switch (requesttype & USB_RECIP_MASK) {
 	case USB_RECIP_ENDPOINT:
+		if ((index & ~USB_DIR_IN) == 0)
+			return 0;
 		ret = findintfep(ps->dev, index);
+		if (ret < 0) {
+			/*
+			 * Some not fully compliant Win apps seem to get
+			 * index wrong and have the endpoint number here
+			 * rather than the endpoint address (with the
+			 * correct direction). Win does let this through,
+			 * so we'll not reject it here but leave it to
+			 * the device to not break KVM. But we warn.
+			 */
+			ret = findintfep(ps->dev, index ^ 0x80);
+			if (ret >= 0)
+				dev_info(&ps->dev->dev,
+					"%s: process %i (%s) requesting ep %02x but needs %02x\n",
+					__func__, task_pid_nr(current),
+					current->comm, index, index ^ 0x80);
+		}
 		if (ret >= 0)
 			ret = checkintf(ps, ret);
 		break;
@@ -1411,12 +1434,24 @@ static int proc_submiturb(struct dev_state *ps, void __user *arg)
 
 static int proc_unlinkurb(struct dev_state *ps, void __user *arg)
 {
+	struct urb *urb;
 	struct async *as;
+	unsigned long flags;
 
+	spin_lock_irqsave(&ps->lock, flags);
 	as = async_getpending(ps, arg);
-	if (!as)
+	if (!as) {
+		spin_unlock_irqrestore(&ps->lock, flags);
 		return -EINVAL;
-	usb_kill_urb(as->urb);
+	}
+
+	urb = as->urb;
+	usb_get_urb(urb);
+	spin_unlock_irqrestore(&ps->lock, flags);
+
+	usb_kill_urb(urb);
+	usb_put_urb(urb);
+
 	return 0;
 }
 
@@ -1599,10 +1634,14 @@ static int processcompl_compat(struct async *as, void __user * __user *arg)
 	void __user *addr = as->userurb;
 	unsigned int i;
 
-	if (as->userbuffer && urb->actual_length)
-		if (copy_to_user(as->userbuffer, urb->transfer_buffer,
-				 urb->actual_length))
+	if (as->userbuffer && urb->actual_length) {
+		if (urb->number_of_packets > 0)		/* Isochronous */
+			i = urb->transfer_buffer_length;
+		else					/* Non-Isoc */
+			i = urb->actual_length;
+		if (copy_to_user(as->userbuffer, urb->transfer_buffer, i))
 			return -EFAULT;
+	}
 	if (put_user(as->status, &userurb->status))
 		return -EFAULT;
 	if (put_user(urb->actual_length, &userurb->actual_length))
@@ -1992,87 +2031,13 @@ static long usbdev_do_ioctl(struct file *file, unsigned int cmd,
 	return ret;
 }
 
-#ifdef CONFIG_USB_DEBUG_DETEAILED_LOG
-static int usbdev_log(unsigned int cmd, int ret)
-{
-	char *cmd_string;
-	switch (cmd) {
-	case USBDEVFS_CONTROL:
-		cmd_string = "CONTROL";
-		break;
-	case USBDEVFS_BULK:
-		cmd_string = "BULK";
-		break;
-	case USBDEVFS_RESETEP:
-		cmd_string = "RESETEP";
-		break;
-	case USBDEVFS_RESET:
-		cmd_string = "RESET";
-		break;
-	case USBDEVFS_CLEAR_HALT:
-		cmd_string = "CLEAR_HALT";
-		break;
-	case USBDEVFS_GETDRIVER:
-		cmd_string = "GETDRIVER";
-		break;
-	case USBDEVFS_CONNECTINFO:
-		cmd_string = "CONNECTINFO";
-		break;
-	case USBDEVFS_SETINTERFACE:
-		cmd_string = "SETINTERFACE";
-		break;
-	case USBDEVFS_SETCONFIGURATION:
-		cmd_string = "SETCONFIGURATION";
-		break;
-	case USBDEVFS_SUBMITURB:
-		cmd_string = "SUBMITURB";
-		break;
-	case USBDEVFS_DISCARDURB:
-		cmd_string = "DISCARDURB";
-		break;
-	case USBDEVFS_REAPURB:
-		cmd_string = "REAPURB";
-		break;
-	case USBDEVFS_REAPURBNDELAY:
-		cmd_string = "REAPURBNDELAY";
-		break;
-	case USBDEVFS_DISCSIGNAL:
-		cmd_string = "DISCSIGNAL";
-		break;
-	case USBDEVFS_CLAIMINTERFACE:
-		cmd_string = "CLAIMINTERFACE";
-		break;
-	case USBDEVFS_RELEASEINTERFACE:
-		cmd_string = "RELEASEINTERFACE";
-		break;
-	case USBDEVFS_IOCTL:
-		cmd_string = "IOCTL";
-		break;
-	case USBDEVFS_CLAIM_PORT:
-		cmd_string = "CLAIM_PORT";
-		break;
-	case USBDEVFS_RELEASE_PORT:
-		cmd_string = "RELEASE_PORT";
-		break;
-	default:
-		cmd_string = "DEFAULT";
-		break;
-	}
-	printk(KERN_ERR "%s: %s error ret=%d\n", __func__, cmd_string, ret);
-	return 0;
-}
-#endif
-
 static long usbdev_ioctl(struct file *file, unsigned int cmd,
 			unsigned long arg)
 {
 	int ret;
 
 	ret = usbdev_do_ioctl(file, cmd, (void __user *)arg);
-#ifdef CONFIG_USB_DEBUG_DETEAILED_LOG
-	if (ret <0)
-		usbdev_log(cmd, ret);
-#endif
+
 	return ret;
 }
 
