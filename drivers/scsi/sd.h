@@ -82,8 +82,9 @@ struct scsi_disk {
 	wait_queue_head_t	 delay_wait;
 	struct completion	scanning_done;
 	struct task_struct *th;
-	int		thread_remove;
-	int		async_end;
+	spinlock_t	thread_lock;
+	atomic_t	thread_remove;
+	atomic_t	async_end;
 	int		prv_media_present;
 #endif
 };
