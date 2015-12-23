@@ -34,6 +34,34 @@ extern int poweroff_charging;
 #include <linux/mutex.h>
 #include <linux/wakelock.h>
 
+#if defined(CONFIG_SEC_K_PROJECT)
+#define CYPRESS_SUPPORT_DUAL_INT_MODE
+#define CYPRESS_RECENT_BACK_REPORT_FW_VER	0x1D
+#define TK_CMD_INTERRUPT_SET_REG		0x00
+#define CYPRESS_DETECTION_FLAG			0x08
+#define TK_CMD_DUAL_DETECTION			0x01
+#define TK_BIT_DETECTION_CONFIRM		0xEE
+#elif defined(CONFIG_MACH_JSGLTE_CHN_CMCC)
+#define USE_SW_I2C
+#define ENABLE_FW_UPDATE
+#define CYPRESS_SUPPORT_DUAL_INT_MODE
+#define CYPRESS_RECENT_BACK_REPORT_FW_VER	0x1C
+#define TK_CMD_INTERRUPT_SET_REG		0x18
+#define CYPRESS_DETECTION_FLAG			0x1B
+#define TK_CMD_DUAL_DETECTION			0x01
+#define TK_BIT_DETECTION_CONFIRM		0xEE
+#elif defined(CONFIG_SEC_H_PROJECT)
+#define CYPRESS_SUPPORT_DUAL_INT_MODE
+#define CYPRESS_RECENT_BACK_REPORT_FW_VER	0x12
+#define TK_CMD_INTERRUPT_SET_REG		0x18
+#define CYPRESS_DETECTION_FLAG			0x1B
+#define TK_CMD_DUAL_DETECTION			0x01
+#define TK_BIT_DETECTION_CONFIRM		0xEE
+#else
+#undef CYPRESS_SUPPORT_DUAL_INT_MODE
+#define CYPRESS_RECENT_BACK_REPORT_FW_VER	0xFF
+#endif
+
 #if defined(CONFIG_KEYBOARD_CYPRESS_TOUCHKEY)
 /* Touchkey Register */
 #define CYPRESS_GEN			0X00
@@ -203,6 +231,8 @@ enum {
 #define TKEY_CYPRESS_FW_NAME		"berluti_cypress_tkey"
 #elif defined(CONFIG_SEC_KLIMT_PROJECT)
 #define TKEY_CYPRESS_FW_NAME		"klimt_cypress_tkey"
+#elif defined(CONFIG_MACH_JSGLTE_CHN_CMCC)
+#define TKEY_CYPRESS_FW_NAME		"jsglte_cypress_tkey"
 #else
 #define TKEY_CYPRESS_FW_NAME		"hlte_cypress_tkey"
 #endif
