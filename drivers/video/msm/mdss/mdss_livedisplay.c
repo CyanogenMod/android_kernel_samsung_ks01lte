@@ -16,6 +16,7 @@
 #include <linux/of.h>
 #include <linux/slab.h>
 #include <linux/sysfs.h>
+#include <linux/workqueue.h>
 
 #include "mdss_dsi.h"
 #include "mdss_fb.h"
@@ -49,21 +50,20 @@
  * reference chart:
  * http://www.vendian.org/mncharity/dir3/blackbody/UnstableURLs/bbr_color.html
  */
-static int mdss_livedisplay_set_rgb_locked(struct msm_fb_data_type *mfd)
+static int mdss_livedisplay_update_pcc(struct mdss_livedisplay_ctx *mlc)
 {
 	static struct mdp_pcc_cfg_data pcc_cfg;
-	struct mdss_livedisplay_ctx *mlc;
-
-	mlc = get_ctx(mfd);
 
 	if (mlc == NULL)
 		return -ENODEV;
+
+	WARN_ON(!mutex_is_locked(&mlc->lock));
 
 	pr_info("%s: r=%d g=%d b=%d\n", __func__, mlc->r, mlc->g, mlc->b);
 
 	memset(&pcc_cfg, 0, sizeof(struct mdp_pcc_cfg_data));
 
-	pcc_cfg.block = mfd->index + MDP_LOGICAL_BLOCK_DISP_0;
+	pcc_cfg.block = mlc->mfd->index + MDP_LOGICAL_BLOCK_DISP_0;
 	if (mlc->r == 32768 && mlc->g == 32768 && mlc->b == 32768)
 		pcc_cfg.ops = MDP_PP_OPS_DISABLE;
 	else
@@ -79,56 +79,47 @@ static int mdss_livedisplay_set_rgb_locked(struct msm_fb_data_type *mfd)
 /*
  * Update all or a subset of parameters
  */
-static int mdss_livedisplay_update_locked(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
-		int types)
+static void mdss_livedisplay_worker(struct work_struct *work)
 {
 	int ret = 0;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo = NULL;
 	struct mdss_livedisplay_ctx *mlc = NULL;
 
+	mlc = container_of(work, struct mdss_livedisplay_ctx, update_work);
+
+	if (mlc == NULL)
+		return;
+
+	ctrl_pdata = get_ctrl(mlc->mfd);
 	if (ctrl_pdata == NULL)
-		return -ENODEV;
+		return;
 
 	pinfo = &(ctrl_pdata->panel_data.panel_info);
 	if (pinfo == NULL)
-		return -ENODEV;
-
-	mlc = pinfo->livedisplay;
-	if (mlc == NULL)
-		return -ENODEV;
+		return;
 
 	if (!mdss_panel_is_power_on_interactive(pinfo->panel_power_state))
-		return 0;
-
-	// Restore saved RGB settings
-	mdss_livedisplay_set_rgb_locked(mlc->mfd);
-
-	return ret;
-}
-
-int mdss_livedisplay_update(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
-		int types)
-{
-	struct mdss_panel_info *pinfo;
-	struct mdss_livedisplay_ctx *mlc;
-	int ret = 0;
-
-	pinfo = &(ctrl_pdata->panel_data.panel_info);
-	if (pinfo == NULL)
-		return -ENODEV;
-
-	mlc = pinfo->livedisplay;
-	if (mlc == NULL)
-		return -ENODEV;
-
-	if (mlc->mfd == NULL)
-		return -ENODEV;
+		return;
 
 	mutex_lock(&mlc->lock);
-	ret = mdss_livedisplay_update_locked(ctrl_pdata, types);
+
+	// Restore saved RGB settings
+	if (mlc->updated & MODE_RGB)
+		mdss_livedisplay_update_pcc(mlc);
+
+out:
+	mlc->updated = 0;
+	mutex_unlock(&mlc->lock);
+}
+
+void mdss_livedisplay_update(struct mdss_livedisplay_ctx *mlc, uint32_t updated)
+{
+	mutex_lock(&mlc->lock);
+	mlc->updated |= updated;
 	mutex_unlock(&mlc->lock);
 
-	return ret;
+	queue_work(mlc->wq, &mlc->update_work);
 }
 
 static ssize_t mdss_livedisplay_get_rgb(struct device *dev,
@@ -177,16 +168,13 @@ static ssize_t mdss_livedisplay_set_rgb(struct device *dev,
 		return -EINVAL;
 
 	mutex_lock(&mlc->lock);
-
 	mlc->r = r;
 	mlc->g = g;
 	mlc->b = b;
-
-	if (!mdss_panel_is_power_on_interactive(mfd->panel_power_state) ||
-			(mdss_livedisplay_set_rgb_locked(mfd) == 0))
-		ret = count;
-
 	mutex_unlock(&mlc->lock);
+
+	mdss_livedisplay_update(mlc, MODE_RGB);
+	ret = count;
 
 	return ret;
 }
@@ -202,9 +190,14 @@ int mdss_livedisplay_parse_dt(struct device_node *np, struct mdss_panel_info *pi
 		return -ENODEV;
 
 	mlc = kzalloc(sizeof(struct mdss_livedisplay_ctx), GFP_KERNEL);
-	mutex_init(&mlc->lock);
 
 	mlc->r = mlc->g = mlc->b = 32768;
+	mlc->updated = 0;
+
+	mutex_init(&mlc->lock);
+
+	mlc->wq = create_singlethread_workqueue("livedisplay_wq");
+	INIT_WORK(&mlc->update_work, mdss_livedisplay_worker);
 
 	pinfo->livedisplay = mlc;
 	return 0;

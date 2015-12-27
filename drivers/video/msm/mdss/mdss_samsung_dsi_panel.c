@@ -28,6 +28,7 @@
 #include "mdss_dsi.h"
 #include "mdss_samsung_dsi_panel.h"
 #include "mdss_fb.h"
+#include "mdss_livedisplay.h"
 
 #if defined(CONFIG_MDNIE_LITE_TUNING)
 #include "mdnie_lite_tuning.h"
@@ -3404,6 +3405,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	mdss_samsung_parse_panel_cmd(np, &force_500,
 				"samsung,panel-force-500cd-cmds");
 #endif
+
+	mdss_livedisplay_parse_dt(np, pinfo);
 
 	return 0;
 

@@ -16,20 +16,35 @@
 
 #include <linux/of.h>
 #include <linux/sysfs.h>
+#include <linux/workqueue.h>
 
 #include "mdss_dsi.h"
 #include "mdss_fb.h"
 
-#define MAX_PRESETS 10
-
 struct mdss_livedisplay_ctx {
 	uint32_t r, g, b;
+
 	struct msm_fb_data_type *mfd;
 
 	struct mutex lock;
+	struct work_struct update_work;
+	struct workqueue_struct *wq;
+
+	uint32_t updated;
+	uint8_t *cmd_buf;
 };
 
-int mdss_livedisplay_update(struct mdss_dsi_ctrl_pdata *ctrl_pdata, int types);
+enum {
+	MODE_CABC		= 0x01,
+	MODE_SRE		= 0x02,
+	MODE_AUTO_CONTRAST	= 0x04,
+	MODE_COLOR_ENHANCE	= 0x08,
+	MODE_PRESET		= 0x10,
+	MODE_RGB		= 0x20,
+	MODE_UPDATE_ALL		= 0xFF,
+};
+
+void mdss_livedisplay_update(struct mdss_livedisplay_ctx *mlc, uint32_t updated);
 int mdss_livedisplay_parse_dt(struct device_node *np, struct mdss_panel_info *pinfo);
 int mdss_livedisplay_create_sysfs(struct msm_fb_data_type *mfd);
 
