@@ -1621,7 +1621,7 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 #endif
 
 #ifdef PERIODIC_CHECK_GPIOS
-    INIT_DELAYED_WORK_DEFERRABLE(&g_gpio_check_work,
+    INIT_DEFERRABLE_WORK(&g_gpio_check_work,
             sec_gpiocheck_work);
     schedule_delayed_work(&g_gpio_check_work,
             msecs_to_jiffies(0));
