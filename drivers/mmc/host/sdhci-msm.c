@@ -844,8 +844,6 @@ int sdhci_msm_execute_tuning(struct sdhci_host *host, u32 opcode)
 	struct mmc_ios	ios = host->mmc->ios;
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = pltfm_host->priv;
-	u8 drv_type = 0;
-	bool drv_type_changed = false;
 	struct mmc_card *card = host->mmc->card;
 	int search_retries = 3;
 
